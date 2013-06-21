@@ -18,6 +18,8 @@
 set(MODULE_NAME "freerdp-codec")
 set(MODULE_PREFIX "FREERDP_CODEC")
 
+set(can_use_assembler FALSE)
+
 set(${MODULE_PREFIX}_SRCS
 	dsp.c
 	bitmap.c
@@ -35,7 +37,6 @@ set(${MODULE_PREFIX}_SRCS
 	rfx_encode.h
 	rfx_quantization.c
 	rfx_quantization.h
-	rfx_rlgr.c
 	rfx_rlgr.h
 	rfx_types.h
 	rfx.c
@@ -72,6 +73,18 @@ endif()
 if(WITH_NEON)
 	set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS} ${${MODULE_PREFIX}_NEON_SRCS})
 	set_source_files_properties(${${MODULE_PREFIX}_NEON_SRCS} PROPERTIES COMPILE_FLAGS "-mfpu=neon -mfloat-abi=${ARM_FP_ABI} -Wno-unused-variable")
+endif()
+
+if("${MSVC_C_ARCHITECTURE_ID}" MATCHES "x64|X86")
+	enable_language(ASM_MASM)
+	if(CMAKE_ASM_MASM_COMPILER_WORKS)
+		set(can_use_assembler TRUE)
+		set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS} rfx_rlgr_masm_${MSVC_C_ARCHITECTURE_ID}.asm)
+	endif()
+endif()
+
+if(NOT can_use_assembler)
+	set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS} rfx_rlgr.c)
 endif()
 
 if(WITH_JPEG)
