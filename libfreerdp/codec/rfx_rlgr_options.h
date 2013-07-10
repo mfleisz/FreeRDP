@@ -30,7 +30,7 @@ int rfx_rlgr_decode_function(RLGR_MODE mode, const BYTE* data, int data_size, IN
 #elif (RFX_RLGR_OPTION == 2)	// Microsoft's native RLGR implementation ripped from rdpcorets.dll
 
 #define RLGR_ENCODER_PROFILER_NAME "rfx_rlgr_encode_microsoft"
-#define RLGR_DECODER_PROFILER_NAME "rfx_rlfr_decode_microsoft"
+#define RLGR_DECODER_PROFILER_NAME "rfx_rlgr_decode_microsoft"
 
 int WINABI microsoft_cacencoding_encrlgr3(const INT16* data, int data_size, BYTE* buffer, int buffer_size);
 int WINABI microsoft_cacdecoding_decrlgr3(const BYTE* data, int data_size, INT16* buffer, int buffer_size);
