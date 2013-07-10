@@ -87,6 +87,33 @@ if(NOT can_use_assembler)
 	set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS} rfx_rlgr.c)
 endif()
 
+if(TARGET_ARCH MATCHES "x64|x86")
+	set(WITH_RFX_RLGR_OPTION_VALUES "default" "asm" "microsoft")
+	set(WITH_RFX_RLGR_OPTION "default" CACHE STRING "Select RemoteFX RLGR codec implementation. Possible values: ${WITH_RFX_RLGR_OPTION_VALUES}")
+	set_property(CACHE WITH_RFX_RLGR_OPTION PROPERTY STRINGS ${WITH_RFX_RLGR_OPTION_VALUES})
+	list(FIND WITH_RFX_RLGR_OPTION_VALUES ${WITH_RFX_RLGR_OPTION} WITH_RFX_RLGR_OPTION_INDEX)
+	if(${WITH_RFX_RLGR_OPTION_INDEX} EQUAL -1)
+		message(FATAL_ERROR "RemoteFX RLGR codec option [${WITH_RFX_RLGR_OPTION}] not supported, possible values are ${WITH_RFX_RLGR_OPTION_VALUES}")
+	endif()
+	if(${WITH_RFX_RLGR_OPTION_INDEX} GREATER 0)
+		enable_language(ASM_NASM)
+
+		set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS}
+			"rfx_rlgr_options.h")
+
+		if(${WITH_RFX_RLGR_OPTION} STREQUAL "asm")
+			set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS}
+				"rfx_rlgr_asm_${TARGET_ARCH}.nasm")
+		endif()
+		if(${WITH_RFX_RLGR_OPTION} STREQUAL "microsoft")
+			set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS}
+				"rfx_rlgr_microsoft_decrlgr3_${TARGET_ARCH}.nasm"
+				"rfx_rlgr_microsoft_encrlgr3_${TARGET_ARCH}.nasm")
+		endif()
+		add_definitions("-DRFX_RLGR_OPTION=${WITH_RFX_RLGR_OPTION_INDEX}")
+	endif()
+endif()
+
 if(WITH_JPEG)
 	set(FREERDP_JPEG_LIBS jpeg)
 endif()

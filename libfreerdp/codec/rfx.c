@@ -46,6 +46,7 @@
 #include "rfx_quantization.h"
 #include "rfx_dwt.h"
 #include "rfx_rlgr.h"
+#include "rfx_rlgr_options.h"
 
 #include "rfx_sse2.h"
 #include "rfx_neon.h"
@@ -53,6 +54,11 @@
 #ifndef RFX_INIT_SIMD
 #define RFX_INIT_SIMD(_rfx_context) do { } while (0)
 #endif
+
+#ifndef RFX_INIT_RLGR_OPTIONS
+#define RFX_INIT_RLGR_OPTIONS(_rfx_context) do { } while (0)
+#endif
+
 
 /**
  * The quantization values control the compression rate and quality. The value
@@ -245,6 +251,7 @@ RFX_CONTEXT* rfx_context_new(void)
 	context->rlgr_encode = rfx_rlgr_encode;
 
 	RFX_INIT_SIMD(context);
+	RFX_INIT_RLGR_OPTIONS(context);
 	
 	return context;
 }
