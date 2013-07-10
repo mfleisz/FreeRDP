@@ -84,6 +84,9 @@ if(TARGET_ARCH MATCHES "x64|x86")
 	endif()
 	if(${WITH_RFX_RLGR_OPTION_INDEX} GREATER 0)
 		enable_language(ASM_NASM)
+		if(WIN32)
+			set(CMAKE_ASM_NASM_FLAGS "-DWIN32")
+		endif()
 
 		set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS}
 			"rfx_rlgr_options.h")
