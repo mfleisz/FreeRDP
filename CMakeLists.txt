@@ -455,6 +455,8 @@ if(WITH_THIRD_PARTY)
 	endif()
 endif()
 
+add_subdirectory(perftest)
+
 add_subdirectory(include)
 
 add_subdirectory(libfreerdp)
