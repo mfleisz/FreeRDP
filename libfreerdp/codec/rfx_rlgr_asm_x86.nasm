@@ -1,12 +1,15 @@
-.686p
-.xmm
-.model FLAT, C
 
-.data
+section .data
 
 XmmZero dd 0, 0, 0, 0
 
-.code
+section .code
+
+%ifdef WIN32
+%define rfx_rlgr_decode_asm _rfx_rlgr_decode_asm
+%define rfx_rlgr_encode_asm _rfx_rlgr_encode_asm
+%endif
+
 
 ; eax  - temp & return
 ; ebx  - bl:bits_left bh:sign 0xFF000000:mode
@@ -22,11 +25,10 @@ XmmZero dd 0, 0, 0, 0
 ; [esp+28h] - buffer_size
 
 ; read 32 bits into read_bits if bits_left < nBits
-ReadBits MACRO nBits
-LOCAL ReadBits_exit
+%macro ReadBits 1 ; %1:nBits
 	; if (bits_left >= nBits) break
-	cmp bl, nBits
-	jge ReadBits_exit
+	cmp bl, %1
+	jge %%ReadBits_exit
 	; if (data_size <= 0) exit
 	mov esi, [esp+20h]
 	test esi, esi
@@ -54,96 +56,93 @@ LOCAL ReadBits_exit
 	; bits_left += r * 8
 	shl cl, 3
 	add bl, cl
-ReadBits_exit:
-ENDM
+%%ReadBits_exit:
+%endmacro
 
-GetBits MACRO nBits, result
-LOCAL GetBits_1, GetBits_exit
-	test nBits, nBits
-	jne GetBits_1
-	xor result, result
-	jmp GetBits_exit
-GetBits_1:
-	ReadBits nBits
+%macro GetBits 2 ; %1:nBits, %2:result
+	test %1, %1
+	jne %%GetBits_1
+	xor %2, %2
+	jmp %%GetBits_exit
+%%GetBits_1:
+	ReadBits %1
 	; result = read_bits >> (32 - nBits)
-	mov result, edi
+	mov %2, edi
 	mov cl, 32
-	sub cl, nBits
-	shr result, cl
+	sub cl, %1
+	shr %2, cl
 	; read_bits <<= nBits
-	mov cl, nBits
+	mov cl, %1
 	shl edi, cl
 	; bits_left -= nBits
-	sub bl, nBits
-GetBits_exit:
-ENDM
+	sub bl, %1
+%%GetBits_exit:
+%endmacro
 
-GetBit MACRO result
-LOCAL GetBit_exit
+%macro GetBit 1 ; %1:result
 	ReadBits 1
 	; read_bits <<= 1 (first bit shifted out to carry flag)
 	shl edi, 1
 	; result = carry flag
-	setc result
+	setc %1
 	; bits_left--
 	dec bl
-GetBit_exit:
-ENDM
+%%GetBit_exit:
+%endmacro
 
-WriteValue MACRO value
+%macro WriteValue 1 ; %1:value
 	; if (buffer_size <= 0) exit
 	mov ecx, [esp+28h]
 	test ecx, ecx
 	jle rfx_rlgr_decode_exit
-	; *dst++ = value;
+	; *dst++ = %1;
 	mov ecx, [esp]
-	mov WORD PTR [ecx], value
-	add DWORD PTR [esp], 2
-	dec DWORD PTR [esp+28h]
-ENDM
+	mov WORD [ecx], %1
+	add DWORD [esp], 2
+	dec DWORD [esp+28h]
+%endmacro
 
-WriteZeroes MACRO nZeroes
-LOCAL WriteZeroes_loop, WriteZeroes_loop2, WriteZeroes_last, WriteZeroes_lastx, WriteZeroes_exit
+%macro WriteZeroes 1 ; %1:nZeroes
 	mov ecx, [esp+28h]
-WriteZeroes_loop:
+%%WriteZeroes_loop:
 	cmp ecx, 8
-	jl WriteZeroes_loop2
-	cmp nZeroes, 8
-	jl WriteZeroes_loop2
+	jl %%WriteZeroes_loop2
+	cmp %1, 8
+	jl %%WriteZeroes_loop2
 	mov esi, [esp]
 	movdqu [esi], xmm1
-	add DWORD PTR [esp], 16
+	add DWORD [esp], 16
 	sub ecx, 8
-	sub nZeroes, 8
-	jmp WriteZeroes_loop
-WriteZeroes_loop2:
+	sub %1, 8
+	jmp %%WriteZeroes_loop
+%%WriteZeroes_loop2:
 	cmp ecx, 1
 	jl rfx_rlgr_decode_exit
-	je WriteZeroes_last
-	cmp nZeroes, 1
-	jl WriteZeroes_exit
-	je WriteZeroes_lastx
+	je %%WriteZeroes_last
+	cmp %1, 1
+	jl %%WriteZeroes_exit
+	je %%WriteZeroes_lastx
 	mov esi, [esp]
-	mov DWORD PTR [esi], 0
-	add DWORD PTR [esp], 4
+	mov DWORD [esi], 0
+	add DWORD [esp], 4
 	sub ecx, 2
-	sub nZeroes, 2
-	jmp WriteZeroes_loop2
-WriteZeroes_last:
-	test nZeroes, nZeroes
-	je WriteZeroes_exit
-WriteZeroes_lastx:
+	sub %1, 2
+	jmp %%WriteZeroes_loop2
+%%WriteZeroes_last:
+	test %1, %1
+	je %%WriteZeroes_exit
+%%WriteZeroes_lastx:
 	mov esi, [esp]
-	mov WORD PTR [esi], 0
-	add DWORD PTR [esp], 2
+	mov WORD [esi], 0
+	add DWORD [esp], 2
 	dec ecx
-WriteZeroes_exit:
+%%WriteZeroes_exit:
 	mov [esp+28h], ecx
-ENDM
+%endmacro
 
-UpdateParam MACRO param, deltaP
-	movzx cx, param
-	add cx, deltaP
+%macro UpdateParam 2 ; %1:param %2:deltaP
+	movzx cx, %1
+	add cx, %2
 	; if (param > KPMAX) param = KPMAX
 	mov si, 80
 	cmp cx, si
@@ -153,54 +152,52 @@ UpdateParam MACRO param, deltaP
 	cmp cx, si
 	cmovl cx, si
 	; k = (param >> LSGR)
-	mov param, cl
-ENDM
+	mov %1, cl
+%endmacro
 
-GetMinBits MACRO val, nbits
+%macro GetMinBits 2 ; %1:val, %2:nbits
 	mov ecx, -1
-	bsr nbits, val
-	cmovz nbits, ecx
-	inc nbits
-ENDM
+	bsr %2, %1
+	cmovz %2, ecx
+	inc %2
+%endmacro
 
-GetOneBits MACRO vk
-LOCAL GetOneBits_loop, GetOneBits_next, GetOneBits_exit
-	xor vk, vk
-GetOneBits_loop:
+%macro GetOneBits 1 ; %1:vk
+	xor %1, %1
+%%GetOneBits_loop:
 	ReadBits 1
 	; eax = position of the first zero bit
 	mov ecx, edi
 	not ecx
 	bsr eax, ecx
 	; if not found goto next
-	jz GetOneBits_next
+	jz %%GetOneBits_next
 	; if (bits_left < 32 - eax) goto next
 	mov ecx, 32
 	sub ecx, eax
 	cmp bl, cl
-	jl GetOneBits_next
+	jl %%GetOneBits_next
 	; result = ecx - 1
-	add vk, ecx
-	dec vk
+	add %1, ecx
+	dec %1
 	; read_bits <<= cl
 	shl edi, cl
 	; bits_left -= cl
 	sub bl, cl
-	jmp GetOneBits_exit
-GetOneBits_next:
+	jmp %%GetOneBits_exit
+%%GetOneBits_next:
 	; result += bits_left
 	movzx ecx, bl
-	add vk, ecx
+	add %1, ecx
 	; read_bits = 0
 	; bits_left = 0
 	xor edi, edi
 	xor bl, bl
-	jmp GetOneBits_loop
-GetOneBits_exit:
-ENDM
+	jmp %%GetOneBits_loop
+%%GetOneBits_exit:
+%endmacro
 
-GetGRCode MACRO
-LOCAL GetGRCode_1, GetGRCode_exit
+%macro GetGRCode 0
 	; vk
 	GetOneBits ebp
 	; GetBits(kr, mag)
@@ -215,30 +212,30 @@ LOCAL GetGRCode_1, GetGRCode_exit
 	or ebp, eax
 	; if (!vk)
 	test esi, esi
-	jne GetGRCode_1
+	jne %%GetGRCode_1
 	;   UpdateParam(krp, -2, kr)
 	UpdateParam dh, -2
-	jmp GetGRCode_exit
-GetGRCode_1:
+	jmp %%GetGRCode_exit
+%%GetGRCode_1:
 	; else if (vk != 1)
 	cmp esi, 1
-	je GetGRCode_exit
+	je %%GetGRCode_exit
 	;   UpdateParam(krp, vk, kr)
 	UpdateParam dh, si
-GetGRCode_exit:
-ENDM
+%%GetGRCode_exit:
+%endmacro
 
-GetIntFrom2MagSign MACRO mag
-LOCAL GetIntFrom2MagSign_1
+%macro GetIntFrom2MagSign 1 ; %1:mag
 	; mag = (((mag) & 1) ? -1 * (INT16)(((mag) + 1) >> 1) : (INT16)((mag) >> 1))
-	shr mag, 1
-	jnc GetIntFrom2MagSign_1
-	inc mag
-	neg mag
-GetIntFrom2MagSign_1:
-ENDM
+	shr %1, 1
+	jnc %%GetIntFrom2MagSign_1
+	inc %1
+	neg %1
+%%GetIntFrom2MagSign_1:
+%endmacro
 
-rfx_rlgr_decode PROC
+global rfx_rlgr_decode_asm
+rfx_rlgr_decode_asm:
 	push ebx
 	push edi
 	push esi
@@ -379,7 +376,10 @@ rfx_rlgr_decode_exit:
 	pop ebx
 	ret
 
-rfx_rlgr_decode ENDP
+
+
+; ----------------------------------------------------------------------------
+
 
 ; eax  - temp & return
 ; ebx  - bl:bits_avail bh:temp 0xFF000000:mode
@@ -396,70 +396,68 @@ rfx_rlgr_decode ENDP
 ; [esp+2Ch] - buffer
 ; [esp+30h] - buffer_size
 
-GetNextInput MACRO n, exitIfNone
-LOCAL GetNextInput_1, GetNextInput_exit
+%macro GetNextInput 2 ; %1:n, %2:exitIfNone
 	; if (data_size <= 0) exit
 	mov ecx, [esp+28h]
 	test ecx, ecx
-IF exitIfNone EQ 1
+%if %2 = 1
 	jle rfx_rlgr_encode_flush
-ELSE
-	jg GetNextInput_1
-	xor n, n
-	jmp GetNextInput_exit
-ENDIF
-GetNextInput_1:
+%else
+	jg %%GetNextInput_1
+	xor %1, %1
+	jmp %%GetNextInput_exit
+%endif
+%%GetNextInput_1:
 	; n = *data++;
 	; data_size--;
 	mov ecx, [esp+24h]
-	mov n, WORD PTR [ecx]
-	add DWORD PTR [esp+24h], 2
-	dec DWORD PTR [esp+28h]
-GetNextInput_exit:
-ENDM
+	mov %1, WORD [ecx]
+	add DWORD [esp+24h], 2
+	dec DWORD [esp+28h]
+%%GetNextInput_exit:
+%endmacro
 
-GetNextNonzeroInput MACRO nZeroes, n
-LOCAL GetNextNonzeroInput_exit, GetNextNonzeroInput_loop
-	xor nZeroes, nZeroes
+%macro GetNextNonzeroInput 2 ; %1:nZeroes, %2:n
+	xor %1, %1
 	; if (data_size <= 0) exit
 	mov ecx, [esp+28h]
 	test ecx, ecx
 	jle rfx_rlgr_encode_flush
 	mov esi, [esp+24h]
-GetNextNonzeroInput_loop:
-	mov n, WORD PTR [esi]
+%%GetNextNonzeroInput_loop:
+	mov %2, WORD [esi]
 	add esi, 2
 	dec ecx
-	test n, n
-	jnz GetNextNonzeroInput_exit
-	inc nZeroes
+	test %2, %2
+	jnz %%GetNextNonzeroInput_exit
+	inc %1
 	test ecx, ecx
-	jg GetNextNonzeroInput_loop
-GetNextNonzeroInput_exit:
+	jg %%GetNextNonzeroInput_loop
+%%GetNextNonzeroInput_exit:
 	mov [esp+24h], esi
 	mov [esp+28h], ecx
-ENDM
+%endmacro
 
-FlushOutput MACRO reset
+%macro FlushOutput 1 ; %1:reset
 	; if (buffer_size < 4) exit
-	cmp DWORD PTR [esp+30h], 4
+	cmp DWORD [esp+30h], 4
 	jl rfx_rlgr_encode_exit
 	; write 4 bytes
 	bswap edi
 	mov ecx, [esp]
-	mov DWORD PTR [ecx], edi
-	sub DWORD PTR [esp+30h], 4
-	add DWORD PTR [esp], 4
-IF reset EQ 1
+	mov DWORD [ecx], edi
+	sub DWORD [esp+30h], 4
+	add DWORD [esp], 4
+%if %1 = 1
 	; reset pending bits
 	xor edi, edi
 	mov bl, 32
-ENDIF
-ENDM
+%endif
+%endmacro
 
-FlushRemainingOutput MACRO
+%macro FlushRemainingOutput 0
 	; if (buffer_size < 4) exit
-	cmp DWORD PTR [esp+30h], 4
+	cmp DWORD [esp+30h], 4
 	jl rfx_rlgr_encode_exit
 	; if (bits_avail >= 4 * 8) exit
 	cmp bl, 32
@@ -467,35 +465,34 @@ FlushRemainingOutput MACRO
 	; write 4 bytes
 	bswap edi
 	mov ecx, [esp]
-	mov DWORD PTR [ecx], edi
+	mov DWORD [ecx], edi
 	; dst += (32 - bits_avail + 7) / 8
 	mov ecx, 32 + 7
 	sub cl, bl
 	shr ecx, 3
 	add [esp], ecx
-ENDM
+%endmacro
 
-OutputBits MACRO numBits, bitPattern
-LOCAL OutputBits_less, OutputBits_equal, OutputBits_exit
+%macro OutputBits 2 ; %1:numBits, %2:bitPattern
 	; if (bits_avail > numBits)
-	cmp bl, numBits
-	jl OutputBits_less
-	je OutputBits_equal
+	cmp bl, %1
+	jl %%OutputBits_less
+	je %%OutputBits_equal
 	;   write_bits |= bitPattern << (bits_avail - numBits)
 	mov cl, bl
-	sub cl, numBits
-	mov esi, bitPattern
+	sub cl, %1
+	mov esi, %2
 	shl esi, cl
 	or edi, esi
 	;   bits_avail -= numBits
-	sub bl, numBits
-	jmp OutputBits_exit
-OutputBits_less:
+	sub bl, %1
+	jmp %%OutputBits_exit
+%%OutputBits_less:
 	; else if (bits_avail < numBits)
 	;   write_bits |= bitPattern >> (numBits - bits_avail)
-	mov cl, numBits
+	mov cl, %1
 	sub cl, bl
-	mov esi, bitPattern
+	mov esi, %2
 	shr esi, cl
 	or edi, esi
 	mov bl, cl
@@ -505,42 +502,41 @@ OutputBits_less:
 	neg bl
 	add bl, 32
 	mov cl, bl
-	mov edi, bitPattern
+	mov edi, %2
 	shl edi, cl
-	jmp OutputBits_exit
-OutputBits_equal:
+	jmp %%OutputBits_exit
+%%OutputBits_equal:
 	; else // bits_avail == numBits
 	;   write_bits |= bitPattern
-	or edi, bitPattern
+	or edi, %2
 	FlushOutput 1
-OutputBits_exit:
-ENDM
+%%OutputBits_exit:
+%endmacro
 
-OutputRemainingBitsOne MACRO
+%macro OutputRemainingBitsOne 0
 	mov esi, -1
 	mov cl, 32
 	sub cl, bl
 	shr esi, cl
 	or edi, esi
 	FlushOutput 1
-ENDM
+%endmacro
 
-OutputBitsOne MACRO count
-LOCAL OutputBitsOne_loop, OutputBitsOne_greater, OutputBitsOne_equal, OutputBitsOne_exit
+%macro OutputBitsOne 1 ; %1:count
 	; do
-OutputBitsOne_loop:
+%%OutputBitsOne_loop:
 	;   if (bits_avail < count)
 	movzx eax, bl
-	cmp eax, count
-	jg OutputBitsOne_greater
-	je OutputBitsOne_equal
+	cmp eax, %1
+	jg %%OutputBitsOne_greater
+	je %%OutputBitsOne_equal
 	;     output bits_avail bits
 	OutputRemainingBitsOne
 	;     count -= bits_avail
-	sub count, eax
+	sub %1, eax
 	; while (count > 0)
-	jmp OutputBitsOne_loop
-OutputBitsOne_greater:
+	jmp %%OutputBitsOne_loop
+%%OutputBitsOne_greater:
 	; output count bits
 	cmp bl, 32
 	setl al
@@ -548,29 +544,27 @@ OutputBitsOne_greater:
 	mov cl, bl
 	shl esi, cl
 	mov eax, 1
-	sub ecx, count
+	sub ecx, %1
 	shl eax, cl
 	sub esi, eax
 	or edi, esi
 	; bits_avail -= count
-	sub ebx, count
-	jmp OutputBitsOne_exit
-OutputBitsOne_equal:
+	sub ebx, %1
+	jmp %%OutputBitsOne_exit
+%%OutputBitsOne_equal:
 	OutputRemainingBitsOne
-OutputBitsOne_exit:
-ENDM
+%%OutputBitsOne_exit:
+%endmacro
 
-OutputBitZero MACRO
-LOCAL OutputBitZero_exit
+%macro OutputBitZero 0
 	; bits_avail--
 	dec bl
-	jnz OutputBitZero_exit
+	jnz %%OutputBitZero_exit
 	FlushOutput 1
-OutputBitZero_exit:
-ENDM
+%%OutputBitZero_exit:
+%endmacro
 
-OutputBitOne MACRO
-LOCAL OutputBitZero_exit
+%macro OutputBitOne 0
 	; output one bit
 	mov cl, bl
 	dec cl
@@ -579,13 +573,12 @@ LOCAL OutputBitZero_exit
 	or edi, esi
 	; bits_avail--
 	dec bl
-	jnz OutputBitZero_exit
+	jnz %%OutputBitZero_exit
 	FlushOutput 1
-OutputBitZero_exit:
-ENDM
+%%OutputBitZero_exit:
+%endmacro
 
-CodeGR MACRO
-LOCAL CodeGR_1, CodeGR_2, CodeGR_3, CodeGR_exit
+%macro CodeGR 0
 	mov [esp+04h], ebp
 	; kr = *krp >> LSGR
 	mov cl, dh
@@ -595,28 +588,28 @@ LOCAL CodeGR_1, CodeGR_2, CodeGR_3, CodeGR_exit
 	shr ebp, cl
 	; if (vk > 1)
 	cmp ebp, 1
-	jl CodeGR_2
-	je CodeGR_1
+	jl %%CodeGR_2
+	je %%CodeGR_1
 	;   UpdateParam(*krp, vk, kr)
 	UpdateParam dh, bp
-CodeGR_1:
+%%CodeGR_1:
 	;   // vk >= 1
 	;   OutputBit(vk, 1)
 	;   OutputBit(1, 0)
 	OutputBitsOne ebp
 	OutputBitZero
-	jmp CodeGR_3
-CodeGR_2:
+	jmp %%CodeGR_3
+%%CodeGR_2:
 	; else // vk == 0
 	;   UpdateParam(*krp, -2, kr)
 	UpdateParam dh, -2
 	;   OutputBit(1, 0)
 	OutputBitZero
-CodeGR_3:
+%%CodeGR_3:
 	;   if (kr)
 	;     OutputBits(kr, val & ((1 << kr) - 1))
 	test bh, bh
-	jz CodeGR_exit
+	jz %%CodeGR_exit
 	mov ebp, [esp+04h]
 	mov esi, 1
 	mov cl, bh
@@ -624,19 +617,19 @@ CodeGR_3:
 	dec esi
 	and ebp, esi
 	OutputBits bh, ebp
-CodeGR_exit:
-ENDM
+%%CodeGR_exit:
+%endmacro
 
-Get2MagSign MACRO value
-LOCAL Get2MagSign_exit
-	shl value, 1
-	jnc Get2MagSign_exit
-	neg value
-	dec value
-Get2MagSign_exit:
-ENDM
+%macro Get2MagSign 1 ; %1:value
+	shl %1, 1
+	jnc %%Get2MagSign_exit
+	neg %1
+	dec %1
+%%Get2MagSign_exit:
+%endmacro
 
-rfx_rlgr_encode PROC
+global rfx_rlgr_encode_asm
+rfx_rlgr_encode_asm:
 	push ebx
 	push edi
 	push esi
@@ -799,6 +792,3 @@ rfx_rlgr_encode_exit:
 	pop ebx
 	ret
 
-rfx_rlgr_encode ENDP
-
-END

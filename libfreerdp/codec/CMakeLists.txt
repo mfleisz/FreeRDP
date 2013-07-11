@@ -18,8 +18,6 @@
 set(MODULE_NAME "freerdp-codec")
 set(MODULE_PREFIX "FREERDP_CODEC")
 
-set(can_use_assembler FALSE)
-
 set(${MODULE_PREFIX}_SRCS
 	dsp.c
 	bitmap.c
@@ -37,6 +35,7 @@ set(${MODULE_PREFIX}_SRCS
 	rfx_encode.h
 	rfx_quantization.c
 	rfx_quantization.h
+	rfx_rlgr.c
 	rfx_rlgr.h
 	rfx_types.h
 	rfx.c
@@ -75,16 +74,34 @@ if(WITH_NEON)
 	set_source_files_properties(${${MODULE_PREFIX}_NEON_SRCS} PROPERTIES COMPILE_FLAGS "-mfpu=neon -mfloat-abi=${ARM_FP_ABI} -Wno-unused-variable")
 endif()
 
-if("${MSVC_C_ARCHITECTURE_ID}" MATCHES "x64|X86")
-	enable_language(ASM_MASM)
-	if(CMAKE_ASM_MASM_COMPILER_WORKS)
-		set(can_use_assembler TRUE)
-		set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS} rfx_rlgr_masm_${MSVC_C_ARCHITECTURE_ID}.asm)
+if(TARGET_ARCH MATCHES "x64|x86")
+	set(WITH_RFX_RLGR_OPTION_VALUES "default" "asm" "microsoft")
+	set(WITH_RFX_RLGR_OPTION "default" CACHE STRING "Select RemoteFX RLGR codec implementation. Possible values: ${WITH_RFX_RLGR_OPTION_VALUES}")
+	set_property(CACHE WITH_RFX_RLGR_OPTION PROPERTY STRINGS ${WITH_RFX_RLGR_OPTION_VALUES})
+	list(FIND WITH_RFX_RLGR_OPTION_VALUES ${WITH_RFX_RLGR_OPTION} WITH_RFX_RLGR_OPTION_INDEX)
+	if(${WITH_RFX_RLGR_OPTION_INDEX} EQUAL -1)
+		message(FATAL_ERROR "RemoteFX RLGR codec option [${WITH_RFX_RLGR_OPTION}] not supported, possible values are ${WITH_RFX_RLGR_OPTION_VALUES}")
 	endif()
-endif()
+	if(${WITH_RFX_RLGR_OPTION_INDEX} GREATER 0)
+		enable_language(ASM_NASM)
+		if(WIN32)
+			set(CMAKE_ASM_NASM_FLAGS "-DWIN32")
+		endif()
 
-if(NOT can_use_assembler)
-	set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS} rfx_rlgr.c)
+		set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS}
+			"rfx_rlgr_options.h")
+
+		if(${WITH_RFX_RLGR_OPTION} STREQUAL "asm")
+			set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS}
+				"rfx_rlgr_asm_${TARGET_ARCH}.nasm")
+		endif()
+		if(${WITH_RFX_RLGR_OPTION} STREQUAL "microsoft")
+			set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS}
+				"rfx_rlgr_microsoft_decrlgr3_${TARGET_ARCH}.nasm"
+				"rfx_rlgr_microsoft_encrlgr3_${TARGET_ARCH}.nasm")
+		endif()
+		add_definitions("-DRFX_RLGR_OPTION=${WITH_RFX_RLGR_OPTION_INDEX}")
+	endif()
 endif()
 
 if(WITH_JPEG)
