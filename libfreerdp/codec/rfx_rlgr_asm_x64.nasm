@@ -1,6 +1,22 @@
-section .data
+section .text
 
-XmmZero dd 0, 0, 0, 0
+extern memset
+
+%ifdef WIN32
+
+%define xmemset	memset
+
+%else
+
+xmemset:
+	; convert from MS x64 to System V AMD64 ABI calling convention
+	mov	rdi, rcx
+	mov	rsi, rdx
+	mov	rdx, r8
+	call	memset WRT ..plt
+	ret
+
+%endif
 
 section .code
 
@@ -85,59 +101,38 @@ section .code
 
 %macro WriteValue 1 ; %1:value
 	; if (buffer_size <= 0) exit
-	test r10d, r10d
-	jle rfx_rlgr_decode_exit
+	dec r10d
+	jl rfx_rlgr_decode_exit
 	; *buffer++ = value;
 	mov WORD [r11], %1
 	add r11, 2
-	dec r10d
 %endmacro
 
 %macro WriteZeroes 1 ; %1:nZeroes
-%%WriteZeroes_loop:
-	cmp r10d, 8
-	jl %%WriteZeroes_loop2
-	cmp %1, 8
-	jl %%WriteZeroes_loop2
-	movdqu [r11], xmm1
-	add r11, 16
-	sub r10d, 8
-	sub %1, 8
-	jmp %%WriteZeroes_loop
-%%WriteZeroes_loop2:
-	cmp r10d, 1
-	jl rfx_rlgr_decode_exit
-	je %%WriteZeroes_last
-	cmp %1, 1
-	jl %%WriteZeroes_exit
-	je %%WriteZeroes_lastx
-	mov DWORD [r11], 0
-	add r11, 4
-	sub r10d, 2
-	sub %1, 2
-	jmp %%WriteZeroes_loop2
-%%WriteZeroes_last:
-	test %1, %1
-	je %%WriteZeroes_exit
-%%WriteZeroes_lastx:
-	mov WORD [r11], 0
-	add r11, 2
-	dec r10d
-%%WriteZeroes_exit:
+	sub r10, %1
+	jle rfx_rlgr_decode_exit
+	lea r11, [r11+%1*2]
 %endmacro
 
+%macro WriteZero 0
+	dec r10d
+	jle rfx_rlgr_decode_exit
+	add r11, 2
+%endmacro
 
-%macro UpdateParam 2 ; %1:param, %2:deltaP
+%macro UpdateParamUp 2 ; %1:param, %2:deltaP
 	add %1, %2
 	; if (param > KPMAX) param = KPMAX
 	mov ecx, 80
 	cmp %1, ecx
 	cmovg %1, ecx
-	; if (param < 0) param = 0
+%endmacro
+
+%macro UpdateParamDown 2 ; %1:param, %2:deltaP
 	xor ecx, ecx
-	cmp %1, ecx
-	cmovl %1, ecx
-	; k = (param >> LSGR)
+	sub %1, %2
+	; if (param < 0) param = 0
+	cmovs %1, ecx
 %endmacro
 
 %macro GetMinBits 2 ; %1:val, %2:nbits
@@ -194,17 +189,16 @@ section .code
 	shl eax, cl
 	or ebp, eax
 	; if (!vk)
-	test edi, edi
-	jne %%GetGRCode_1
+	cmp edi, 1
+	je %%GetGRCode_exit
+	jg %%GetGRCode_1
 	;   UpdateParam(krp, -2, kr)
-	UpdateParam r15d, -2
+	UpdateParamDown r15d, 2
 	jmp %%GetGRCode_exit
 %%GetGRCode_1:
 	; else if (vk != 1)
-	cmp edi, 1
-	je %%GetGRCode_exit
 	;   UpdateParam(krp, vk, kr)
-	UpdateParam r15d, edi
+	UpdateParamUp r15d, edi
 %%GetGRCode_exit:
 %endmacro
 
@@ -221,6 +215,7 @@ section .code
 global rfx_rlgr_decode_asm
 
 rfx_rlgr_decode_asm:
+	xor r10, r10
 	mov r10d, [rsp+28h]
 	push rbx
 	push r12
@@ -230,11 +225,24 @@ rfx_rlgr_decode_asm:
 	push rdi
 	push rsi
 	push rbp
-	mov esi, ecx
+
+	push rcx
+	push rdx
+	push r8
+	push r9
+	push r10
+	mov rcx, r9
+	xor rdx, rdx
+	lea r8, [r10+r10]
+	call xmemset
+	pop r10
+	pop r9
+	pop r8
+	pop rdx
+	pop rsi
+
 	xor rax, rax
 	xor r12, r12	
-	lea rcx, [rel XmmZero]	
-	movdqu xmm1, [rcx]
 
 	; bits_used = 0
 	xor rbx,rbx
@@ -266,7 +274,7 @@ rfx_rlgr_decode_rlmode:
 	shl rax, cl
 	WriteZeroes rax
 	;     UpdateParam(kp, UP_GR, k)
-	UpdateParam r13d, 4
+	UpdateParamUp r13d, 4
 	;   loop
 	jmp rfx_rlgr_decode_rlmode
 rfx_rlgr_decode_rlmode_1:
@@ -292,7 +300,7 @@ rfx_rlgr_decode_rlmode_2:
 rfx_rlgr_decode_rlmode_3:
 	WriteValue bp
 	; UpdateParam(kp, -DN_GR, k)
-	UpdateParam r13d, -6
+	UpdateParamDown r13d, 6
 	jmp rfx_rlgr_decode_loop
 
 rfx_rlgr_decode_grmode:
@@ -306,9 +314,9 @@ rfx_rlgr_decode_grmode:
 	test ebp, ebp
 	jne rfx_rlgr_decode_grmode_2
 	;       WriteValue(0)
-	WriteValue 0
+	WriteZero
 	;       UpdateParam(kp, UQ_GR, k)
-	UpdateParam r13d, 3
+	UpdateParamUp r13d, 3
 	jmp rfx_rlgr_decode_loop
 rfx_rlgr_decode_grmode_2:
 	;     else // mag != 0
@@ -316,7 +324,7 @@ rfx_rlgr_decode_grmode_2:
 	GetIntFrom2MagSign ebp
 	WriteValue bp
 	;       UpdateParam(kp, -DQ_GR, k)
-	UpdateParam r13d, -3
+	UpdateParamDown r13d, 3
 	jmp rfx_rlgr_decode_loop
 
 rfx_rlgr_decode_grmode_1:
@@ -333,7 +341,7 @@ rfx_rlgr_decode_grmode_1:
 	test ebp, ebp
 	je rfx_rlgr_decode_grmode_5
 	;       UpdateParam(kp, -2 * DQ_GR, k)
-	UpdateParam r13d, -6
+	UpdateParamDown r13d, 6
 	jmp rfx_rlgr_decode_grmode_5
 rfx_rlgr_decode_grmode_3:
 	;     else if (!val1 && !val2)
@@ -341,7 +349,7 @@ rfx_rlgr_decode_grmode_3:
 	jne rfx_rlgr_decode_grmode_5
 rfx_rlgr_decode_grmode_4:
 	;       UpdateParam(kp, 2 * UQ_GR, k)
-	UpdateParam r13d, 6
+	UpdateParamUp r13d, 6
 rfx_rlgr_decode_grmode_5:
 	; WriteValue(GetIntFrom2MagSign(val1))
 	GetIntFrom2MagSign di
@@ -572,7 +580,7 @@ rfx_rlgr_decode_exit:
 	jl %%CodeGR_2
 	je %%CodeGR_1
 	;   UpdateParam(*krp, vk, kr)
-	UpdateParam r15d, edi
+	UpdateParamUp r15d, edi
 %%CodeGR_1:
 	;   // vk >= 1
 	;   OutputBit(vk, 1)
@@ -583,7 +591,7 @@ rfx_rlgr_decode_exit:
 %%CodeGR_2:
 	; else // vk == 0
 	;   UpdateParam(*krp, -2, kr)
-	UpdateParam r15d, -2
+	UpdateParamDown r15d, 2
 	;   OutputBit(1, 0)
 	OutputBitZero
 %%CodeGR_3:
@@ -660,7 +668,7 @@ rfx_rlgr_encode_rlmode_1:
 	;   numZeros -= runmax
 	sub eax, r14d
 	;   UpdateParam(kp, UP_GR, k)
-	UpdateParam r13d, 4
+	UpdateParamUp r13d, 4
 	; loop
 	jmp rfx_rlgr_encode_rlmode_1
 
@@ -691,7 +699,7 @@ rfx_rlgr_encode_rlmode_5:
 	movsx rbp, bp
 	CodeGR rbp
 	; UpdateParam(kp, -DN_GR, k)
-	UpdateParam r13d, -6
+	UpdateParamDown r13d, 6
 	jmp rfx_rlgr_encode_loop
 
 rfx_rlgr_encode_grmode:
@@ -709,12 +717,12 @@ rfx_rlgr_encode_grmode:
 	test rbp, rbp
 	jz rfx_rlgr_encode_grmode_2
 	;     UpdateParam(kp, -DQ_GR, k)
-	UpdateParam r13d, -3
+	UpdateParamDown r13d, 3
 	jmp rfx_rlgr_encode_loop
 rfx_rlgr_encode_grmode_2:
 	;   else
 	;     UpdateParam(kp, UQ_GR, k)
-	UpdateParam r13d, 3
+	UpdateParamUp r13d, 3
 	jmp rfx_rlgr_encode_loop
 
 rfx_rlgr_encode_grmode_1:
@@ -746,14 +754,14 @@ rfx_rlgr_encode_grmode_3:
 	cmp ebp, esi
 	je rfx_rlgr_encode_loop
 	;     UpdateParam(kp, -2 * DQ_GR, k)
-	UpdateParam r13d, -6
+	UpdateParamDown r13d, 6
 	jmp rfx_rlgr_encode_loop
 	;   else if (!twoMs1 && !twoMs2)
 rfx_rlgr_encode_grmode_4:
 	test ebp, ebp
 	jnz rfx_rlgr_encode_loop
 	;     UpdateParam(kp, 2 * UQ_GR, k)
-	UpdateParam r13d, 6
+	UpdateParamUp r13d, 6
 	jmp rfx_rlgr_encode_loop
 
 rfx_rlgr_encode_flush:
