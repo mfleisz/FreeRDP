@@ -16,10 +16,17 @@
 #include <sys/time.h>
 #endif
 
-//#define PERFTEST_DEBUG 1
-//#define PERFTEST_DUMP_FRAMES 1
+
+//#define PERFTEST_DEBUG
+//#define PERFTEST_DUMP_FRAMES
+#define PERFTEST_CACHE_SURFACE_COMMANDS
+#define PERFTEST_REENCODE				// Enable this to test the encoder by reencoding our decoded data
+#define PERFTEST_REDECODE				// Enable this to verify our decoded data (only useful in combination with PERFTEST_DUMP_FRAMES defined)
+
 #define PERFTEST_WIDTH 1920
 #define PERFTEST_HEIGHT 1080
+
+BYTE screen_buffer[2][PERFTEST_WIDTH*PERFTEST_HEIGHT*4];
 
 enum SURFCMD_CMDTYPE
 {
@@ -40,8 +47,8 @@ NSC_CONTEXT* nsc_context;
 #endif
 
 BOOL perftest_intersect_rect(const RFX_RECT *A, const RFX_RECT *B, RFX_RECT *result);
-void perftest_handle_decoded_rfx_message(SURFACE_BITS_COMMAND* surface_bits_command, RFX_MESSAGE* message, wStream *s, int level);
-void perftest_surface_bits(SURFACE_BITS_COMMAND* surface_bits_command, wStream *s);
+void perftest_handle_decoded_rfx_message(SURFACE_BITS_COMMAND* surface_bits_command, RFX_MESSAGE* message, wStream* s);
+void perftest_surface_bits(SURFACE_BITS_COMMAND* surface_bits_command, wStream* s);
 
 BOOL perftest_intersect_rect(const RFX_RECT *A, const RFX_RECT *B, RFX_RECT *result)
 {
@@ -91,9 +98,41 @@ BOOL perftest_intersect_rect(const RFX_RECT *A, const RFX_RECT *B, RFX_RECT *res
 }
 
 
-void perftest_handle_decoded_rfx_message(SURFACE_BITS_COMMAND* surface_bits_command, RFX_MESSAGE* message, wStream *s, int level)
+void perftest_dump_screen_buffer(UINT16 screen_nr)
+{
+#ifdef PERFTEST_DUMP_FRAMES
+	static int id = 0;
+	int i;
+	FILE* fp;
+	BYTE* p;
+	char fname[1024] = { 0 };
+
+	sprintf(fname, "perftest-%08d-s%d.ppm", id++, screen_nr);
+	if (!(fp = fopen(fname, "wb")))
+	{
+		printf("Error opening [%s] for writing\n", fname);
+	}
+	else
+	{
+		fprintf(fp, "P6\n# CREATOR: FreeRDP-PerfTest\n%d %d\n255\n", PERFTEST_WIDTH, PERFTEST_HEIGHT);
+		p = screen_buffer[screen_nr];
+		for (i=0; i<PERFTEST_HEIGHT*PERFTEST_WIDTH; i++)
+		{
+			fwrite(p, 3, 1, fp);
+			p+=4;
+		}
+		fclose(fp);
+	}
+#endif
+}
+
+
+void perftest_draw_rfx_message(SURFACE_BITS_COMMAND* surface_bits_command, RFX_MESSAGE* message, UINT16 screen_nr, BOOL clear)
 {
 	int i, j, y;
+
+	BYTE* screen;
+
 	UINT8 *src;
 	UINT8 *dst;
 
@@ -101,19 +140,14 @@ void perftest_handle_decoded_rfx_message(SURFACE_BITS_COMMAND* surface_bits_comm
 	RFX_RECT rect_b;
 	RFX_RECT rect_c;
 
-	static BYTE* screen_buffer = NULL;
-
-	if (screen_buffer == NULL)
-	{
-		screen_buffer = (BYTE*)malloc(PERFTEST_WIDTH*PERFTEST_HEIGHT*4);
-		if (screen_buffer == NULL) {
-			printf("Error allocating screen buffer memory\n");
-			return;
-		}
-	}
-
 	rect_a.width = 64;
 	rect_a.height = 64;
+
+	screen = screen_buffer[screen_nr];
+
+	if (clear) {
+		memset(screen, 0, PERFTEST_WIDTH*PERFTEST_HEIGHT*4);
+	}
 
 	for (i = 0; i < message->num_tiles; i++)
 	{
@@ -132,7 +166,7 @@ void perftest_handle_decoded_rfx_message(SURFACE_BITS_COMMAND* surface_bits_comm
 				rect_c.x -= rect_a.x;
 				rect_c.y -= rect_a.y;
 				src = message->tiles[i]->data + rect_c.y*256 + rect_c.x*4;
-				dst = screen_buffer +
+				dst = screen +
 					4 * PERFTEST_WIDTH * (surface_bits_command->destTop + message->tiles[i]->y + rect_c.y) +
 					4 * (surface_bits_command->destLeft + message->tiles[i]->x + rect_c.x);
 
@@ -145,39 +179,20 @@ void perftest_handle_decoded_rfx_message(SURFACE_BITS_COMMAND* surface_bits_comm
 			}
 		}
 	}
+}
 
-#ifdef PERFTEST_DUMP_FRAMES
-	{
-		static int id = 0;
-		FILE* fp;
-		BYTE* p;
-		char fname[1024] = { 0 };
 
-		sprintf(fname, "perftest-%08d.ppm", id++);
-		if (!(fp = fopen(fname, "wb")))
-		{
-			printf("Error opening [%s] for writing\n", fname);
-		}
-		else
-		{
-			fprintf(fp, "P6\n# CREATOR: FreeRDP-PerfTest\n%d %d\n255\n", PERFTEST_WIDTH, PERFTEST_HEIGHT);
-			p = screen_buffer;
-			for (i=0; i<PERFTEST_HEIGHT*PERFTEST_WIDTH; i++)
-			{
-				fwrite(p, 3, 1, fp);
-				p+=4;
-			}
-			fclose(fp);
-		}
-	}
-#endif
+void perftest_handle_decoded_rfx_message(SURFACE_BITS_COMMAND* surface_bits_command, RFX_MESSAGE* message, wStream* s)
+{
+	perftest_draw_rfx_message(surface_bits_command, message, 0, FALSE);
 
-	if (level==0)
+	perftest_dump_screen_buffer(0);
+
+#ifdef PERFTEST_REENCODE
 	{
 		int left, top, width, height;
 		RFX_RECT rect;
 		BYTE* offset;
-		Stream_SetPosition(s, 0);
 
 		left   = surface_bits_command->destLeft;
 		top    = surface_bits_command->destTop;
@@ -189,23 +204,25 @@ void perftest_handle_decoded_rfx_message(SURFACE_BITS_COMMAND* surface_bits_comm
 		rect.width = width;
 		rect.height = height;
 
-		offset = screen_buffer + (top * PERFTEST_WIDTH * 4) + (left * 4);
+		offset = screen_buffer[0] + (top * PERFTEST_WIDTH * 4) + (left * 4);
 
+		Stream_SetPosition(s, 0);
 		rfx_compose_message(rfx_context, s, &rect, 1, offset, width, height, PERFTEST_WIDTH * 4);
 
-#ifdef PERFTEST_DUMP_FRAMES
-#if 0	// Enable this to verify our decoded data (only useful in combination with PERFTEST_DUMP_FRAMES defined
+#if defined(PERFTEST_REDECODE) && defined(PERFTEST_DUMP_FRAMES)
 		{
 			RFX_MESSAGE* msg = rfx_process_message(rfx_context, Stream_Buffer(s), Stream_GetPosition(s));
-			perftest_handle_decoded_rfx_message(surface_bits_command, msg, s, 1);
+			perftest_draw_rfx_message(surface_bits_command, message, 1, TRUE);
 			rfx_message_free(rfx_context, msg);
+			perftest_dump_screen_buffer(1);
 		}
 #endif
-#endif
 	}
+#endif
 }
 
-void perftest_surface_bits(SURFACE_BITS_COMMAND* surface_bits_command, wStream *s)
+
+void perftest_surface_bits(SURFACE_BITS_COMMAND* surface_bits_command, wStream* s)
 {
 #ifdef PERFTEST_DEBUG
 	printf("-------------------------------------------------------------------------------\n");
@@ -230,8 +247,9 @@ void perftest_surface_bits(SURFACE_BITS_COMMAND* surface_bits_command, wStream *
 #ifdef PERFTEST_DEBUG
 		printf(" rec:%04d til:%04d", message->num_rects, message->num_tiles);
 #endif
-		perftest_handle_decoded_rfx_message(surface_bits_command, message, s, 0);
-
+#if defined(PERFTEST_REENCODE) || defined(PERFTEST_DUMP_FRAMES)
+		perftest_handle_decoded_rfx_message(surface_bits_command, message, s);
+#endif
 		rfx_message_free(rfx_context, message);
 	}
 	else if (surface_bits_command->codecID == RDP_CODEC_ID_NSCODEC)
@@ -252,8 +270,13 @@ void perftest_surface_bits(SURFACE_BITS_COMMAND* surface_bits_command, wStream *
 #endif
 }
 
+
 int main(int argc, char **argv)
 {
+#ifdef PERFTEST_CACHE_SURFACE_COMMANDS
+	SURFACE_BITS_COMMAND* commands = NULL;
+	int command_count = 0;
+#endif
 	rdpPcap* pcap;
 	pcap_record record;
 	char *pcap_file;
@@ -262,6 +285,8 @@ int main(int argc, char **argv)
 	wStream *s;
 	STOPWATCH* swtotal = stopwatch_create();
 	UINT32 record_count = 0;
+	int pos, i;
+	int cnt=0;
 
 	if (argc != 2)
 	{
@@ -294,9 +319,13 @@ int main(int argc, char **argv)
 
 	record.data = Stream_Buffer(s);
 
+#ifdef PERFTEST_CACHE_SURFACE_COMMANDS
+	printf(">> Caching surface commands to memory...\n");
+#else
 	printf(">> Processing pcap file ...\n");
+#endif
 
-	while (pcap_has_next_record(pcap) && record_count++ < 100)
+	while (pcap_has_next_record(pcap))
 	{
 		Stream_SetPosition(s, 0);
 		pcap_get_next_record_header(pcap, &record);
@@ -333,8 +362,16 @@ int main(int argc, char **argv)
 						printf("Error: invalid bitmapDataLength \n");
 						return 1;
 					}
+#ifdef PERFTEST_CACHE_SURFACE_COMMANDS
+					commands = (SURFACE_BITS_COMMAND*)realloc((void*)commands, (command_count+1)*sizeof(SURFACE_BITS_COMMAND));
+					commands[command_count] = cmd;
+					commands[command_count].bitmapData = (BYTE*)malloc(cmd.bitmapDataLength);
+					memcpy(commands[command_count].bitmapData, Stream_Pointer(s), cmd.bitmapDataLength);
+					command_count++;
+#else
 					cmd.bitmapData = Stream_Pointer(s);
 					perftest_surface_bits(&cmd, s);
+#endif
 				}
 				break;
 			case CMDTYPE_FRAME_MARKER:
@@ -350,6 +387,18 @@ int main(int argc, char **argv)
 	}
 	pcap_close(pcap);
 
+#ifdef PERFTEST_CACHE_SURFACE_COMMANDS
+	stopwatch_stop(swtotal);
+	printf(">> cached %d surface commands in %fs. start processing ...\n", command_count, stopwatch_get_elapsed_time_in_seconds(swtotal));
+	stopwatch_reset(swtotal);
+	stopwatch_start(swtotal);
+	for(i=0; i<command_count; i++)
+	{
+		Stream_SetLength(s, commands[i].bitmapDataLength);
+		Stream_SetPosition(s, 0);
+		perftest_surface_bits(&commands[i], s);
+	}
+#endif
 	stopwatch_stop(swtotal);
 	printf("\n>>> Execution time: %fs\n    Note: set WITH_PROFILER if you don't see any stats!\n", stopwatch_get_elapsed_time_in_seconds(swtotal));
 
