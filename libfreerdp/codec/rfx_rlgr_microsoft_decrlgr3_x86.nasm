@@ -1,0 +1,929 @@
+; DO NOT USE THIS CODE IN A RELEASE -  IT IS COPYRIGHTED BY MS
+; ONLY TO BE USED FOR INTERNAL PERFORMANCE TESTS !!!!!!!!!!!!
+;
+; Ripped from Windows 8 x86 rdpcorets.dll (6.2.9200.16465)
+; See CacEncoding::encrlgr3 and CacDecoding::decrlgr3
+
+; Disassembled using distorm for python:
+; Get distorm3-3.win-amd64.exe from https://code.google.com/p/distorm/downloads/list
+; See https://code.google.com/p/distorm/wiki/Python
+; 
+;	from distorm3 import Decode, Decode16Bits, Decode32Bits, Decode64Bits
+;   f = open ('c:\\tmp\\rdpcorets-x86-6.2.9200.16465.dll', 'rb')
+;	f.seek(0x1BB310)
+;	data = f.read(0x722)
+;	f.close()
+;	
+;	l = Decode(0, data, Decode32Bits)
+;	jumpinstructions = ['JMP','JO','JNO','JS','JNS','JE','JZ','JNE','JNZ','JB','JNAE','JC','JNB','JAE','JNC','JBE','JNA','JA','JNBE','JL','JNGE','JGE','JNL','JLE','JNG','JG','JNLE','JP','JPE','JNP','JPO','JCXZ','JECXZ']
+;	
+;	lables = []
+;	for i in l:
+;		j = i[2].split(' ')
+;		if j[0] in jumpinstructions:
+;			lables.append(int(j[1],0))
+;	
+;	for i in l:
+;		if i[0] in lables:
+;			print '\nloc_%08X:' % (i[0])
+;		j = i[2].split(' ')
+;		if j[0] in jumpinstructions:
+;			print '\t%s loc_%08X' % (j[0], int(j[1],0))
+;		else:
+;			print '\t%s' % (i[2])
+
+; DECODER INFORMATION:
+; In Microsoft's source this was probably defined like this
+; int CacDecoding::decrlgr3(CacDecoding::RLGRstate *, uchar *Dst, int DstSize, const short *Src, int SrcSize, int unknown1, int unknown2)
+; However this function is not exported and only called from one location and therefore the compiler simplified it to:
+; int CacDecoding::decrlgr3(uchar *data, int data_size, const short *buffer, int buffer_size);
+;
+; Debugging showed that ms always passes 8*data_size for our data_size value
+; -> see "BEGIN CODE MODIFICATIONS" in decoder assembly below
+;
+; Parameters
+; [ebp+08h]:	data		(input: const)
+; [ebp+0ch]:	data_size
+; [ebp+10h]:	buffer		(output)
+; [ebp+14h]:	buffer_size
+
+
+section .text
+
+%ifdef WIN32
+extern _memcpy
+extern _memset
+%define xmemset	_memset
+%define xmemcpy _memcpy
+%define microsoft_cacdecoding_decrlgr3 _microsoft_cacdecoding_decrlgr3
+%else
+extern memcpy
+extern memset
+%define xmemset	memset
+%define xmemcpy memcpy
+%endif
+
+; taken from __allshl from rdpcorets.dll (6.2.9200.16465)
+xallshl:
+	CMP CL, 0x40
+	JAE xallshl_a
+	CMP CL, 0x20
+	JAE xallshl_b
+	SHLD EDX, EAX, CL
+	SHL EAX, CL
+	RET
+
+xallshl_b:
+	MOV EDX, EAX
+	XOR EAX, EAX
+	AND CL, 0x1f
+	SHL EDX, CL
+	RET
+
+xallshl_a:
+	XOR EAX, EAX
+	XOR EDX, EDX
+	RET
+
+
+global microsoft_cacdecoding_decrlgr3
+
+microsoft_cacdecoding_decrlgr3:
+	MOV EDI, EDI
+	PUSH EBP
+	MOV EBP, ESP
+	SUB ESP, 0x1c
+
+; BEGIN CODE MODIFICATIONS -----------------------------------------------------------
+
+	; msrlgr decoder wants our data_size as data_size*8
+	mov eax, [ebp+0ch]
+	shl eax, 3
+	mov [ebp+0ch], eax
+
+; END CODE MODIFICATIONS -----------------------------------------------------------
+
+	MOV EAX, [EBP+0x14]
+	MOV ECX, [EBP+0x10]
+	PUSH EBX
+	PUSH ESI
+	PUSH EDI
+	ADD EAX, EAX
+	PUSH EAX
+	LEA EDX, [EAX+ECX]
+	PUSH 0x0
+	PUSH ECX
+	MOV DWORD [EBP-0xc], 0x1
+	MOV DWORD [EBP-0x8], 0x8
+	MOV DWORD [EBP-0x10], 0x1
+	MOV DWORD [EBP-0x4], 0x8
+	MOV [EBP-0x18], EDX
+	CALL xmemset
+	MOV EBX, [EBP+0xc]
+	ADD ESP, 0xc
+	ADD EBX, -0x20
+	MOV EDI, 0x20
+	JS loc_0000005D
+	MOV EAX, [EBP+0x8]
+	MOV ESI, [EAX]
+	BSWAP ESI
+	ADD EAX, 0x4
+	MOV [EBP+0x8], EAX
+	JMP loc_0000008D
+
+loc_0000005D:
+	LEA EAX, [EBX+0x20]
+	TEST EAX, EAX
+	JLE loc_00000088
+	LEA EAX, [EBX+0x27]
+	SAR EAX, 0x3
+	PUSH EAX
+	PUSH DWORD [EBP+0x8]
+	LEA EAX, [EBP+0x14]
+	PUSH EAX
+	MOV DWORD [EBP+0x14], 0x0
+	CALL xmemcpy
+	MOV ESI, [EBP+0x14]
+	BSWAP ESI
+	ADD ESP, 0xc
+	JMP loc_0000008D
+
+loc_00000088:
+	MOV ESI, 0xa5a5e1e1
+
+loc_0000008D:
+	MOV ECX, 0x1
+
+loc_00000092:
+	TEST ECX, ECX
+	JZ loc_00000433
+	LEA EBX, [EBX+0x0]
+
+loc_000000A0:
+	TEST ESI, ESI
+	JS loc_00000145
+	LEA EAX, [EBX+0x27]
+	MOV [EBP+0x14], EAX
+	MOV EDI, EDI
+
+loc_000000B0:
+	MOV EAX, 0x1
+	XOR EDX, EDX
+	CALL xallshl
+	MOV ECX, [EBP+0x10]
+	LEA ECX, [ECX+EAX*2]
+	MOV EAX, [EBP-0x8]
+	ADD EAX, 0x4
+	MOV [EBP+0x10], ECX
+	MOV [EBP-0x8], EAX
+	CMP EAX, 0x50
+	JLE loc_000000DB
+	MOV EAX, 0x50
+	MOV [EBP-0x8], EAX
+
+loc_000000DB:
+	MOV ECX, EAX
+	SAR ECX, 0x3
+	MOV [EBP-0xc], ECX
+	DEC EDI
+	JZ loc_000000EA
+	ADD ESI, ESI
+	JMP loc_00000133
+
+loc_000000EA:
+	MOV ECX, [EBP+0x14]
+	MOV EDI, 0x20
+	SUB ECX, EDI
+	SUB EBX, EDI
+	MOV [EBP+0x14], ECX
+	JS loc_00000108
+	MOV EAX, [EBP+0x8]
+	MOV ESI, [EAX]
+	ADD EAX, 0x4
+	MOV [EBP+0x8], EAX
+	JMP loc_0000012E
+
+loc_00000108:
+	LEA EAX, [ECX-0x7]
+	TEST EAX, EAX
+	JLE loc_0000013D
+	MOV EAX, ECX
+	SAR EAX, 0x3
+	PUSH EAX
+	PUSH DWORD [EBP+0x8]
+	LEA EAX, [EBP+0xc]
+	PUSH EAX
+	MOV DWORD [EBP+0xc], 0x0
+	CALL xmemcpy
+	MOV ESI, [EBP+0xc]
+	ADD ESP, 0xc
+
+loc_0000012E:
+	BSWAP ESI
+	MOV ECX, [EBP-0xc]
+
+loc_00000133:
+	TEST ESI, ESI
+	JNS loc_000000B0
+	JMP loc_00000145
+
+loc_0000013D:
+	MOV ECX, [EBP-0xc]
+	MOV ESI, 0xa5a5e1e1
+
+loc_00000145:
+	LEA EAX, [ECX+0x1]
+	TEST EAX, EAX
+	JZ loc_000001D2
+	MOV ECX, 0x20
+	SUB ECX, EAX
+	MOV EDX, ESI
+	SHR EDX, CL
+	SUB EDI, EAX
+	MOV [EBP+0xc], EDX
+	TEST EDI, EDI
+	JG loc_000001C9
+	ADD EDI, 0x20
+	SUB EBX, 0x20
+	JS loc_0000017B
+	MOV EAX, [EBP+0x8]
+	MOV ESI, [EAX]
+	BSWAP ESI
+	ADD EAX, 0x4
+	MOV [EBP+0x8], EAX
+	JMP loc_000001AE
+
+loc_0000017B:
+	LEA EAX, [EBX+0x20]
+	TEST EAX, EAX
+	JLE loc_000001A9
+	LEA EAX, [EBX+0x27]
+	SAR EAX, 0x3
+	PUSH EAX
+	PUSH DWORD [EBP+0x8]
+	LEA EAX, [EBP+0x14]
+	PUSH EAX
+	MOV DWORD [EBP+0x14], 0x0
+	CALL xmemcpy
+	MOV ESI, [EBP+0x14]
+	BSWAP ESI
+	MOV EDX, [EBP+0xc]
+	ADD ESP, 0xc
+	JMP loc_000001AE
+
+loc_000001A9:
+	MOV ESI, 0xa5a5e1e1
+
+loc_000001AE:
+	CMP EDI, 0x20
+	JZ loc_000001CD
+	MOV EAX, ESI
+	MOV ECX, EDI
+	SHR EAX, CL
+	MOV ECX, 0x20
+	SUB ECX, EDI
+	OR EDX, EAX
+	SHL ESI, CL
+	MOV ECX, [EBP-0xc]
+	JMP loc_000001D4
+
+loc_000001C9:
+	MOV ECX, EAX
+	SHL ESI, CL
+
+loc_000001CD:
+	MOV ECX, [EBP-0xc]
+	JMP loc_000001D4
+
+loc_000001D2:
+	XOR EDX, EDX
+
+loc_000001D4:
+	MOV EAX, 0x1
+	SHL EAX, CL
+	MOV ECX, [EBP+0x10]
+	NOT EAX
+	AND EAX, EDX
+	LEA ECX, [ECX+EAX*2]
+	MOV [EBP+0x10], ECX
+	CMP ECX, [EBP-0x18]
+	JAE loc_00000717
+	LEA EAX, [EDI+EBX]
+	TEST EAX, EAX
+	JS loc_0000070B
+	XOR EAX, EAX
+	TEST ESI, ESI
+	SETS AL
+	MOV [EBP-0x1c], EAX
+	DEC EDI
+	JZ loc_0000020D
+	ADD ESI, ESI
+	JMP loc_00000255
+
+loc_0000020D:
+	MOV EDI, 0x20
+	SUB EBX, EDI
+	JS loc_00000225
+	MOV ECX, [EBP+0x8]
+	MOV ESI, [ECX]
+	BSWAP ESI
+	ADD ECX, 0x4
+	MOV [EBP+0x8], ECX
+	JMP loc_00000258
+
+loc_00000225:
+	LEA EAX, [EBX+0x20]
+	TEST EAX, EAX
+	JLE loc_00000250
+	LEA EAX, [EBX+0x27]
+	SAR EAX, 0x3
+	PUSH EAX
+	PUSH DWORD [EBP+0x8]
+	LEA EAX, [EBP+0x14]
+	PUSH EAX
+	MOV DWORD [EBP+0x14], 0x0
+	CALL xmemcpy
+	MOV ESI, [EBP+0x14]
+	BSWAP ESI
+	ADD ESP, 0xc
+	JMP loc_00000255
+
+loc_00000250:
+	MOV ESI, 0xa5a5e1e1
+
+loc_00000255:
+	MOV ECX, [EBP+0x8]
+
+loc_00000258:
+	MOV DWORD [EBP+0x14], 0x0
+	LEA EDX, [EBX+0x27]
+
+loc_00000262:
+	MOV EAX, ESI
+	NOT EAX
+	TEST EAX, EAX
+	JNZ loc_00000271
+	MOV EAX, 0x20
+	JMP loc_0000027F
+
+loc_00000271:
+	BSR EAX, EAX
+	MOV [EBP+0xc], EAX
+	MOV EAX, 0x1f
+	SUB EAX, [EBP+0xc]
+
+loc_0000027F:
+	ADD [EBP+0x14], EAX
+	SUB EDI, EAX
+	JNZ loc_000002D5
+	MOV EDI, 0x20
+	SUB EDX, EDI
+	SUB EBX, EDI
+	MOV [EBP-0x14], EDX
+	JS loc_000002A0
+	MOV ESI, [ECX]
+	BSWAP ESI
+	ADD ECX, 0x4
+	MOV [EBP+0x8], ECX
+	JMP loc_00000262
+
+loc_000002A0:
+	LEA EAX, [EDX-0x7]
+	TEST EAX, EAX
+	JLE loc_000002CE
+	MOV EAX, EDX
+	SAR EAX, 0x3
+	PUSH EAX
+	PUSH ECX
+	LEA EAX, [EBP+0xc]
+	PUSH EAX
+	MOV DWORD [EBP+0xc], 0x0
+	CALL xmemcpy
+	MOV ESI, [EBP+0xc]
+	BSWAP ESI
+	MOV ECX, [EBP+0x8]
+	MOV EDX, [EBP-0x14]
+	ADD ESP, 0xc
+	JMP loc_00000262
+
+loc_000002CE:
+	MOV ESI, 0xa5a5e1e1
+	JMP loc_00000262
+
+loc_000002D5:
+	DEC EDI
+	JZ loc_000002DF
+	LEA ECX, [EAX+0x1]
+	SHL ESI, CL
+	JMP loc_00000322
+
+loc_000002DF:
+	MOV EDI, 0x20
+	SUB EBX, EDI
+	JS loc_000002F4
+	MOV ESI, [ECX]
+	BSWAP ESI
+	ADD ECX, 0x4
+	MOV [EBP+0x8], ECX
+	JMP loc_00000322
+
+loc_000002F4:
+	LEA EAX, [EBX+0x20]
+	TEST EAX, EAX
+	JLE loc_0000031D
+	LEA EAX, [EBX+0x27]
+	SAR EAX, 0x3
+	PUSH EAX
+	PUSH ECX
+	LEA EAX, [EBP+0xc]
+	PUSH EAX
+	MOV DWORD [EBP+0xc], 0x0
+	CALL xmemcpy
+	MOV ESI, [EBP+0xc]
+	BSWAP ESI
+	ADD ESP, 0xc
+	JMP loc_00000322
+
+loc_0000031D:
+	MOV ESI, 0xa5a5e1e1
+
+loc_00000322:
+	MOV EAX, [EBP-0x10]
+	TEST EAX, EAX
+	JZ loc_000003A5
+	MOV ECX, 0x20
+	SUB ECX, EAX
+	MOV EDX, ESI
+	SHR EDX, CL
+	SUB EDI, EAX
+	MOV [EBP-0x14], EDX
+	TEST EDI, EDI
+	JG loc_0000039F
+	ADD EDI, 0x20
+	SUB EBX, 0x20
+	JS loc_00000354
+	MOV EAX, [EBP+0x8]
+	MOV ESI, [EAX]
+	BSWAP ESI
+	ADD EAX, 0x4
+	MOV [EBP+0x8], EAX
+	JMP loc_00000387
+
+loc_00000354:
+	LEA EAX, [EBX+0x20]
+	TEST EAX, EAX
+	JLE loc_00000382
+	LEA EAX, [EBX+0x27]
+	SAR EAX, 0x3
+	PUSH EAX
+	PUSH DWORD [EBP+0x8]
+	LEA EAX, [EBP+0xc]
+	PUSH EAX
+	MOV DWORD [EBP+0xc], 0x0
+	CALL xmemcpy
+	MOV ESI, [EBP+0xc]
+	BSWAP ESI
+	MOV EDX, [EBP-0x14]
+	ADD ESP, 0xc
+	JMP loc_00000387
+
+loc_00000382:
+	MOV ESI, 0xa5a5e1e1
+
+loc_00000387:
+	CMP EDI, 0x20
+	JZ loc_000003A7
+	MOV EAX, ESI
+	MOV ECX, EDI
+	SHR EAX, CL
+	MOV ECX, 0x20
+	SUB ECX, EDI
+	OR EDX, EAX
+	SHL ESI, CL
+	JMP loc_000003A7
+
+loc_0000039F:
+	MOV ECX, EAX
+	SHL ESI, CL
+	JMP loc_000003A7
+
+loc_000003A5:
+	XOR EDX, EDX
+
+loc_000003A7:
+	MOV ECX, [EBP-0x10]
+	MOV EAX, [EBP+0x14]
+	SHL EAX, CL
+	MOV ECX, [EBP+0x14]
+	OR EAX, EDX
+	MOV EDX, [EBP-0x4]
+	MOV [EBP+0xc], EAX
+	TEST ECX, ECX
+	JNZ loc_000003CF
+	SUB EDX, 0x2
+	MOV EAX, EDX
+	SAR EAX, 0x1f
+	NOT EAX
+	AND EDX, EAX
+	MOV EAX, [EBP+0xc]
+	JMP loc_000003E3
+
+loc_000003CF:
+	CMP ECX, 0x1
+	JZ loc_000003E6
+	ADD EDX, ECX
+	MOV [EBP-0x4], EDX
+	CMP EDX, 0x50
+	JLE loc_000003E6
+	MOV EDX, 0x50
+
+loc_000003E3:
+	MOV [EBP-0x4], EDX
+
+loc_000003E6:
+	MOV ECX, EDX
+	SAR ECX, 0x3
+	MOV [EBP-0x10], ECX
+	MOV ECX, [EBP-0x8]
+	SUB ECX, 0x6
+	LEA EDX, [EAX+0x1]
+	MOV EAX, ECX
+	SAR EAX, 0x1f
+	NOT EAX
+	AND ECX, EAX
+	MOV [EBP-0x8], ECX
+	SAR ECX, 0x3
+	LEA EAX, [EDI+EBX]
+	MOV [EBP-0xc], ECX
+	TEST EAX, EAX
+	JS loc_0000070B
+	CMP DWORD [EBP-0x1c], 0x0
+	JZ loc_0000041C
+	NEG EDX
+
+loc_0000041C:
+	MOVZX EAX, DX
+	MOV EDX, [EBP+0x10]
+	MOV [EDX], AX
+	ADD EDX, 0x2
+	MOV [EBP+0x10], EDX
+	TEST ECX, ECX
+	JNZ loc_000000A0
+
+loc_00000433:
+	MOV DWORD [EBP+0xc], 0x0
+	LEA EDX, [EBX+0x27]
+
+loc_0000043D:
+	MOV ECX, [EBP+0x8]
+
+loc_00000440:
+	MOV EAX, ESI
+	NOT EAX
+	TEST EAX, EAX
+	JNZ loc_0000044F
+	MOV EAX, 0x20
+	JMP loc_0000045D
+
+loc_0000044F:
+	BSR EAX, EAX
+	MOV [EBP+0x14], EAX
+	MOV EAX, 0x1f
+	SUB EAX, [EBP+0x14]
+
+loc_0000045D:
+	ADD [EBP+0xc], EAX
+	SUB EDI, EAX
+	JNZ loc_000004B0
+	MOV EDI, 0x20
+	SUB EDX, EDI
+	SUB EBX, EDI
+	MOV [EBP-0x1c], EDX
+	JS loc_0000047E
+	MOV ESI, [ECX]
+	BSWAP ESI
+	ADD ECX, 0x4
+	MOV [EBP+0x8], ECX
+	JMP loc_00000440
+
+loc_0000047E:
+	LEA EAX, [EDX-0x7]
+	TEST EAX, EAX
+	JLE loc_000004A9
+	MOV EAX, EDX
+	SAR EAX, 0x3
+	PUSH EAX
+	PUSH ECX
+	LEA EAX, [EBP+0x14]
+	PUSH EAX
+	MOV DWORD [EBP+0x14], 0x0
+	CALL xmemcpy
+	MOV ESI, [EBP+0x14]
+	BSWAP ESI
+	MOV EDX, [EBP-0x1c]
+	ADD ESP, 0xc
+	JMP loc_0000043D
+
+loc_000004A9:
+	MOV ESI, 0xa5a5e1e1
+	JMP loc_00000440
+
+loc_000004B0:
+	DEC EDI
+	JZ loc_000004BA
+	LEA ECX, [EAX+0x1]
+	SHL ESI, CL
+	JMP loc_000004FD
+
+loc_000004BA:
+	MOV EDI, 0x20
+	SUB EBX, EDI
+	JS loc_000004CF
+	MOV ESI, [ECX]
+	BSWAP ESI
+	ADD ECX, 0x4
+	MOV [EBP+0x8], ECX
+	JMP loc_000004FD
+
+loc_000004CF:
+	LEA EAX, [EBX+0x20]
+	TEST EAX, EAX
+	JLE loc_000004F8
+	LEA EAX, [EBX+0x27]
+	SAR EAX, 0x3
+	PUSH EAX
+	PUSH ECX
+	LEA EAX, [EBP+0x14]
+	PUSH EAX
+	MOV DWORD [EBP+0x14], 0x0
+	CALL xmemcpy
+	MOV ESI, [EBP+0x14]
+	BSWAP ESI
+	ADD ESP, 0xc
+	JMP loc_000004FD
+
+loc_000004F8:
+	MOV ESI, 0xa5a5e1e1
+
+loc_000004FD:
+	MOV EDX, [EBP-0x10]
+	TEST EDX, EDX
+	JZ loc_00000585
+	MOV ECX, 0x20
+	SUB ECX, EDX
+	MOV EAX, ESI
+	SHR EAX, CL
+	SUB EDI, EDX
+	MOV [EBP+0x14], EAX
+	TEST EDI, EDI
+	JG loc_0000057F
+	ADD EDI, 0x20
+	SUB EBX, 0x20
+	JS loc_00000533
+	MOV EAX, [EBP+0x8]
+	MOV ESI, [EAX]
+	BSWAP ESI
+	ADD EAX, 0x4
+	MOV [EBP+0x8], EAX
+	JMP loc_00000563
+
+loc_00000533:
+	LEA EAX, [EBX+0x20]
+	TEST EAX, EAX
+	JLE loc_0000055E
+	LEA EAX, [EBX+0x27]
+	SAR EAX, 0x3
+	PUSH EAX
+	PUSH DWORD [EBP+0x8]
+	LEA EAX, [EBP-0x14]
+	PUSH EAX
+	MOV DWORD [EBP-0x14], 0x0
+	CALL xmemcpy
+	MOV ESI, [EBP-0x14]
+	BSWAP ESI
+	ADD ESP, 0xc
+	JMP loc_00000563
+
+loc_0000055E:
+	MOV ESI, 0xa5a5e1e1
+
+loc_00000563:
+	CMP EDI, 0x20
+	JZ loc_0000057A
+	MOV EAX, ESI
+	MOV ECX, EDI
+	SHR EAX, CL
+	MOV ECX, 0x20
+	SUB ECX, EDI
+	OR [EBP+0x14], EAX
+	SHL ESI, CL
+
+loc_0000057A:
+	MOV EAX, [EBP+0x14]
+	JMP loc_00000587
+
+loc_0000057F:
+	MOV ECX, EDX
+	SHL ESI, CL
+	JMP loc_00000587
+
+loc_00000585:
+	XOR EAX, EAX
+
+loc_00000587:
+	MOV ECX, [EBP-0x10]
+	MOV EDX, [EBP+0xc]
+	SHL EDX, CL
+	MOV ECX, [EBP-0x4]
+	OR EDX, EAX
+	MOV EAX, [EBP+0xc]
+	MOV [EBP-0x14], EDX
+	TEST EAX, EAX
+	JNZ loc_000005AC
+	SUB ECX, 0x2
+	MOV EAX, ECX
+	SAR EAX, 0x1f
+	NOT EAX
+	AND ECX, EAX
+	JMP loc_000005C0
+
+loc_000005AC:
+	CMP EAX, 0x1
+	JZ loc_000005C3
+	ADD ECX, EAX
+	MOV [EBP-0x4], ECX
+	CMP ECX, 0x50
+	JLE loc_000005C3
+	MOV ECX, 0x50
+
+loc_000005C0:
+	MOV [EBP-0x4], ECX
+
+loc_000005C3:
+	MOV EAX, ECX
+	SAR EAX, 0x3
+	MOV [EBP-0x10], EAX
+	TEST EDX, EDX
+	JZ loc_00000669
+	BSR EAX, EDX
+	MOV [EBP+0x14], EAX
+	INC EAX
+	MOV [EBP+0xc], EAX
+	JZ loc_00000669
+	MOV ECX, 0x20
+	SUB ECX, EAX
+	MOV EAX, ESI
+	SHR EAX, CL
+	MOV ECX, [EBP+0xc]
+	SUB EDI, ECX
+	MOV [EBP+0x14], EAX
+	TEST EDI, EDI
+	JG loc_00000665
+	ADD EDI, 0x20
+	SUB EBX, 0x20
+	JS loc_00000611
+	MOV EAX, [EBP+0x8]
+	MOV ESI, [EAX]
+	BSWAP ESI
+	ADD EAX, 0x4
+	MOV [EBP+0x8], EAX
+	JMP loc_00000644
+
+loc_00000611:
+	LEA EAX, [EBX+0x20]
+	TEST EAX, EAX
+	JLE loc_0000063F
+	LEA EAX, [EBX+0x27]
+	SAR EAX, 0x3
+	PUSH EAX
+	PUSH DWORD [EBP+0x8]
+	LEA EAX, [EBP+0xc]
+	PUSH EAX
+	MOV DWORD [EBP+0xc], 0x0
+	CALL xmemcpy
+	MOV ESI, [EBP+0xc]
+	BSWAP ESI
+	MOV EDX, [EBP-0x14]
+	ADD ESP, 0xc
+	JMP loc_00000644
+
+loc_0000063F:
+	MOV ESI, 0xa5a5e1e1
+
+loc_00000644:
+	CMP EDI, 0x20
+	JZ loc_00000660
+	MOV EAX, ESI
+	MOV ECX, EDI
+	SHR EAX, CL
+	MOV ECX, [EBP+0x14]
+	OR ECX, EAX
+	MOV [EBP+0x14], ECX
+	MOV ECX, 0x20
+	SUB ECX, EDI
+	SHL ESI, CL
+
+loc_00000660:
+	MOV EAX, [EBP+0x14]
+	JMP loc_0000066E
+
+loc_00000665:
+	SHL ESI, CL
+	JMP loc_0000066E
+
+loc_00000669:
+	XOR EAX, EAX
+	MOV [EBP+0x14], EAX
+
+loc_0000066E:
+	SUB EDX, EAX
+	MOV [EBP-0x14], EDX
+	TEST EAX, EAX
+	JZ loc_0000068C
+	TEST EDX, EDX
+	JZ loc_000006AE
+	MOV ECX, [EBP-0x8]
+	SUB ECX, 0x6
+	MOV EAX, ECX
+	SAR EAX, 0x1f
+	NOT EAX
+	AND ECX, EAX
+	JMP loc_000006A3
+
+loc_0000068C:
+	TEST EDX, EDX
+	JNZ loc_000006AE
+	MOV ECX, [EBP-0x8]
+	ADD ECX, 0x6
+	MOV [EBP-0x8], ECX
+	CMP ECX, 0x50
+	JLE loc_000006A6
+	MOV ECX, 0x50
+
+loc_000006A3:
+	MOV [EBP-0x8], ECX
+
+loc_000006A6:
+	MOV EAX, ECX
+	SAR EAX, 0x3
+	MOV [EBP-0xc], EAX
+
+loc_000006AE:
+	MOV EAX, [EBP-0x18]
+	CMP [EBP+0x10], EAX
+	JAE loc_00000717
+	LEA EAX, [EDI+EBX]
+	TEST EAX, EAX
+	JS loc_0000070B
+	MOV ECX, [EBP+0x14]
+	MOV EDX, ECX
+	INC ECX
+	AND EDX, 0x1
+	SAR ECX, 0x1
+	MOV EAX, EDX
+	NEG EAX
+	XOR ECX, EAX
+	MOV EAX, [EBP+0x10]
+	ADD ECX, EDX
+	MOV [EAX], CX
+	MOV ECX, [EBP-0x14]
+	MOV EDX, ECX
+	ADD EAX, 0x2
+	MOV [EBP+0x10], EAX
+	AND EDX, 0x1
+	INC ECX
+	SAR ECX, 0x1
+	MOV EAX, EDX
+	NEG EAX
+	XOR ECX, EAX
+	MOV EAX, [EBP+0x10]
+	ADD ECX, EDX
+	MOV [EAX], CX
+	MOV ECX, [EBP-0xc]
+	ADD EAX, 0x2
+	MOV [EBP+0x10], EAX
+	TEST ECX, ECX
+	JZ loc_00000433
+	JMP loc_00000092
+
+loc_0000070B:
+	POP EDI
+	POP ESI
+	OR EAX, -0x1
+	POP EBX
+	MOV ESP, EBP
+	POP EBP
+; BEGIN CODE MODIFICATIONS -----------------------------------------------------------
+	RET ; 0x10	; we define this as _cdecl
+; END CODE MODIFICATIONS -----------------------------------------------------------
+
+loc_00000717:
+	POP EDI
+	POP ESI
+	XOR EAX, EAX
+	POP EBX
+	MOV ESP, EBP
+	POP EBP
+; BEGIN CODE MODIFICATIONS -----------------------------------------------------------
+	RET ; 0x10	; we define this as _cdecl
+; END CODE MODIFICATIONS -----------------------------------------------------------

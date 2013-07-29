@@ -1,0 +1,1149 @@
+; DO NOT USE THIS CODE IN A RELEASE -  IT IS COPYRIGHTED BY MS
+; ONLY TO BE USED FOR INTERNAL PERFORMANCE TESTS !!!!!!!!!!!!
+;
+; Ripped from Windows 8 x64 rdpcorets.dll (6.2.9200.16465)
+; See CacEncoding::encrlgr3 and CacDecoding::decrlgr3
+
+; Disassembled using distorm for python:
+; Get distorm3-3.win-amd64.exe from https://code.google.com/p/distorm/downloads/list
+; See https://code.google.com/p/distorm/wiki/Python
+; 
+;	from distorm3 import Decode, Decode16Bits, Decode32Bits, Decode64Bits
+;	f = open ('c:\\tmp\\rdpcorets-x64-6.2.9200.16465.dll', 'rb')
+;	f.seek(0x1F9880)
+;	data = f.read(0x9B0)
+;	f.close()
+;	
+;	l = Decode(0, data, Decode64Bits)
+;	jumpinstructions = ['JMP','JO','JNO','JS','JNS','JE','JZ','JNE','JNZ','JB','JNAE','JC','JNB','JAE','JNC','JBE','JNA','JA','JNBE','JL','JNGE','JGE','JNL','JLE','JNG','JG','JNLE','JP','JPE','JNP','JPO','JCXZ','JECXZ']
+;	
+;	lables = []
+;	for i in l:
+;		j = i[2].split(' ')
+;		if j[0] in jumpinstructions:
+;			lables.append(int(j[1],0))
+;	
+;	for i in l:
+;		if i[0] in lables:
+;			print '\nloc_%08X:' % (i[0])
+;		j = i[2].split(' ')
+;		if j[0] in jumpinstructions:
+;			print '\t%s loc_%08X' % (j[0], int(j[1],0))
+;		else:
+;			print '\t%s' % (i[2])
+
+; ENCODER INFORMATION:
+; In Microsoft's source this was probably defined like this
+; int CacEncoding::encrlgr3(struct CacEncoding::RLGRstate2 *, unsigned char *, int, short *, int, int, int)
+; However this function is not exported and only called from one location and therefore the compiler simplified it to:
+; int CacEncoding::encrlgr3(unsigned char* buffer, int buffer_size, const short* data, int data_size);
+;
+; msrlgr encoder reads beyond data_size and requires the data do be terminated with 8 WORDS: 1 0 0 0 0 0 0 0
+; this was also confirmed by analyzing the data used in Windows 8 when it calls CacEncoding::encrlgr3
+; and msrlgr encoder expects the signed data words to be in "(2 * magnitude - sign)" representation
+; -> see "BEGIN CODE MODIFICATIONS" in encoder assembly below
+;
+; Parameters (I've changed the original order in the asm proc to mimic FreeRDP's order)
+; rcx:		data			(input: const)
+; rdx:		data_size		
+; r8:		buffer			(output)
+; r9:		buffer_size
+
+
+section .text
+
+%macro Get2MagSign 1
+	shl %1, 1
+	jnc %%done
+	neg %1
+	dec %1
+	%%done:
+%endmacro
+
+
+
+global microsoft_cacencoding_encrlgr3
+
+microsoft_cacencoding_encrlgr3:
+	PUSH RBX
+	PUSH RBP
+	PUSH RSI
+	PUSH RDI
+	PUSH R12
+	PUSH R13
+	PUSH R14
+	PUSH R15
+	SUB RSP, 0x18
+
+; BEGIN CODE MODIFICATIONS -----------------------------------------------------------
+
+	; We want the same order in the parameters as with freerdp
+	; swap rcx <-> r8 and rdx <-> r9
+	mov rax, rcx
+	mov rcx, r8
+	mov r8,  rax
+	mov rax, rdx
+	mov rdx, r9
+	mov r9,  rax
+
+; END CODE MODIFICATIONS -----------------------------------------------------------
+
+	MOVSXD RAX, EDX
+	MOV EBP, 0x8
+	MOV [RSP+0x8], RCX
+	SHR RAX, 0x2
+	XOR R10D, R10D
+	MOV R11, RCX
+	CDQE
+	MOV R12, R8
+	MOV [RSP+0x68], EBP
+	LEA R13, [RCX+RAX*4]
+	MOVSXD RCX, R9D
+	LEA EAX, [R10+0x20]
+	LEA R8, [R8+RCX*2]
+	MOV ESI, EBP
+	LEA R14D, [R10+0x50]
+	MOV [RSP+0x70], R13
+	LEA EDX, [RAX-0x1f]
+	MOV [RSP], R8
+
+; BEGIN CODE MODIFICATIONS -----------------------------------------------------------
+
+	; 1) terminate data with 8 WORDS: 1 0 0 0 0 0 0 0
+	mov word [r8+00h], 1
+	mov word [r8+02h], 0
+	mov word [r8+04h], 0
+	mov word [r8+06h], 0
+	mov word [r8+08h], 0
+	mov word [r8+0Ah], 0
+	mov word [r8+0Ch], 0
+	mov word [r8+0Eh], 0
+
+	; 2) msrlgr encoder expects the signed data words to be in "(2 * magnitude - sign)" representation
+		
+	; save data pointer
+	push r12
+
+convert_data:		
+	movsx ebx, word [r12]
+	Get2MagSign ebx
+	mov word [r12], bx
+	add r12, 2
+	cmp r12, r8
+	jl convert_data
+
+	; restore data pointer
+	pop r12
+
+; FINISH CODE MODIFICATIONS -----------------------------------------------------------
+
+
+loc_00000052:
+	MOVSX EBX, WORD [R12]
+	XOR R9D, R9D
+	TEST EBX, EBX
+	JNZ loc_00000071
+	NOP
+
+loc_00000060:
+	MOVSX EBX, WORD [R12+0x2]
+	ADD R12, 0x2
+	INC R9D
+	TEST EBX, EBX
+	JZ loc_00000060
+
+loc_00000071:
+	MOV ECX, EDX
+	MOV R8D, 0x1
+	ADD R12, 0x2
+	SHL R8D, CL
+	XOR EDI, EDI
+	CMP R9D, R8D
+	JL loc_000000B8
+	NOP WORD [RAX+RAX+0x0]
+
+loc_00000090:
+	SUB R9D, R8D
+	ADD EBP, 0x4
+	INC EDI
+	CMP EBP, 0x50
+	MOV R8D, 0x1
+	CMOVG EBP, R14D
+	MOV EDX, EBP
+	SAR EDX, 0x3
+	MOV ECX, EDX
+	SHL R8D, CL
+	CMP R9D, R8D
+	JGE loc_00000090
+	MOV [RSP+0x68], EBP
+
+loc_000000B8:
+	MOV ECX, EDX
+	MOV R8D, 0x1
+	LEA R15D, [RBX+0x1]
+	SHL R8D, CL
+	MOV ECX, EBX
+	SAR R15D, 0x1
+	OR R8D, R9D
+	AND ECX, 0x1
+	LEA R9D, [RDX+0x2]
+	ADD R8D, R8D
+	ADD R9D, EDI
+	OR R8D, ECX
+	DEC R15D
+	JZ loc_0000040C
+	MOV EBP, ESI
+	MOV EBX, R15D
+	SAR EBP, 0x3
+	MOV ECX, EBP
+	SAR EBX, CL
+	LEA R14D, [RBP+0x1]
+	ADD R14D, EBX
+	CMP EBX, 0x2
+	JGE loc_000001D6
+	LEA EDI, [R14+R9]
+	CMP EDI, 0x20
+	JG loc_000001D6
+	MOV ECX, EBX
+	MOV EDX, 0x1
+	MOV R9D, 0x1
+	SHL R9D, CL
+	LEA ECX, [RBP+0x1]
+	DEC R9D
+	SHL R9D, CL
+	MOV ECX, EBP
+	SHL EDX, CL
+	MOV ECX, R14D
+	DEC EDX
+	SHL R8D, CL
+	AND EDX, R15D
+	OR R9D, EDX
+	LEA RDX, [R11+0x4]
+	OR R9D, R8D
+	CMP RDX, R13
+	JB loc_00000160
+	MOV EBP, [RSP+0x68]
+	LEA ECX, [RSI-0x2]
+	MOV R11, RDX
+	LEA ECX, [RCX+RBX*2]
+	MOV R14D, 0x50
+	JMP loc_0000050E
+
+loc_00000160:
+	SUB EAX, EDI
+	TEST EAX, EAX
+	JLE loc_00000183
+	MOV EBP, [RSP+0x68]
+	MOV ECX, EAX
+	MOV R14D, 0x50
+	SHL R9D, CL
+	LEA ECX, [RSI-0x2]
+	LEA ECX, [RCX+RBX*2]
+	OR R10D, R9D
+	JMP loc_0000050E
+
+loc_00000183:
+	NEG EAX
+	MOV ECX, EAX
+	MOV EAX, R9D
+	SHR EAX, CL
+	OR EAX, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, RDX
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JNZ loc_000001B9
+	MOV EBP, [RSP+0x68]
+	LEA ECX, [RSI-0x2]
+	XOR R10D, R10D
+	LEA ECX, [RCX+RBX*2]
+	LEA R14D, [RAX+0x30]
+	JMP loc_0000050E
+
+loc_000001B9:
+	MOV EBP, [RSP+0x68]
+	MOV ECX, EAX
+	MOV R10D, R9D
+	SHL R10D, CL
+	LEA ECX, [RSI-0x2]
+	MOV R14D, 0x50
+	LEA ECX, [RCX+RBX*2]
+	JMP loc_0000050E
+
+loc_000001D6:
+	LEA RDX, [R11+0x4]
+	CMP RDX, R13
+	JB loc_000001E4
+	MOV R11, RDX
+	JMP loc_00000222
+
+loc_000001E4:
+	SUB EAX, R9D
+	TEST EAX, EAX
+	JLE loc_000001F5
+	MOV ECX, EAX
+	SHL R8D, CL
+	OR R10D, R8D
+	JMP loc_00000222
+
+loc_000001F5:
+	NEG EAX
+	MOV ECX, EAX
+	MOV EAX, R8D
+	SHR EAX, CL
+	OR EAX, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, RDX
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JNZ loc_0000021A
+	XOR R10D, R10D
+	JMP loc_00000222
+
+loc_0000021A:
+	MOV ECX, EAX
+	MOV R10D, R8D
+	SHL R10D, CL
+
+loc_00000222:
+	MOV EDI, EBX
+	CMP EBX, 0x20
+	JL loc_00000294
+	MOV R8D, EBX
+	SHR R8, 0x5
+	MOV ECX, R8D
+	SHL ECX, 0x5
+	SUB EDI, ECX
+	NOP DWORD [RAX+RAX+0x0]
+
+loc_00000240:
+	LEA RDX, [R11+0x4]
+	CMP RDX, R13
+	JB loc_0000024E
+	MOV R11, RDX
+	JMP loc_0000028F
+
+loc_0000024E:
+	ADD EAX, -0x20
+	TEST EAX, EAX
+	JLE loc_00000261
+	OR EDX, -0x1
+	MOV ECX, EAX
+	SHL EDX, CL
+	OR R10D, EDX
+	JMP loc_0000028F
+
+loc_00000261:
+	NEG EAX
+	MOV ECX, EAX
+	OR EAX, -0x1
+	SHR EAX, CL
+	OR EAX, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, RDX
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JNZ loc_00000286
+	XOR R10D, R10D
+	JMP loc_0000028F
+
+loc_00000286:
+	MOV ECX, EAX
+	OR R10D, -0x1
+	SHL R10D, CL
+
+loc_0000028F:
+	DEC R8
+	JNZ loc_00000240
+
+loc_00000294:
+	LEA R9D, [RBP+0x1]
+	ADD R9D, EDI
+	CMP R9D, 0x20
+	JG loc_0000031B
+	MOV ECX, EDI
+	MOV EDX, 0x1
+	MOV R8D, 0x1
+	SHL R8D, CL
+	LEA ECX, [RBP+0x1]
+	DEC R8D
+	SHL R8D, CL
+	MOV ECX, EBP
+	SHL EDX, CL
+	DEC EDX
+	AND EDX, R15D
+	OR R8D, EDX
+	LEA RDX, [R11+0x4]
+	CMP RDX, R13
+	JB loc_000002D7
+	MOV R11, RDX
+	JMP loc_000003D4
+
+loc_000002D7:
+	SUB EAX, R9D
+	TEST EAX, EAX
+	JLE loc_000002EB
+	MOV ECX, EAX
+	SHL R8D, CL
+	OR R10D, R8D
+	JMP loc_000003D4
+
+loc_000002EB:
+	NEG EAX
+	MOV ECX, EAX
+	MOV EAX, R8D
+	SHR EAX, CL
+	OR EAX, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, RDX
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JNZ loc_00000313
+	XOR R10D, R10D
+	JMP loc_000003D4
+
+loc_00000313:
+	MOV R10D, R8D
+	JMP loc_000003CF
+
+loc_0000031B:
+	LEA R8, [R11+0x4]
+	LEA R9D, [RDI+0x1]
+	CMP R8, R13
+	JB loc_0000032D
+	MOV R11, R8
+	JMP loc_00000379
+
+loc_0000032D:
+	MOV ECX, EDI
+	MOV EDX, 0x1
+	SUB EAX, R9D
+	SHL EDX, CL
+	LEA EDX, [RDX*2-0x2]
+	TEST EAX, EAX
+	JLE loc_0000034D
+	MOV ECX, EAX
+	SHL EDX, CL
+	OR R10D, EDX
+	JMP loc_00000379
+
+loc_0000034D:
+	NEG EAX
+	MOV ECX, EAX
+	MOV EAX, EDX
+	SHR EAX, CL
+	OR EAX, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, R8
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JNZ loc_00000371
+	XOR R10D, R10D
+	JMP loc_00000379
+
+loc_00000371:
+	MOV ECX, EAX
+	MOV R10D, EDX
+	SHL R10D, CL
+
+loc_00000379:
+	TEST EBP, EBP
+	JZ loc_000003D4
+	LEA R8, [R11+0x4]
+	CMP R8, R13
+	JB loc_0000038B
+	MOV R11, R8
+	JMP loc_000003D4
+
+loc_0000038B:
+	MOV ECX, EBP
+	MOV EDX, 0x1
+	SUB EAX, EBP
+	SHL EDX, CL
+	DEC EDX
+	AND EDX, R15D
+	TEST EAX, EAX
+	JLE loc_000003A8
+	MOV ECX, EAX
+	SHL EDX, CL
+	OR R10D, EDX
+	JMP loc_000003D4
+
+loc_000003A8:
+	NEG EAX
+	MOV ECX, EAX
+	MOV EAX, EDX
+	SHR EAX, CL
+	OR EAX, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, R8
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JNZ loc_000003CC
+	XOR R10D, R10D
+	JMP loc_000003D4
+
+loc_000003CC:
+	MOV R10D, EDX
+
+loc_000003CF:
+	MOV ECX, EAX
+	SHL R10D, CL
+
+loc_000003D4:
+	MOV R14D, 0x50
+	CMP EBX, 0x2
+	JGE loc_000003F7
+	MOV EBP, [RSP+0x68]
+	LEA ESI, [RSI+RBX*2]
+	ADD ESI, -0x2
+	MOV ECX, ESI
+	SAR ECX, 0x1f
+	NOT ECX
+	AND ESI, ECX
+	JMP loc_00000517
+
+loc_000003F7:
+	MOV EBP, [RSP+0x68]
+	LEA ECX, [RBX+RSI]
+	MOV ESI, ECX
+	CMP ECX, 0x50
+	CMOVG ESI, R14D
+	JMP loc_00000517
+
+loc_0000040C:
+	MOV EDX, ESI
+	LEA EBX, [R9+0x1]
+	SAR EDX, 0x3
+	ADD EBX, EDX
+	CMP EBX, 0x20
+	JG loc_00000476
+	LEA R9, [R11+0x4]
+	CMP R9, R13
+	JB loc_0000042D
+	MOV R11, R9
+	JMP loc_0000050B
+
+loc_0000042D:
+	LEA ECX, [RDX+0x1]
+	SUB EAX, EBX
+	SHL R8D, CL
+	TEST EAX, EAX
+	JLE loc_00000446
+	MOV ECX, EAX
+	SHL R8D, CL
+	OR R10D, R8D
+	JMP loc_0000050B
+
+loc_00000446:
+	NEG EAX
+	MOV ECX, EAX
+	MOV EAX, R8D
+	SHR EAX, CL
+	OR EAX, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, R9
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JNZ loc_0000046E
+	XOR R10D, R10D
+	JMP loc_0000050B
+
+loc_0000046E:
+	MOV R10D, R8D
+	JMP loc_00000506
+
+loc_00000476:
+	LEA RBX, [R11+0x4]
+	CMP RBX, R13
+	JB loc_00000484
+	MOV R11, RBX
+	JMP loc_000004C2
+
+loc_00000484:
+	SUB EAX, R9D
+	TEST EAX, EAX
+	JLE loc_00000495
+	MOV ECX, EAX
+	SHL R8D, CL
+	OR R10D, R8D
+	JMP loc_000004C2
+
+loc_00000495:
+	NEG EAX
+	MOV ECX, EAX
+	MOV EAX, R8D
+	SHR EAX, CL
+	OR EAX, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, RBX
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JNZ loc_000004BA
+	XOR R10D, R10D
+	JMP loc_000004C2
+
+loc_000004BA:
+	MOV ECX, EAX
+	MOV R10D, R8D
+	SHL R10D, CL
+
+loc_000004C2:
+	LEA ECX, [RDX+0x1]
+	LEA RDX, [R11+0x4]
+	CMP RDX, R13
+	JB loc_000004D3
+	MOV R11, RDX
+	JMP loc_0000050B
+
+loc_000004D3:
+	SUB EAX, ECX
+	TEST EAX, EAX
+	JLE loc_000004E4
+	XOR EDX, EDX
+	MOV ECX, EAX
+	SHL EDX, CL
+	OR R10D, EDX
+	JMP loc_0000050B
+
+loc_000004E4:
+	NEG EAX
+	MOV ECX, EAX
+	XOR EAX, EAX
+	SHR EAX, CL
+	OR EAX, R10D
+	XOR R10D, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, RDX
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JZ loc_0000050B
+
+loc_00000506:
+	MOV ECX, EAX
+	SHL R10D, CL
+
+loc_0000050B:
+	LEA ECX, [RSI-0x2]
+
+loc_0000050E:
+	MOV ESI, ECX
+	SAR ESI, 0x1f
+	NOT ESI
+	AND ESI, ECX
+
+loc_00000517:
+	SUB EBP, 0x6
+	MOV ECX, EBP
+	SAR ECX, 0x1f
+	NOT ECX
+	AND EBP, ECX
+	MOV EDX, EBP
+	MOV [RSP+0x68], EBP
+	SAR EDX, 0x3
+	CMP R12, [RSP]
+	JAE loc_00000948
+	TEST EDX, EDX
+	JNZ loc_00000052
+	NOP
+
+loc_00000540:
+	XOR R9D, R9D
+
+loc_00000543:
+	MOV [RSP+0x78], R9D
+
+loc_00000548:
+	MOVSX R15D, WORD [R12]
+	MOVSX EDI, WORD [R12+0x2]
+	ADD R12, 0x4
+	MOV [RSP+0x60], EDI
+	TEST R15D, R15D
+	JNZ loc_00000568
+	TEST EDI, EDI
+	JZ loc_00000887
+
+loc_00000568:
+	LEA EBP, [RDI+R15]
+	MOV EBX, ESI
+	SAR EBX, 0x3
+	MOV R14D, EBP
+	MOV ECX, EBX
+	SAR R14D, CL
+	TEST EBP, EBP
+	JZ loc_00000586
+	BSR R13D, EBP
+	INC R13D
+	JMP loc_00000589
+
+loc_00000586:
+	XOR R13D, R13D
+
+loc_00000589:
+	CMP R14D, 0x1
+	JG loc_00000635
+	MOV ECX, R14D
+	MOV EDX, 0x1
+	MOV R8D, 0x1
+	SHL R8D, CL
+	LEA ECX, [RBX+0x1]
+	LEA R9D, [RBX+0x1]
+	DEC R8D
+	SHL R8D, CL
+	MOV ECX, EBX
+	SHL EDX, CL
+	MOV ECX, R13D
+	DEC EDX
+	AND EDX, EBP
+	OR R8D, EDX
+	LEA RDX, [R11+0x4]
+	SHL R8D, CL
+	LEA ECX, [R14+R13]
+	ADD R9D, ECX
+	OR R8D, R15D
+	CMP RDX, [RSP+0x70]
+	JB loc_000005DC
+	MOV R11, RDX
+	JMP loc_0000061A
+
+loc_000005DC:
+	SUB EAX, R9D
+	TEST EAX, EAX
+	JLE loc_000005ED
+	MOV ECX, EAX
+	SHL R8D, CL
+	OR R10D, R8D
+	JMP loc_0000061A
+
+loc_000005ED:
+	NEG EAX
+	MOV ECX, EAX
+	MOV EAX, R8D
+	SHR EAX, CL
+	OR EAX, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, RDX
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JNZ loc_00000612
+	XOR R10D, R10D
+	JMP loc_0000061A
+
+loc_00000612:
+	MOV ECX, EAX
+	MOV R10D, R8D
+	SHL R10D, CL
+
+loc_0000061A:
+	DEC R14D
+	LEA ECX, [RSI+R14*2]
+	MOV R14D, 0x50
+	MOV ESI, ECX
+	SAR ESI, 0x1f
+	NOT ESI
+	AND ESI, ECX
+	JMP loc_00000868
+
+loc_00000635:
+	MOV EDI, R14D
+	CMP R14D, 0x20
+	JL loc_000006A6
+	MOV R9, [RSP+0x70]
+	MOV R8D, R14D
+	SHR R8, 0x5
+	MOV ECX, R8D
+	SHL ECX, 0x5
+	SUB EDI, ECX
+
+loc_00000652:
+	LEA RDX, [R11+0x4]
+	CMP RDX, R9
+	JB loc_00000660
+	MOV R11, RDX
+	JMP loc_000006A1
+
+loc_00000660:
+	ADD EAX, -0x20
+	TEST EAX, EAX
+	JLE loc_00000673
+	OR EDX, -0x1
+	MOV ECX, EAX
+	SHL EDX, CL
+	OR R10D, EDX
+	JMP loc_000006A1
+
+loc_00000673:
+	NEG EAX
+	MOV ECX, EAX
+	OR EAX, -0x1
+	SHR EAX, CL
+	OR EAX, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, RDX
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JNZ loc_00000698
+	XOR R10D, R10D
+	JMP loc_000006A1
+
+loc_00000698:
+	MOV ECX, EAX
+	OR R10D, -0x1
+	SHL R10D, CL
+
+loc_000006A1:
+	DEC R8
+	JNZ loc_00000652
+
+loc_000006A6:
+	LEA EDX, [RDI+R13]
+	LEA R9D, [RBX+0x1]
+	ADD R9D, EDX
+	CMP R9D, 0x20
+	JG loc_0000073F
+	MOV ECX, EDI
+	MOV EDX, 0x1
+	MOV R8D, 0x1
+	SHL R8D, CL
+	LEA ECX, [RBX+0x1]
+	DEC R8D
+	SHL R8D, CL
+	MOV ECX, EBX
+	SHL EDX, CL
+	MOV ECX, R13D
+	DEC EDX
+	AND EDX, EBP
+	OR R8D, EDX
+	LEA RDX, [R11+0x4]
+	SHL R8D, CL
+	OR R8D, R15D
+	CMP RDX, [RSP+0x70]
+	JB loc_000006FB
+	MOV R11, RDX
+	JMP loc_00000851
+
+loc_000006FB:
+	SUB EAX, R9D
+	TEST EAX, EAX
+	JLE loc_0000070F
+	MOV ECX, EAX
+	SHL R8D, CL
+	OR R10D, R8D
+	JMP loc_00000851
+
+loc_0000070F:
+	NEG EAX
+	MOV ECX, EAX
+	MOV EAX, R8D
+	SHR EAX, CL
+	OR EAX, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, RDX
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JNZ loc_00000737
+	XOR R10D, R10D
+	JMP loc_00000851
+
+loc_00000737:
+	MOV R10D, R8D
+	JMP loc_0000084C
+
+loc_0000073F:
+	MOV RCX, [RSP+0x70]
+	LEA R8, [R11+0x4]
+	LEA R9D, [RDI+0x1]
+	CMP R8, RCX
+	JB loc_00000756
+	MOV R11, R8
+	JMP loc_000007A7
+
+loc_00000756:
+	MOV ECX, EDI
+	MOV EDX, 0x1
+	SUB EAX, R9D
+	SHL EDX, CL
+	LEA EDX, [RDX*2-0x2]
+	TEST EAX, EAX
+	JLE loc_00000776
+	MOV ECX, EAX
+	SHL EDX, CL
+	OR R10D, EDX
+	JMP loc_000007A2
+
+loc_00000776:
+	NEG EAX
+	MOV ECX, EAX
+	MOV EAX, EDX
+	SHR EAX, CL
+	OR EAX, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, R8
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JNZ loc_0000079A
+	XOR R10D, R10D
+	JMP loc_000007A2
+
+loc_0000079A:
+	MOV ECX, EAX
+	MOV R10D, EDX
+	SHL R10D, CL
+
+loc_000007A2:
+	MOV RCX, [RSP+0x70]
+
+loc_000007A7:
+	TEST EBX, EBX
+	JZ loc_00000801
+	LEA R8, [R11+0x4]
+	CMP R8, RCX
+	JB loc_000007B9
+	MOV R11, R8
+	JMP loc_00000801
+
+loc_000007B9:
+	MOV ECX, EBX
+	MOV EDX, 0x1
+	SUB EAX, EBX
+	SHL EDX, CL
+	DEC EDX
+	AND EDX, EBP
+	TEST EAX, EAX
+	JLE loc_000007D5
+	MOV ECX, EAX
+	SHL EDX, CL
+	OR R10D, EDX
+	JMP loc_00000801
+
+loc_000007D5:
+	NEG EAX
+	MOV ECX, EAX
+	MOV EAX, EDX
+	SHR EAX, CL
+	OR EAX, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, R8
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JNZ loc_000007F9
+	XOR R10D, R10D
+	JMP loc_00000801
+
+loc_000007F9:
+	MOV ECX, EAX
+	MOV R10D, EDX
+	SHL R10D, CL
+
+loc_00000801:
+	LEA RDX, [R11+0x4]
+	CMP RDX, [RSP+0x70]
+	JB loc_00000811
+	MOV R11, RDX
+	JMP loc_00000851
+
+loc_00000811:
+	SUB EAX, R13D
+	TEST EAX, EAX
+	JLE loc_00000824
+	MOV ECX, EAX
+	MOV EDX, R15D
+	SHL EDX, CL
+	OR R10D, EDX
+	JMP loc_00000851
+
+loc_00000824:
+	NEG EAX
+	MOV ECX, EAX
+	MOV EAX, R15D
+	SHR EAX, CL
+	OR EAX, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, RDX
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JNZ loc_00000849
+	XOR R10D, R10D
+	JMP loc_00000851
+
+loc_00000849:
+	MOV R10D, R15D
+
+loc_0000084C:
+	MOV ECX, EAX
+	SHL R10D, CL
+
+loc_00000851:
+	MOV EDI, [RSP+0x60]
+	LEA ECX, [R14+RSI]
+	MOV R14D, 0x50
+	MOV ESI, ECX
+	CMP ECX, 0x50
+	CMOVG ESI, R14D
+
+loc_00000868:
+	MOV R9D, [RSP+0x78]
+	TEST R15D, R15D
+	JZ loc_00000548
+	TEST EDI, EDI
+	JZ loc_00000548
+	ADD R9D, 0x6
+	JMP loc_00000543
+
+loc_00000887:
+	MOV R13, [RSP+0x70]
+	MOV ECX, ESI
+	SAR ECX, 0x3
+	TEST ECX, ECX
+	JZ loc_000008DF
+	LEA RDX, [R11+0x4]
+	INC ECX
+	CMP RDX, R13
+	JB loc_000008A5
+	MOV R11, RDX
+	JMP loc_00000906
+
+loc_000008A5:
+	SUB EAX, ECX
+	TEST EAX, EAX
+	JLE loc_000008B6
+	XOR EDX, EDX
+	MOV ECX, EAX
+	SHL EDX, CL
+	OR R10D, EDX
+	JMP loc_00000906
+
+loc_000008B6:
+	NEG EAX
+	MOV ECX, EAX
+	XOR EAX, EAX
+	SHR EAX, CL
+	OR EAX, R10D
+	XOR R10D, R10D
+	BSWAP EAX
+	MOV [R11], EAX
+	MOV EAX, 0x20
+	MOV R11, RDX
+	SUB EAX, ECX
+	CMP EAX, 0x20
+	JZ loc_00000906
+	MOV ECX, EAX
+	SHL R10D, CL
+	JMP loc_00000906
+
+loc_000008DF:
+	LEA R8, [R11+0x4]
+	CMP R8, R13
+	JAE loc_00000903
+	DEC EAX
+	XOR EDX, EDX
+	MOV ECX, EAX
+	SHL EDX, CL
+	OR R10D, EDX
+	TEST EAX, EAX
+	JNZ loc_00000906
+	BSWAP R10D
+	LEA EAX, [RCX+0x20]
+	MOV [R11], R10D
+	XOR R10D, R10D
+
+loc_00000903:
+	MOV R11, R8
+
+loc_00000906:
+	MOV EDX, [RSP+0x68]
+	LEA ECX, [RSI-0x2]
+	SUB EDX, R9D
+	MOV ESI, ECX
+	SAR ESI, 0x1f
+	MOV EBP, EDX
+	SAR EBP, 0x1f
+	NOT ESI
+	NOT EBP
+	AND ESI, ECX
+	AND EBP, EDX
+	ADD EBP, 0x6
+	CMP EBP, 0x50
+	CMOVG EBP, R14D
+	MOV EDX, EBP
+	MOV [RSP+0x68], EBP
+	SAR EDX, 0x3
+	CMP R12, [RSP]
+	JAE loc_00000948
+	TEST EDX, EDX
+	JZ loc_00000540
+	JMP loc_00000052
+
+loc_00000948:
+	MOV R8, R11
+	SUB R8, [RSP+0x8]
+	AND R8D, -0x4
+	CMP EAX, 0x20
+	JZ loc_0000099C
+	MOV EDX, R10D
+	MOV ECX, R10D
+	SHR ECX, 0x10
+	AND EDX, 0xff0000
+	OR EDX, ECX
+	MOV ECX, R10D
+	AND R10D, 0xff00
+	SHL ECX, 0x10
+	SHR EDX, 0x8
+	OR ECX, R10D
+	SHL ECX, 0x8
+	OR EDX, ECX
+	MOV ECX, 0x27
+	SUB ECX, EAX
+	MOV [R11], EDX
+	MOV EAX, ECX
+	CDQ
+	AND EDX, 0x7
+	ADD EAX, EDX
+	SAR EAX, 0x3
+	ADD EAX, R8D
+	JMP loc_0000099F
+
+loc_0000099C:
+	MOV EAX, R8D
+
+loc_0000099F:
+	ADD RSP, 0x18
+	POP R15
+	POP R14
+	POP R13
+	POP R12
+	POP RDI
+	POP RSI
+	POP RBP
+	POP RBX
+	RET
