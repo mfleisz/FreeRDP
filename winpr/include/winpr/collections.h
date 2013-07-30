@@ -58,7 +58,7 @@ struct _wQueue
 	int tail;
 	int size;
 	void** array;
-	HANDLE mutex;
+	CRITICAL_SECTION lock;
 	HANDLE event;
 
 	wObject object;
@@ -67,8 +67,8 @@ typedef struct _wQueue wQueue;
 
 WINPR_API int Queue_Count(wQueue* queue);
 
-WINPR_API BOOL Queue_Lock(wQueue* queue);
-WINPR_API BOOL Queue_Unlock(wQueue* queue);
+WINPR_API void Queue_Lock(wQueue* queue);
+WINPR_API void Queue_Unlock(wQueue* queue);
 
 WINPR_API HANDLE Queue_Event(wQueue* queue);
 
@@ -93,7 +93,7 @@ struct _wStack
 	int size;
 	int capacity;
 	void** array;
-	HANDLE mutex;
+	CRITICAL_SECTION lock;
 	BOOL synchronized;
 	wObject object;
 };
@@ -125,7 +125,7 @@ struct _wArrayList
 
 	int size;
 	void** array;
-	HANDLE mutex;
+	CRITICAL_SECTION lock;
 
 	wObject object;
 };
@@ -137,8 +137,8 @@ WINPR_API BOOL ArrayList_IsFixedSized(wArrayList* arrayList);
 WINPR_API BOOL ArrayList_IsReadOnly(wArrayList* arrayList);
 WINPR_API BOOL ArrayList_IsSynchronized(wArrayList* arrayList);
 
-WINPR_API BOOL ArrayList_Lock(wArrayList* arrayList);
-WINPR_API BOOL ArrayList_Unlock(wArrayList* arrayList);
+WINPR_API void ArrayList_Lock(wArrayList* arrayList);
+WINPR_API void ArrayList_Unlock(wArrayList* arrayList);
 
 WINPR_API void* ArrayList_GetItem(wArrayList* arrayList, int index);
 WINPR_API void ArrayList_SetItem(wArrayList* arrayList, int index, void* obj);
@@ -165,7 +165,7 @@ WINPR_API void ArrayList_Free(wArrayList* arrayList);
 struct _wDictionary
 {
 	BOOL synchronized;
-	HANDLE mutex;
+	CRITICAL_SECTION lock;
 };
 typedef struct _wDictionary wDictionary;
 
@@ -174,7 +174,7 @@ typedef struct _wDictionary wDictionary;
 struct _wListDictionary
 {
 	BOOL synchronized;
-	HANDLE mutex;
+	CRITICAL_SECTION lock;
 };
 typedef struct _wListDictionary wListDictionary;
 
@@ -201,7 +201,7 @@ typedef int (*REFERENCE_FREE)(void* context, void* ptr);
 struct _wReferenceTable
 {
 	UINT32 size;
-	HANDLE mutex;
+	CRITICAL_SECTION lock;
 	void* context;
 	BOOL synchronized;
 	wReference* array;
@@ -220,7 +220,7 @@ WINPR_API void ReferenceTable_Free(wReferenceTable* referenceTable);
 struct _wCountdownEvent
 {
 	DWORD count;
-	HANDLE mutex;
+	CRITICAL_SECTION lock;
 	HANDLE event;
 	DWORD initialCount;
 };
@@ -245,7 +245,7 @@ struct _wBufferPool
 	int size;
 	int capacity;
 	void** array;
-	HANDLE mutex;
+	CRITICAL_SECTION lock;
 	int fixedSize;
 	DWORD alignment;
 	BOOL synchronized;
@@ -266,7 +266,7 @@ struct _wObjectPool
 	int size;
 	int capacity;
 	void** array;
-	HANDLE mutex;
+	CRITICAL_SECTION lock;
 	wObject object;
 	BOOL synchronized;
 };
@@ -304,7 +304,7 @@ struct _wMessageQueue
 	int size;
 	int capacity;
 	wMessage* array;
-	HANDLE mutex;
+	CRITICAL_SECTION lock;
 	HANDLE event;
 };
 typedef struct _wMessageQueue wMessageQueue;
@@ -401,7 +401,7 @@ typedef struct _wEventType wEventType;
 
 struct _wPubSub
 {
-	HANDLE mutex;
+	CRITICAL_SECTION lock;
 	BOOL synchronized;
 
 	int size;
@@ -410,8 +410,8 @@ struct _wPubSub
 };
 typedef struct _wPubSub wPubSub;
 
-WINPR_API BOOL PubSub_Lock(wPubSub* pubSub);
-WINPR_API BOOL PubSub_Unlock(wPubSub* pubSub);
+WINPR_API void PubSub_Lock(wPubSub* pubSub);
+WINPR_API void PubSub_Unlock(wPubSub* pubSub);
 
 WINPR_API wEventType* PubSub_GetEventTypes(wPubSub* pubSub, int* count);
 WINPR_API void PubSub_AddEventTypes(wPubSub* pubSub, wEventType* events, int count);
