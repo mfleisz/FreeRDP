@@ -227,6 +227,7 @@ int credssp_client_authenticate(rdpCredssp* credssp)
 
 	status = credssp->table->AcquireCredentialsHandle(NULL, NLA_PKG_NAME,
 			SECPKG_CRED_OUTBOUND, NULL, &credssp->identity, NULL, NULL, &credentials, &expiration);
+			//SECPKG_CRED_OUTBOUND, NULL, NULL, NULL, NULL, &credentials, &expiration);
 
 	if (status != SEC_E_OK)
 	{
@@ -1249,27 +1250,34 @@ rdpCredssp* credssp_new(freerdp* instance, rdpTransport* transport, rdpSettings*
 
 		if (credssp->server)
 		{
-			status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Server"),
-					0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
-			if (status == ERROR_SUCCESS)
-			{
-				status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType, NULL, &dwSize);
+			if (!settings->guestSSPIEnabled) {
+				credssp->SspiModule = (LPTSTR) malloc((_tcslen(_T("secur32.dll"))  + 1)  * sizeof(TCHAR));
+				_tcscpy(credssp->SspiModule,_T("secur32.dll"));				 
+			} else {
+				status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Server"),
+					0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 				if (status == ERROR_SUCCESS)
 				{
-					credssp->SspiModule = (LPTSTR) malloc(dwSize + sizeof(TCHAR));
-
-					status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType,
-							(BYTE*) credssp->SspiModule, &dwSize);
+					status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType, NULL, &dwSize);
 
 					if (status == ERROR_SUCCESS)
 					{
-						_tprintf(_T("Using SSPI Module: %s\n"), credssp->SspiModule);
-						RegCloseKey(hKey);
+						credssp->SspiModule = (LPTSTR) malloc(dwSize + sizeof(TCHAR));
+
+						status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType,
+								(BYTE*) credssp->SspiModule, &dwSize);
+
+						if (status == ERROR_SUCCESS)
+						{
+							_tprintf(_T("Using SSPI Module: %s\n"), credssp->SspiModule);
+							RegCloseKey(hKey);
+						}
 					}
 				}
 			}
+			
 		}
 	}
 
