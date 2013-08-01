@@ -45,6 +45,7 @@ typedef CHAR TCHAR;
 #define _tcsrchr	wcsrchr
 #define _tcsstr		wcsstr
 #define _stprintf_s	swprintf_s
+#define _tcslen		_wcslen
 #else
 #define _tprintf	printf
 #define _tcsdup		_strdup
@@ -55,6 +56,7 @@ typedef CHAR TCHAR;
 #define _tcsrchr	strrchr
 #define _tcsstr		strstr
 #define _stprintf_s	sprintf_s
+#define _tcslen		strlen
 #endif
 
 #endif
