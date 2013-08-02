@@ -28,6 +28,12 @@
 
 BYTE screen_buffer[2][PERFTEST_WIDTH*PERFTEST_HEIGHT*4];
 
+STOPWATCH* swtotal;
+STOPWATCH* swencoding;
+STOPWATCH* swdecoding;
+STOPWATCH* swdrawing;
+STOPWATCH* swdumpscreen;
+
 enum SURFCMD_CMDTYPE
 {
 	CMDTYPE_SET_SURFACE_BITS = 0x0001,
@@ -107,6 +113,8 @@ void perftest_dump_screen_buffer(UINT16 screen_nr)
 	BYTE* p;
 	char fname[1024] = { 0 };
 
+	stopwatch_start(swdumpscreen);
+
 	sprintf(fname, "perftest-%08d-s%d.ppm", id++, screen_nr);
 	if (!(fp = fopen(fname, "wb")))
 	{
@@ -123,6 +131,7 @@ void perftest_dump_screen_buffer(UINT16 screen_nr)
 		}
 		fclose(fp);
 	}
+	stopwatch_stop(swdumpscreen);
 #endif
 }
 
@@ -139,6 +148,8 @@ void perftest_draw_rfx_message(SURFACE_BITS_COMMAND* surface_bits_command, RFX_M
 	RFX_RECT rect_a;
 	RFX_RECT rect_b;
 	RFX_RECT rect_c;
+
+	stopwatch_start(swdrawing);
 
 	rect_a.width = 64;
 	rect_a.height = 64;
@@ -179,6 +190,7 @@ void perftest_draw_rfx_message(SURFACE_BITS_COMMAND* surface_bits_command, RFX_M
 			}
 		}
 	}
+	stopwatch_stop(swdrawing);
 }
 
 
@@ -191,7 +203,6 @@ void perftest_handle_decoded_rfx_message(SURFACE_BITS_COMMAND* surface_bits_comm
 #ifdef PERFTEST_REENCODE
 	{
 		int left, top, width, height;
-		RFX_RECT rect;
 		BYTE* offset;
 
 		left   = surface_bits_command->destLeft;
@@ -199,15 +210,17 @@ void perftest_handle_decoded_rfx_message(SURFACE_BITS_COMMAND* surface_bits_comm
 		width  = surface_bits_command->destRight - surface_bits_command->destLeft;
 		height = surface_bits_command->destBottom - surface_bits_command->destTop;
 
-		rect.x = 0;
-		rect.y = 0;
-		rect.width = width;
-		rect.height = height;
-
 		offset = screen_buffer[0] + (top * PERFTEST_WIDTH * 4) + (left * 4);
 
 		Stream_SetPosition(s, 0);
-		rfx_compose_message(rfx_context, s, &rect, 1, offset, width, height, PERFTEST_WIDTH * 4);
+
+		/**
+		 * TODO: rfx_compose_message ignores the rects list in rfx_compose_message_tileset !!!
+		 *       this is very bad in certain situations - just look at the extremely high encoding time when using 10000-small-frames.rfx
+		 */
+		stopwatch_start(swencoding);
+		rfx_compose_message(rfx_context, s, message->rects, message->num_rects, offset, width, height, PERFTEST_WIDTH * 4);
+		stopwatch_stop(swencoding);
 
 #if defined(PERFTEST_REDECODE) && defined(PERFTEST_DUMP_FRAMES)
 		{
@@ -224,6 +237,7 @@ void perftest_handle_decoded_rfx_message(SURFACE_BITS_COMMAND* surface_bits_comm
 
 void perftest_surface_bits(SURFACE_BITS_COMMAND* surface_bits_command, wStream* s)
 {
+	int i;
 #ifdef PERFTEST_DEBUG
 	printf("-------------------------------------------------------------------------------\n");
 	printf("%s dstrect: %04d %04d %04d %04d %02dbpp %04dx%04d len:%07d",
@@ -243,9 +257,19 @@ void perftest_surface_bits(SURFACE_BITS_COMMAND* surface_bits_command, wStream* 
 
 	if (surface_bits_command->codecID == RDP_CODEC_ID_REMOTEFX)
 	{
-		RFX_MESSAGE* message = rfx_process_message(rfx_context,	surface_bits_command->bitmapData, surface_bits_command->bitmapDataLength);
+		RFX_MESSAGE* message;
+
+		stopwatch_start(swdecoding);
+		message = rfx_process_message(rfx_context,	surface_bits_command->bitmapData, surface_bits_command->bitmapDataLength);
+		stopwatch_stop(swdecoding);
 #ifdef PERFTEST_DEBUG
 		printf(" rec:%04d til:%04d", message->num_rects, message->num_tiles);
+		for (i=0; i < message->num_rects; i++)
+		{
+			printf("\n    rec#%03d: %04d %04d %04d %04d (%lu pixel)", i,
+				message->rects[i].x, message->rects[i].y, message->rects[i].width, message->rects[i].height,
+				message->rects[i].width*message->rects[i].height);
+		}
 #endif
 #if defined(PERFTEST_REENCODE) || defined(PERFTEST_DUMP_FRAMES)
 		perftest_handle_decoded_rfx_message(surface_bits_command, message, s);
@@ -283,7 +307,6 @@ int main(int argc, char **argv)
 	UINT16 cmdType;
 	SURFACE_BITS_COMMAND cmd;
 	wStream *s;
-	STOPWATCH* swtotal = stopwatch_create();
 	UINT32 record_count = 0;
 	int pos, i;
 	int cnt=0;
@@ -294,6 +317,12 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	pcap_file = argv[1];
+
+	swtotal = stopwatch_create();
+	swdrawing = stopwatch_create();
+	swencoding = stopwatch_create();
+	swdecoding = stopwatch_create();
+	swdumpscreen = stopwatch_create();
 
 	stopwatch_start(swtotal);
 
@@ -320,9 +349,9 @@ int main(int argc, char **argv)
 	record.data = Stream_Buffer(s);
 
 #ifdef PERFTEST_CACHE_SURFACE_COMMANDS
-	printf(">> Caching surface commands to memory...\n");
+	printf(">> [perftest] caching surface commands to memory...\n");
 #else
-	printf(">> Processing pcap file ...\n");
+	printf(">> [perftest] processing pcap file ...\n");
 #endif
 
 	while (pcap_has_next_record(pcap))
@@ -389,7 +418,7 @@ int main(int argc, char **argv)
 
 #ifdef PERFTEST_CACHE_SURFACE_COMMANDS
 	stopwatch_stop(swtotal);
-	printf(">> cached %d surface commands in %fs. start processing ...\n", command_count, stopwatch_get_elapsed_time_in_seconds(swtotal));
+	printf(">> [perftest] cached %d surface commands in %fs. start processing ...\n", command_count, stopwatch_get_elapsed_time_in_seconds(swtotal));
 	stopwatch_reset(swtotal);
 	stopwatch_start(swtotal);
 	for(i=0; i<command_count; i++)
@@ -400,7 +429,11 @@ int main(int argc, char **argv)
 	}
 #endif
 	stopwatch_stop(swtotal);
-	printf("\n>>> Execution time: %fs\n    Note: set WITH_PROFILER if you don't see any stats!\n", stopwatch_get_elapsed_time_in_seconds(swtotal));
+	printf(">> [perftest] Execution time: %fs\n", stopwatch_get_elapsed_time_in_seconds(swtotal));
+	printf(">> [perftest] Decoding time:  %fs\n", stopwatch_get_elapsed_time_in_seconds(swdecoding));
+	printf(">> [perftest] Encoding time:  %fs\n", stopwatch_get_elapsed_time_in_seconds(swencoding));
+	printf(">> [perftest] Drawing time:   %fs\n", stopwatch_get_elapsed_time_in_seconds(swdrawing));
+	printf(">> [perftest] Dumping time:   %fs\n", stopwatch_get_elapsed_time_in_seconds(swdumpscreen));
 
 	rfx_context_free(rfx_context);
 	nsc_context_free(nsc_context);
