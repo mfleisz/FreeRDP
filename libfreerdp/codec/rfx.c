@@ -1210,6 +1210,7 @@ static void rfx_compose_message_tileset(RFX_CONTEXT* context, wStream* s,
 		{
 			WaitForThreadpoolWorkCallbacks(work_objects[i], FALSE);
 			CloseThreadpoolWork(work_objects[i]);
+			Stream_EnsureRemainingCapacity(s, Stream_GetPosition(params[i].s));
 			Stream_Write(s, Stream_Buffer(params[i].s), Stream_GetPosition(params[i].s));
 			StreamPool_Return(context->priv->EncoderStreamPool, params[i].s);
 		}
