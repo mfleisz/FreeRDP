@@ -227,21 +227,24 @@ if(APPLE)
                 set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${FREERDP_IOS_EXTERNAL_SSL_PATH})
         	set_property(GLOBAL PROPERTY XCODE_ATTRIBUTE_SKIP_INSTALL YES)
 	else()
+		set(CMAKE_OSX_DEPLOYMENT_TARGET 10.6)
+
+		if(NOT DEFINED CMAKE_OSX_ARCHITECTURES)
+			set(CMAKE_OSX_ARCHITECTURES i386 x86_64)
+		endif()
+
                 if(IS_DIRECTORY /opt/local/include)
                         include_directories(/opt/local/include)
                         link_directories(/opt/local/lib)
                 endif()
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mmacosx-version-min=10.5")
         endif()
+
         if(WITH_CLANG)
                 set(CMAKE_C_COMPILER "clang")
         endif()
 
         if (WITH_VERBOSE)
-            # Support for automatic reference counting requires non-fragile abi.
             set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -v")
-
-            # Tell the compiler where to look for the FreeRDP framework
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -v")
         endif()
 endif()
@@ -414,12 +417,12 @@ set(FREERDP_ADDIN_PATH "${FREERDP_PLUGIN_PATH}")
 set(FREERDP_EXTENSION_PATH "${CMAKE_INSTALL_FULL_LIBDIR}/freerdp/extensions")
 
 # Include directories
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Configure files
 add_definitions("-DHAVE_CONFIG_H")
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_SOURCE_DIR}/config.h)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
 # RPATH configuration
 set(CMAKE_SKIP_BUILD_RPATH FALSE)
@@ -444,8 +447,8 @@ if(BUILD_TESTING)
 endif()
 
 # WinPR
-set(WINPR_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/winpr/include")
-include_directories(${WINPR_INCLUDE_DIR})
+include_directories("${CMAKE_SOURCE_DIR}/winpr/include")
+include_directories("${CMAKE_BINARY_DIR}/winpr/include")
 
 add_subdirectory(winpr)
 

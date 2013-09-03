@@ -160,12 +160,12 @@ void perftest_draw_rfx_message(SURFACE_BITS_COMMAND* surface_bits_command, RFX_M
 		memset(screen, 0, PERFTEST_WIDTH*PERFTEST_HEIGHT*4);
 	}
 
-	for (i = 0; i < message->num_tiles; i++)
+	for (i = 0; i < message->numTiles; i++)
 	{
 		rect_a.x = message->tiles[i]->x;
 		rect_a.y = message->tiles[i]->y;
 
-		for (j = 0; j < message->num_rects; j++)
+		for (j = 0; j < message->numRects; j++)
 		{
 			rect_b.x = message->rects[j].x;
 			rect_b.y = message->rects[j].y;
@@ -219,7 +219,7 @@ void perftest_handle_decoded_rfx_message(SURFACE_BITS_COMMAND* surface_bits_comm
 		 *       this is very bad in certain situations - just look at the extremely high encoding time when using 10000-small-frames.rfx
 		 */
 		stopwatch_start(swencoding);
-		rfx_compose_message(rfx_context, s, message->rects, message->num_rects, offset, width, height, PERFTEST_WIDTH * 4);
+		rfx_compose_message(rfx_context, s, message->rects, message->numRects, offset, width, height, PERFTEST_WIDTH * 4);
 		stopwatch_stop(swencoding);
 
 #if defined(PERFTEST_REDECODE) && defined(PERFTEST_DUMP_FRAMES)
@@ -263,8 +263,8 @@ void perftest_surface_bits(SURFACE_BITS_COMMAND* surface_bits_command, wStream* 
 		message = rfx_process_message(rfx_context,	surface_bits_command->bitmapData, surface_bits_command->bitmapDataLength);
 		stopwatch_stop(swdecoding);
 #ifdef PERFTEST_DEBUG
-		printf(" rec:%04d til:%04d", message->num_rects, message->num_tiles);
-		for (i=0; i < message->num_rects; i++)
+		printf(" rec:%04d til:%04d", message->numRects, message->numTiles);
+		for (i=0; i < message->numRects; i++)
 		{
 			printf("\n    rec#%03d: %04d %04d %04d %04d (%lu pixel)", i,
 				message->rects[i].x, message->rects[i].y, message->rects[i].width, message->rects[i].height,
