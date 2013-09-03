@@ -17,11 +17,12 @@
 #endif
 
 
+#define PERFTEST_USE_SEPERATE_RFX_CONTEXTS
 //#define PERFTEST_DEBUG
 //#define PERFTEST_DUMP_FRAMES
 #define PERFTEST_CACHE_SURFACE_COMMANDS
 #define PERFTEST_REENCODE				// Enable this to test the encoder by reencoding our decoded data
-#define PERFTEST_REDECODE				// Enable this to verify our decoded data (only useful in combination with PERFTEST_DUMP_FRAMES defined)
+//#define PERFTEST_REDECODE				// Enable this to verify our decoded data (only useful in combination with PERFTEST_DUMP_FRAMES defined)
 
 #define PERFTEST_WIDTH 1920
 #define PERFTEST_HEIGHT 1080
@@ -41,7 +42,10 @@ enum SURFCMD_CMDTYPE
 	CMDTYPE_STREAM_SURFACE_BITS = 0x0006
 };
 
-RFX_CONTEXT* rfx_context;
+RFX_CONTEXT* rfx_decoder_context;
+#if defined(PERFTEST_USE_SEPERATE_RFX_CONTEXTS)
+RFX_CONTEXT* rfx_encoder_context;
+#endif
 NSC_CONTEXT* nsc_context;
 
 #ifndef ABS
@@ -219,14 +223,18 @@ void perftest_handle_decoded_rfx_message(SURFACE_BITS_COMMAND* surface_bits_comm
 		 *       this is very bad in certain situations - just look at the extremely high encoding time when using 10000-small-frames.rfx
 		 */
 		stopwatch_start(swencoding);
-		rfx_compose_message(rfx_context, s, message->rects, message->numRects, offset, width, height, PERFTEST_WIDTH * 4);
+#if defined(PERFTEST_USE_SEPERATE_RFX_CONTEXTS)
+		rfx_compose_message(rfx_encoder_context, s, message->rects, message->numRects, offset, width, height, PERFTEST_WIDTH * 4);
+#else
+		rfx_compose_message(rfx_decoder_context, s, message->rects, message->numRects, offset, width, height, PERFTEST_WIDTH * 4);
+#endif
 		stopwatch_stop(swencoding);
 
 #if defined(PERFTEST_REDECODE) && defined(PERFTEST_DUMP_FRAMES)
 		{
-			RFX_MESSAGE* msg = rfx_process_message(rfx_context, Stream_Buffer(s), Stream_GetPosition(s));
+			RFX_MESSAGE* msg = rfx_process_message(rfx_decoder_context, Stream_Buffer(s), Stream_GetPosition(s));
 			perftest_draw_rfx_message(surface_bits_command, message, 1, TRUE);
-			rfx_message_free(rfx_context, msg);
+			rfx_message_free(rfx_decoder_context, msg);
 			perftest_dump_screen_buffer(1);
 		}
 #endif
@@ -260,7 +268,7 @@ void perftest_surface_bits(SURFACE_BITS_COMMAND* surface_bits_command, wStream* 
 		RFX_MESSAGE* message;
 
 		stopwatch_start(swdecoding);
-		message = rfx_process_message(rfx_context,	surface_bits_command->bitmapData, surface_bits_command->bitmapDataLength);
+		message = rfx_process_message(rfx_decoder_context, surface_bits_command->bitmapData, surface_bits_command->bitmapDataLength);
 		stopwatch_stop(swdecoding);
 #ifdef PERFTEST_DEBUG
 		printf(" rec:%04d til:%04d", message->numRects, message->numTiles);
@@ -271,10 +279,12 @@ void perftest_surface_bits(SURFACE_BITS_COMMAND* surface_bits_command, wStream* 
 				message->rects[i].width*message->rects[i].height);
 		}
 #endif
+
 #if defined(PERFTEST_REENCODE) || defined(PERFTEST_DUMP_FRAMES)
 		perftest_handle_decoded_rfx_message(surface_bits_command, message, s);
 #endif
-		rfx_message_free(rfx_context, message);
+
+		rfx_message_free(rfx_decoder_context, message);
 	}
 	else if (surface_bits_command->codecID == RDP_CODEC_ID_NSCODEC)
 	{
@@ -326,11 +336,19 @@ int main(int argc, char **argv)
 
 	stopwatch_start(swtotal);
 
-	rfx_context = rfx_context_new();
-	rfx_context->mode = RLGR3;
-	rfx_context->width = PERFTEST_WIDTH;
-	rfx_context->height = PERFTEST_HEIGHT;
-	rfx_context_set_pixel_format(rfx_context, RDP_PIXEL_FORMAT_R8G8B8A8);
+	rfx_decoder_context = rfx_context_new();
+	rfx_decoder_context->mode = RLGR3;
+	rfx_decoder_context->width = PERFTEST_WIDTH;
+	rfx_decoder_context->height = PERFTEST_HEIGHT;
+	rfx_context_set_pixel_format(rfx_decoder_context, RDP_PIXEL_FORMAT_R8G8B8A8);
+
+#if defined(PERFTEST_USE_SEPERATE_RFX_CONTEXTS)
+	rfx_encoder_context = rfx_context_new();
+	rfx_encoder_context->mode = RLGR3;
+	rfx_encoder_context->width = PERFTEST_WIDTH;
+	rfx_encoder_context->height = PERFTEST_HEIGHT;
+	rfx_context_set_pixel_format(rfx_encoder_context, RDP_PIXEL_FORMAT_R8G8B8A8);
+#endif
 
 	nsc_context = nsc_context_new();
 
@@ -435,7 +453,10 @@ int main(int argc, char **argv)
 	printf(">> [perftest] Drawing time:   %fs\n", stopwatch_get_elapsed_time_in_seconds(swdrawing));
 	printf(">> [perftest] Dumping time:   %fs\n", stopwatch_get_elapsed_time_in_seconds(swdumpscreen));
 
-	rfx_context_free(rfx_context);
+	rfx_context_free(rfx_decoder_context);
+#if defined(PERFTEST_USE_SEPERATE_RFX_CONTEXTS)
+	rfx_context_free(rfx_encoder_context);
+#endif
 	nsc_context_free(nsc_context);
 
 	return 0;

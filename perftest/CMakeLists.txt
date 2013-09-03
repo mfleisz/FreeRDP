@@ -1,4 +1,4 @@
-	# FreeRDP: A Remote Desktop Protocol Implementation
+# FreeRDP: A Remote Desktop Protocol Implementation
 # FreeRDP Performance Measurement Utilities
 #
 # Copyright 2013 Norbert Federa <norbert.federa@thinstuff.com>
