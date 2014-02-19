@@ -1,3 +1,6 @@
+#ifndef MRDPVIEW_H
+#define MRDPVIEW_H
+
 /**
  * FreeRDP: A Remote Desktop Protocol Implementation
  * MacFreeRDP
@@ -41,43 +44,27 @@
 
 @interface MRDPView : NSView
 {
+	mfContext* mfc;
 	NSBitmapImageRep* bmiRep;
 	NSMutableArray* cursors;
 	NSMutableArray* windows;
 	NSTimer* pasteboard_timer;
-    NSCursor* currentCursor;
+	NSCursor* currentCursor;
 	NSRect prevWinPosition;
-	int titleBarHeight;
 	freerdp* instance;
 	rdpContext* context;
 	CGContextRef bitmap_context;
 	char* pixel_data;
-	int width;
-	int height;
 	int argc;
 	char** argv;
-    
+	DWORD kbdModFlags;
+	BOOL initialized;
 	NSPoint savedDragLocation;
 	BOOL firstCreateWindow;
 	BOOL isMoveSizeInProgress;
 	BOOL skipResizeOnce;
 	BOOL saveInitialDragLoc;
 	BOOL skipMoveWindowOnce;
-
-	/* store state info for some keys */
-	int kdlshift;
-	int kdrshift;
-	int kdlctrl;
-	int kdrctrl;
-	int kdlalt;
-	int kdralt;
-	int kdlmeta;
-	int kdrmeta;
-	int kdcapslock;
-
-    BOOL initialized;
-    
-    NSImageView* imageView;
 	
 @public
 	NSPasteboard* pasteboard_rd; /* for reading from clipboard */
@@ -89,10 +76,10 @@
 
 - (int)  rdpStart :(rdpContext*) rdp_context;
 - (void) setCursor: (NSCursor*) cursor;
+- (void) setScrollOffset:(int)xOffset y:(int)yOffset w:(int)width h:(int)height;
 
 - (void) onPasteboardTimerFired :(NSTimer *) timer;
 - (void) releaseResources;
-- (void) setViewSize : (int) w : (int) h;
 
 @property (assign) int is_connected;
 
@@ -113,3 +100,5 @@ BOOL mac_post_connect(freerdp*	instance);
 BOOL mac_authenticate(freerdp* instance, char** username, char** password, char** domain);
 int mac_receive_channel_data(freerdp* instance, int chan_id, BYTE* data, int size, int flags, int total_size);
 DWORD mac_client_thread(void* param);
+
+#endif // MRDPVIEW_H

@@ -83,6 +83,8 @@ typedef short SHORT;
 typedef void* HANDLE, *PHANDLE, *LPHANDLE;
 typedef HANDLE HINSTANCE;
 typedef HANDLE HMODULE;
+typedef HANDLE HWND;
+typedef HANDLE HBITMAP;
 
 typedef DWORD HCALL;
 typedef int INT, *LPINT;
@@ -106,14 +108,13 @@ typedef signed int LONG32;
 typedef signed __int64 LONG64;
 #endif
 
-typedef CHAR* PSTR, *LPSTR, *LPCH;
+typedef CHAR *PSTR, *LPSTR, *LPCH;
 typedef const CHAR *LPCSTR,*PCSTR;
 
-typedef WCHAR* LPWSTR, *PWSTR, *LPWCH;
+typedef WCHAR *LPWSTR, *PWSTR, *LPWCH;
 typedef const WCHAR *LPCWSTR,*PCWSTR;
 
 typedef unsigned __int64 QWORD;
-typedef UCHAR* STRING;
 
 typedef unsigned int UINT;
 typedef unsigned char UINT8;
@@ -131,7 +132,8 @@ typedef unsigned int ULONG32;
 typedef unsigned __int64 ULONG64;
 typedef wchar_t UNICODE;
 typedef unsigned short USHORT;
-typedef void VOID, *PVOID, *LPVOID;
+#define VOID void
+typedef void *PVOID, *LPVOID;
 typedef void *PVOID64, *LPVOID64;
 typedef const void *LPCVOID;
 typedef unsigned short WORD, *PWORD, *LPWORD;
@@ -157,6 +159,9 @@ typedef struct _LUID
 	DWORD LowPart;
 	LONG  HighPart;
 } LUID, *PLUID;
+
+typedef GUID IID;
+typedef IID* REFIID;
 
 #ifdef UNICODE
 #define _T(x)	L ## x
@@ -262,6 +267,8 @@ typedef struct _SECURITY_DESCRIPTOR
 	PACL Sacl;
 	PACL Dacl;
 } SECURITY_DESCRIPTOR, *PSECURITY_DESCRIPTOR;
+
+typedef WORD SECURITY_DESCRIPTOR_CONTROL, *PSECURITY_DESCRIPTOR_CONTROL;
 
 typedef struct _SECURITY_ATTRIBUTES
 {

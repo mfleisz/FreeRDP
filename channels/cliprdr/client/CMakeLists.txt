@@ -18,7 +18,6 @@
 define_channel_client("cliprdr")
 
 set(${MODULE_PREFIX}_SRCS
-	cliprdr_constants.h
 	cliprdr_format.c
 	cliprdr_format.h
 	cliprdr_main.c
@@ -38,8 +37,6 @@ set_complex_link_libraries(VARIABLE ${MODULE_PREFIX}_LIBS
 	MODULE winpr
 	MODULES winpr-crt)
 
-if(NOT STATIC_CHANNELS)
-	install(TARGETS ${MODULE_NAME} DESTINATION ${FREERDP_PLUGIN_PATH})
-endif()
+install(TARGETS ${MODULE_NAME} DESTINATION ${FREERDP_ADDIN_PATH} EXPORT FreeRDPTargets)
 
 set_property(TARGET ${MODULE_NAME} PROPERTY FOLDER "Channels/${CHANNEL_NAME}/Client")

@@ -313,7 +313,8 @@ static const UINT32 rop3_code_table[] =
 };
 
 /* Hatch Patterns as monochrome data */
-static BYTE GDI_BS_HACHTED_PATTERNS[] = {
+static BYTE GDI_BS_HACHTED_PATTERNS[] =
+{
 	0xFF, 0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, /* HS_HORIZONTAL */
 	0xF7, 0xF7, 0xF7, 0xF7, 0xF7, 0xF7, 0xF7, 0xF7, /* HS_VERTICAL */
 	0xFE, 0xFD, 0xFB, 0xF7, 0xEF, 0xDF, 0xBF, 0x7F, /* HS_FDIAGONAL */
@@ -917,10 +918,20 @@ void gdi_register_update_callbacks(rdpUpdate* update)
 
 void gdi_init_primary(rdpGdi* gdi)
 {
-	gdi->primary = gdi_bitmap_new_ex(gdi, gdi->width, gdi->height, gdi->dstBpp, gdi->primary_buffer);
+	gdi->primary = (gdiBitmap*) malloc(sizeof(gdiBitmap));
+	gdi->primary->hdc = gdi_CreateCompatibleDC(gdi->hdc);
+
+	if (!gdi->primary_buffer)
+		gdi->primary->bitmap = gdi_CreateCompatibleBitmap(gdi->hdc, gdi->width, gdi->height);
+	else
+		gdi->primary->bitmap = gdi_CreateBitmap(gdi->width, gdi->height, gdi->dstBpp, gdi->primary_buffer);
+
+	gdi_SelectObject(gdi->primary->hdc, (HGDIOBJECT) gdi->primary->bitmap);
+	gdi->primary->org_bitmap = NULL;
+
 	gdi->primary_buffer = gdi->primary->bitmap->data;
 
-	if (gdi->drawing == NULL)
+	if (!gdi->drawing)
 		gdi->drawing = gdi->primary;
 
 	gdi->primary->hdc->hwnd = (HGDI_WND) malloc(sizeof(GDI_WND));
@@ -1026,7 +1037,7 @@ int gdi_init(freerdp* instance, UINT32 flags, BYTE* buffer)
 	gdi->tile = gdi_bitmap_new_ex(gdi, 64, 64, 32, NULL);
 	gdi->image = gdi_bitmap_new_ex(gdi, 64, 64, 32, NULL);
 
-	if (cache == NULL)
+	if (!cache)
 	{
 		cache = cache_new(instance->settings);
 		instance->context->cache = cache;
@@ -1042,7 +1053,7 @@ int gdi_init(freerdp* instance, UINT32 flags, BYTE* buffer)
 
 	gdi_register_graphics(instance->context->graphics);
 
-	gdi->rfx_context = rfx_context_new();
+	gdi->rfx_context = rfx_context_new(FALSE);
 	gdi->nsc_context = nsc_context_new();
 
 	return 0;

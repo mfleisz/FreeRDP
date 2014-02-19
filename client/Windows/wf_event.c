@@ -518,7 +518,7 @@ LRESULT CALLBACK wf_event_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam
 
 		case WM_ACTIVATE:
 			{
-				int activate = (int)(short) LOWORD(lParam);
+				int activate = (int)(short) LOWORD(wParam);
 				if (activate != WA_INACTIVE)
 				{
 					g_focus_hWnd = hWnd;
@@ -588,7 +588,7 @@ void wf_scale_mouse_event(wfContext* wfc, rdpInput* input, UINT16 flags, UINT16 
 	dw = wfc->instance->settings->DesktopWidth;
 	dh = wfc->instance->settings->DesktopHeight;
 
-	if (!wfc->instance->settings->SmartSizing || (ww == dw) && (wh == dh))
+	if (!wfc->instance->settings->SmartSizing || ((ww == dw) && (wh == dh)))
 		input->MouseEvent(input, flags, x + wfc->xCurrentScroll, y + wfc->yCurrentScroll);
 	else
 		input->MouseEvent(input, flags, x * dw / ww + wfc->xCurrentScroll, y * dh / wh + wfc->yCurrentScroll);

@@ -83,6 +83,12 @@ set(${MODULE_PREFIX}_SRCS
 	connection.h
 	redirection.c
 	redirection.h
+	autodetect.c
+	autodetect.h
+	heartbeat.c
+	heartbeat.h
+	multitransport.c
+	multitransport.h
 	timezone.c
 	timezone.h
 	rdp.c
@@ -136,13 +142,13 @@ set_complex_link_libraries(VARIABLE ${MODULE_PREFIX}_LIBS
 set_complex_link_libraries(VARIABLE ${MODULE_PREFIX}_LIBS
 	MONOLITHIC ${MONOLITHIC_BUILD}
 	MODULE winpr
-	MODULES winpr-registry winpr-utils winpr-interlocked winpr-dsparse winpr-sspi winpr-rpc winpr-crt)
+	MODULES winpr-registry winpr-utils winpr-interlocked winpr-dsparse winpr-sspi winpr-rpc winpr-handle winpr-crt)
 
 if(MONOLITHIC_BUILD)
 	set(FREERDP_LIBS ${FREERDP_LIBS} ${${MODULE_PREFIX}_LIBS} PARENT_SCOPE)
 else()		
 	target_link_libraries(${MODULE_NAME} ${${MODULE_PREFIX}_LIBS})
-	install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR})
+	install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR} EXPORT FreeRDPTargets)
 endif()
 
 set_property(TARGET ${MODULE_NAME} PROPERTY FOLDER "FreeRDP/libfreerdp")

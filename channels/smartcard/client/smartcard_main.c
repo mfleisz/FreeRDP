@@ -31,7 +31,6 @@
 
 #include <freerdp/utils/list.h>
 #include <freerdp/utils/debug.h>
-#include <freerdp/utils/svc_plugin.h>
 
 #include <freerdp/channels/rdpdr.h>
 
@@ -112,13 +111,16 @@ struct _SMARTCARD_IRP_WORKER
 };
 typedef struct _SMARTCARD_IRP_WORKER SMARTCARD_IRP_WORKER;
  
-static void smartcard_process_irp_thread_func(SMARTCARD_IRP_WORKER* irpWorker)
+static void *smartcard_process_irp_thread_func(SMARTCARD_IRP_WORKER* irpWorker)
 {
 	smartcard_process_irp(irpWorker->smartcard, irpWorker->irp);
 
 	CloseHandle(irpWorker->thread);
 
 	free(irpWorker);
+
+	ExitThread(0);
+	return NULL;
 }
 
 static void* smartcard_thread_func(void* arg)
@@ -226,7 +228,7 @@ static void smartcard_irp_complete(IRP* irp)
 	 * to be in this file so that "smartcard_irp_request()" can reference it.
 	 */
 
-	DEBUG_SVC("DeviceId %d FileId %d CompletionId %d", irp->device->id, irp->FileId, irp->CompletionId);
+	DEBUG_SCARD("DeviceId %d FileId %d CompletionId %d", irp->device->id, irp->FileId, irp->CompletionId);
 
 	pos = Stream_GetPosition(irp->output);
 	Stream_SetPosition(irp->output, 12);
@@ -243,8 +245,7 @@ static void smartcard_irp_complete(IRP* irp)
 
 	if (!duplicate)
 	{
-	        svc_plugin_send(irp->devman->plugin, irp->output);
-		irp->output = NULL;
+		irp->Complete(irp);
 	}
 
 	/* End TS Client defect workaround. */
@@ -312,7 +313,7 @@ int DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
 {
 	char* name;
 	char* path;
-	int i, length;
+	int i, length, ck;
 	RDPDR_SMARTCARD* device;
 	SMARTCARD_DEVICE* smartcard;
 
@@ -320,41 +321,49 @@ int DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
 	name = device->Name;
 	path = device->Path;
 
-	if (name)
+	/* TODO: check if server supports sc redirect (version 5.1) */
+	smartcard = (SMARTCARD_DEVICE*) malloc(sizeof(SMARTCARD_DEVICE));
+	ZeroMemory(smartcard, sizeof(SMARTCARD_DEVICE));
+
+	smartcard->device.type = RDPDR_DTYP_SMARTCARD;
+	smartcard->device.name = "SCARD";
+	smartcard->device.IRPRequest = smartcard_irp_request;
+	smartcard->device.Free = smartcard_free;
+
+	length = strlen(smartcard->device.name);
+	smartcard->device.data = Stream_New(NULL, length + 1);
+
+	Stream_Write(smartcard->device.data, "SCARD", 6);
+
+	smartcard->name = NULL;
+	smartcard->path = NULL;
+	if (path)
 	{
-		/* TODO: check if server supports sc redirect (version 5.1) */
-
-		smartcard = (SMARTCARD_DEVICE*) malloc(sizeof(SMARTCARD_DEVICE));
-		ZeroMemory(smartcard, sizeof(SMARTCARD_DEVICE));
-
-		smartcard->device.type = RDPDR_DTYP_SMARTCARD;
-		smartcard->device.name = "SCARD";
-		smartcard->device.IRPRequest = smartcard_irp_request;
-		smartcard->device.Free = smartcard_free;
-
-		length = strlen(smartcard->device.name);
-		smartcard->device.data = Stream_New(NULL, length + 1);
-
-		for (i = 0; i <= length; i++)
-			Stream_Write_UINT8(smartcard->device.data, name[i] < 0 ? '_' : name[i]);
-
 		smartcard->path = path;
-
-		smartcard->pIrpList = (PSLIST_HEADER) _aligned_malloc(sizeof(SLIST_HEADER), MEMORY_ALLOCATION_ALIGNMENT);
-		InitializeSListHead(smartcard->pIrpList);
-
-		smartcard->irpEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-		smartcard->stopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-		smartcard->thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) smartcard_thread_func,
-				smartcard, CREATE_SUSPENDED, NULL);
-
-		smartcard->CompletionIds = list_new();
-		smartcard->CompletionIdsMutex = CreateMutex(NULL, FALSE, NULL);
-
-		pEntryPoints->RegisterDevice(pEntryPoints->devman, (DEVICE*) smartcard);
-
-		ResumeThread(smartcard->thread);
+		smartcard->name = name;
 	}
+	else if (name)
+	{
+		if (1 == sscanf(name, "%d", &ck))
+			smartcard->path = name;
+		else
+			smartcard->name = name;
+	}
+
+	smartcard->pIrpList = (PSLIST_HEADER) _aligned_malloc(sizeof(SLIST_HEADER), MEMORY_ALLOCATION_ALIGNMENT);
+	InitializeSListHead(smartcard->pIrpList);
+
+	smartcard->irpEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	smartcard->stopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	smartcard->thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) smartcard_thread_func,
+			smartcard, CREATE_SUSPENDED, NULL);
+
+	smartcard->CompletionIds = list_new();
+	smartcard->CompletionIdsMutex = CreateMutex(NULL, FALSE, NULL);
+
+	pEntryPoints->RegisterDevice(pEntryPoints->devman, (DEVICE*) smartcard);
+
+	ResumeThread(smartcard->thread);
 
 	return 0;
 }

@@ -336,14 +336,14 @@ int main(int argc, char **argv)
 
 	stopwatch_start(swtotal);
 
-	rfx_decoder_context = rfx_context_new();
+	rfx_decoder_context = rfx_context_new(FALSE);
 	rfx_decoder_context->mode = RLGR3;
 	rfx_decoder_context->width = PERFTEST_WIDTH;
 	rfx_decoder_context->height = PERFTEST_HEIGHT;
 	rfx_context_set_pixel_format(rfx_decoder_context, RDP_PIXEL_FORMAT_R8G8B8A8);
 
 #if defined(PERFTEST_USE_SEPERATE_RFX_CONTEXTS)
-	rfx_encoder_context = rfx_context_new();
+	rfx_encoder_context = rfx_context_new(TRUE);
 	rfx_encoder_context->mode = RLGR3;
 	rfx_encoder_context->width = PERFTEST_WIDTH;
 	rfx_encoder_context->height = PERFTEST_HEIGHT;

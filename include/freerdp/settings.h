@@ -51,13 +51,15 @@
 #define CS_CLUSTER		0xC004
 #define CS_MONITOR		0xC005
 #define CS_MCS_MSGCHANNEL	0xC006
-#define CS_MULTITRANSPORT	0xC008
+#define CS_MONITOR_EX		0xC008
+#define CS_MULTITRANSPORT	0xC00A
 
 /* Server to Client (SC) data blocks */
 #define SC_CORE			0x0C01
 #define SC_SECURITY		0x0C02
 #define SC_NET			0x0C03
-#define SC_MULTITRANSPORT	0x0C06
+#define SC_MCS_MSGCHANNEL	0x0C04
+#define SC_MULTITRANSPORT	0x0C08
 
 /* RDP version */
 #define RDP_VERSION_4		0x00080001
@@ -94,6 +96,7 @@
 #define RNS_UD_CS_SUPPORT_NETWORK_AUTODETECT	0x0080
 #define RNS_UD_CS_SUPPORT_DYNVC_GFX_PROTOCOL	0x0100
 #define RNS_UD_CS_SUPPORT_DYNAMIC_TIME_ZONE	0x0200
+#define RNS_UD_CS_SUPPORT_HEARTBEAT_PDU		0x0400
 
 /* Early Capability Flags (Server to Client) */
 #define RNS_UD_SC_EDGE_ACTIONS_SUPPORTED	0x00000001
@@ -238,6 +241,15 @@ typedef struct _TARGET_NET_ADDRESS TARGET_NET_ADDRESS;
 #define LOGON_FAILED_UPDATE_PASSWORD		0x00000001
 #define LOGON_FAILED_OTHER			0x00000002
 #define LOGON_WARNING				0x00000003
+
+/* Server Status Info */
+#define STATUS_FINDING_DESTINATION		0x00000401
+#define STATUS_LOADING_DESTINATION		0x00000402
+#define STATUS_BRINGING_SESSION_ONLINE		0x00000403
+#define STATUS_REDIRECTING_TO_DESTINATION	0x00000404
+#define STATUS_VM_LOADING			0x00000501
+#define STATUS_VM_WAKING			0x00000502
+#define STATUS_VM_BOOTING			0x00000503
 
 /* SYSTEM_TIME */
 typedef struct
@@ -388,6 +400,26 @@ struct rdp_monitor
 };
 typedef struct rdp_monitor rdpMonitor;
 
+struct _MONITOR_DEF
+{
+	INT32 left;
+	INT32 top;
+	INT32 right;
+	INT32 bottom;
+	UINT32 flags;
+};
+typedef struct _MONITOR_DEF MONITOR_DEF;
+
+struct _MONITOR_ATTRIBUTES
+{
+	UINT32 physicalWidth;
+	UINT32 physicalHeight;
+	UINT32 orientation;
+	UINT32 desktopScaleFactor;
+	UINT32 deviceScaleFactor;
+};
+typedef struct _MONITOR_ATTRIBUTES MONITOR_ATTRIBUTES;
+
 /* Device Redirection */
 
 #define RDPDR_DTYP_SERIAL		0x00000001
@@ -475,6 +507,7 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_Username					21
 #define FreeRDP_Password					22
 #define FreeRDP_Domain						23
+#define FreeRDP_PasswordHash					24
 #define FreeRDP_RdpVersion					128
 #define FreeRDP_DesktopWidth					129
 #define FreeRDP_DesktopHeight					130
@@ -491,6 +524,7 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_SupportMonitorLayoutPdu				141
 #define FreeRDP_SupportGraphicsPipeline				142
 #define FreeRDP_SupportDynamicTimeZone				143
+#define FreeRDP_SupportHeartbeatPdu				144
 #define FreeRDP_DisableEncryption				192
 #define FreeRDP_EncryptionMethods				193
 #define FreeRDP_ExtEncryptionMethods				194
@@ -514,6 +548,7 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_DesktopPosX					390
 #define FreeRDP_DesktopPosY					391
 #define FreeRDP_MultitransportFlags				512
+#define FreeRDP_SupportMultitransport			513
 #define FreeRDP_AlternateShell					640
 #define FreeRDP_ShellWorkingDirectory				641
 #define FreeRDP_AutoLogonEnabled				704
@@ -532,6 +567,7 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_PasswordIsSmartcardPin				717
 #define FreeRDP_UsingSavedCredentials				718
 #define FreeRDP_ForceEncryptedCsPdu				719
+#define FreeRDP_HiDefRemoteApp					720
 #define FreeRDP_IPv6Enabled					768
 #define FreeRDP_ClientAddress					769
 #define FreeRDP_ClientDir					770
@@ -560,28 +596,26 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_SelectedProtocol				1094
 #define FreeRDP_NegotiationFlags				1095
 #define FreeRDP_NegotiateSecurityLayer				1096
+#define FreeRDP_RestrictedAdminModeRequired			1097
 #define FreeRDP_MstscCookieMode					1152
 #define FreeRDP_CookieMaxLength					1153
 #define FreeRDP_PreconnectionId					1154
 #define FreeRDP_PreconnectionBlob				1155
 #define FreeRDP_SendPreconnectionPdu				1156
 #define FreeRDP_RedirectionFlags				1216
-#define FreeRDP_LoadBalanceInfo					1217
-#define FreeRDP_LoadBalanceInfoLength				1218
-#define FreeRDP_RedirectionUsername				1219
-#define FreeRDP_RedirectionUsernameLength			1220
+#define FreeRDP_TargetNetAddress				1217
+#define FreeRDP_LoadBalanceInfo					1218
+#define FreeRDP_LoadBalanceInfoLength				1219
+#define FreeRDP_RedirectionUsername				1220
 #define FreeRDP_RedirectionDomain				1221
-#define FreeRDP_RedirectionDomainLength				1222
-#define FreeRDP_RedirectionPassword				1223
-#define FreeRDP_RedirectionPasswordLength			1224
-#define FreeRDP_RedirectionTargetFQDN				1225
-#define FreeRDP_RedirectionTargetFQDNLength			1226
-#define FreeRDP_RedirectionTargetNetBiosName			1227
-#define FreeRDP_RedirectionTargetNetBiosNameLength		1228
-#define FreeRDP_RedirectionTsvUrl				1229
-#define FreeRDP_RedirectionTsvUrlLength				1230
-#define FreeRDP_TargetNetAddressCount				1231
-#define FreeRDP_TargetNetAddresses				1232
+#define FreeRDP_RedirectionPassword				1222
+#define FreeRDP_RedirectionPasswordLength			1223
+#define FreeRDP_RedirectionTargetFQDN				1224
+#define FreeRDP_RedirectionTargetNetBiosName			1225
+#define FreeRDP_RedirectionTsvUrl				1226
+#define FreeRDP_RedirectionTsvUrlLength				1227
+#define FreeRDP_TargetNetAddressCount				1228
+#define FreeRDP_TargetNetAddresses				1229
 #define FreeRDP_Password51					1280
 #define FreeRDP_Password51Length				1281
 #define FreeRDP_KerberosKdc					1344
@@ -593,6 +627,7 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_RdpKeyFile					1412
 #define FreeRDP_RdpServerRsaKey					1413
 #define FreeRDP_RdpServerCertificate				1414
+#define FreeRDP_ExternalCertificateManagement			1415
 #define FreeRDP_Workarea					1536
 #define FreeRDP_Fullscreen					1537
 #define FreeRDP_PercentScreen					1538
@@ -697,6 +732,7 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_CompDeskSupportLevel				3456
 #define FreeRDP_SurfaceCommandsEnabled				3520
 #define FreeRDP_FrameMarkerCommandEnabled			3521
+#define FreeRDP_SurfaceFrameMarkerEnabled			3522
 #define FreeRDP_RemoteFxOnly					3648
 #define FreeRDP_RemoteFxCodec					3649
 #define FreeRDP_RemoteFxCodecId					3650
@@ -760,7 +796,8 @@ struct rdp_settings
 	ALIGN64 char* Username; /* 21 */
 	ALIGN64 char* Password; /* 22 */
 	ALIGN64 char* Domain; /* 23 */
-	UINT64 padding0064[64 - 24]; /* 24 */
+	ALIGN64 char* PasswordHash; /* 24 */
+	UINT64 padding0064[64 - 25]; /* 25 */
 	UINT64 padding0128[128 - 64]; /* 64 */
 
 	/**
@@ -784,7 +821,8 @@ struct rdp_settings
 	ALIGN64 BOOL SupportMonitorLayoutPdu; /* 141 */
 	ALIGN64 BOOL SupportGraphicsPipeline; /* 142 */
 	ALIGN64 BOOL SupportDynamicTimeZone; /* 143 */
-	UINT64 padding0192[192 - 143]; /* 143 */
+	ALIGN64 BOOL SupportHeartbeatPdu; /* 144 */
+	UINT64 padding0192[192 - 145]; /* 145 */
 
 	/* Client/Server Security Data */
 	ALIGN64 BOOL DisableEncryption; /* 192 */
@@ -795,7 +833,8 @@ struct rdp_settings
 	ALIGN64 DWORD ServerRandomLength; /* 197 */
 	ALIGN64 BYTE* ServerCertificate; /* 198 */
 	ALIGN64 DWORD ServerCertificateLength; /* 199 */
-	UINT64 padding0256[256 - 200]; /* 200 */
+	ALIGN64 BYTE* ClientRandom; /* 200 */
+	UINT64 padding0256[256 - 201]; /* 201 */
 
 	/* Client Network Data */
 	ALIGN64 UINT32 ChannelCount; /* 256 */
@@ -828,7 +867,8 @@ struct rdp_settings
 
 	/* Client Multitransport Channel Data */
 	ALIGN64 UINT32 MultitransportFlags; /* 512 */
-	UINT64 padding0576[576 - 513]; /* 513 */
+	ALIGN64 BOOL SupportMultitransport; /* 513 */
+	UINT64 padding0576[576 - 514]; /* 514 */
 	UINT64 padding0640[640 - 576]; /* 576 */
 
 	/*
@@ -857,7 +897,8 @@ struct rdp_settings
 	ALIGN64 BOOL PasswordIsSmartcardPin; /* 717 */
 	ALIGN64 BOOL UsingSavedCredentials; /* 718 */
 	ALIGN64 BOOL ForceEncryptedCsPdu; /* 719 */
-	UINT64 padding0768[768 - 720]; /* 720 */
+	ALIGN64 BOOL HiDefRemoteApp; /* 720 */
+	UINT64 padding0768[768 - 721]; /* 721 */
 
 	/* Client Info (Extra) */
 	ALIGN64 BOOL IPv6Enabled; /* 768 */
@@ -870,7 +911,8 @@ struct rdp_settings
 	ALIGN64 UINT32 AutoReconnectMaxRetries; /* 833 */
 	ALIGN64 ARC_CS_PRIVATE_PACKET* ClientAutoReconnectCookie; /* 834 */
 	ALIGN64 ARC_SC_PRIVATE_PACKET* ServerAutoReconnectCookie; /* 835 */
-	UINT64 padding0896[896 - 835]; /* 835 */
+	ALIGN64 BOOL PrintReconnectCookie; /* 836 */
+	UINT64 padding0896[896 - 837]; /* 837 */
 
 	/* Client Info (Time Zone) */
 	ALIGN64 TIME_ZONE_INFO* ClientTimeZone; /* 896 */
@@ -905,7 +947,8 @@ struct rdp_settings
 	ALIGN64 UINT32 SelectedProtocol; /* 1094 */
 	ALIGN64 UINT32 NegotiationFlags; /* 1095 */
 	ALIGN64 BOOL NegotiateSecurityLayer; /* 1096 */
-	UINT64 padding1152[1152 - 1097]; /* 1097 */
+	ALIGN64 BOOL RestrictedAdminModeRequired; /* 1097 */
+	UINT64 padding1152[1152 - 1098]; /* 1098 */
 
 	/* Connection Cookie */
 	ALIGN64 BOOL MstscCookieMode; /* 1152 */
@@ -917,23 +960,20 @@ struct rdp_settings
 
 	/* Server Redirection */
 	ALIGN64 UINT32 RedirectionFlags; /* 1216 */
-	ALIGN64 BYTE* LoadBalanceInfo; /* 1217 */
-	ALIGN64 UINT32 LoadBalanceInfoLength; /* 1218 */
-	ALIGN64 BYTE* RedirectionUsername; /* 1219 */
-	ALIGN64 UINT32 RedirectionUsernameLength; /* 1220 */
-	ALIGN64 BYTE* RedirectionDomain; /* 1221 */
-	ALIGN64 UINT32 RedirectionDomainLength; /* 1222 */
-	ALIGN64 BYTE* RedirectionPassword; /* 1223 */
-	ALIGN64 UINT32 RedirectionPasswordLength; /* 1224 */
-	ALIGN64 BYTE* RedirectionTargetFQDN; /* 1225 */
-	ALIGN64 UINT32 RedirectionTargetFQDNLength; /* 1226 */
-	ALIGN64 BYTE* RedirectionTargetNetBiosName; /* 1227 */
-	ALIGN64 UINT32 RedirectionTargetNetBiosNameLength; /* 1228 */
-	ALIGN64 BYTE* RedirectionTsvUrl; /* 1229 */
-	ALIGN64 UINT32 RedirectionTsvUrlLength; /* 1230 */
-	ALIGN64 UINT32 TargetNetAddressCount; /* 1231 */
-	ALIGN64 TARGET_NET_ADDRESS* TargetNetAddresses; /* 1232 */
-	UINT64 padding1280[1280 - 1233]; /* 1233 */
+	ALIGN64 char* TargetNetAddress; /* 1217 */
+	ALIGN64 BYTE* LoadBalanceInfo; /* 1218 */
+	ALIGN64 UINT32 LoadBalanceInfoLength; /* 1219 */
+	ALIGN64 char* RedirectionUsername; /* 1220 */
+	ALIGN64 char* RedirectionDomain; /* 1221 */
+	ALIGN64 BYTE* RedirectionPassword; /* 1222 */
+	ALIGN64 UINT32 RedirectionPasswordLength; /* 1223 */
+	ALIGN64 char* RedirectionTargetFQDN; /* 1224 */
+	ALIGN64 char* RedirectionTargetNetBiosName; /* 1225 */
+	ALIGN64 BYTE* RedirectionTsvUrl; /* 1226 */
+	ALIGN64 UINT32 RedirectionTsvUrlLength; /* 1227 */
+	ALIGN64 UINT32 TargetNetAddressCount; /* 1228 */
+	ALIGN64 char** TargetNetAddresses; /* 1229 */
+	UINT64 padding1280[1280 - 1230]; /* 1230 */
 
 	/**
 	 * Security
@@ -957,7 +997,8 @@ struct rdp_settings
 	ALIGN64 char* RdpKeyFile; /* 1412 */
 	ALIGN64 rdpRsaKey* RdpServerRsaKey; /* 1413 */
 	ALIGN64 rdpCertificate* RdpServerCertificate; /* 1414 */
-	UINT64 padding1472[1472 - 1350]; /* 1415 */
+	ALIGN64 BOOL ExternalCertificateManagement; /* 1415 */
+	UINT64 padding1472[1472 - 1416]; /* 1416 */
 	UINT64 padding1536[1536 - 1472]; /* 1472 */
 
 	/**
@@ -1046,7 +1087,7 @@ struct rdp_settings
 	ALIGN64 char* RemoteApplicationCmdLine; /* 2118 */
 	ALIGN64 DWORD RemoteApplicationExpandCmdLine; /* 2119 */
 	ALIGN64 DWORD RemoteApplicationExpandWorkingDir; /* 2120 */
-	ALIGN64 DWORD DisableRemoteAppCapsCheck; /* 2121 */
+	ALIGN64 BOOL DisableRemoteAppCapsCheck; /* 2121 */
 	ALIGN64 UINT32 RemoteAppNumIconCaches; /* 2122 */
 	ALIGN64 UINT32 RemoteAppNumIconCacheEntries; /* 2123 */
 	ALIGN64 BOOL RemoteAppLanguageBarSupported; /* 2124 */
@@ -1170,7 +1211,8 @@ struct rdp_settings
 	/* Surface Commands Capabilities */
 	ALIGN64 BOOL SurfaceCommandsEnabled; /* 3520 */
 	ALIGN64 BOOL FrameMarkerCommandEnabled; /* 3521 */
-	UINT64 padding3584[3584 - 3522]; /* 3522 */
+	ALIGN64 BOOL SurfaceFrameMarkerEnabled; /* 3522 */
+	UINT64 padding3584[3584 - 3523]; /* 3523 */
 	UINT64 padding3648[3648 - 3584]; /* 3584 */
 
 	/*
@@ -1288,8 +1330,8 @@ struct rdp_settings
 	/* Extensions */
 	ALIGN64 int num_extensions; /*  */
 	ALIGN64 struct rdp_ext_set extensions[16]; /*  */
-	
-	ALIGN64 BYTE* settings_modified; /* byte array marking fields that have been modified from their default value */
+
+	ALIGN64 BYTE* SettingsModified; /* byte array marking fields that have been modified from their default value */
 	ALIGN64 int guestSSPIEnabled;
 };
 typedef struct rdp_settings rdpSettings;
@@ -1298,7 +1340,13 @@ typedef struct rdp_settings rdpSettings;
 extern "C" {
 #endif
 
-FREERDP_API rdpSettings* freerdp_settings_new(void* instance);
+/**
+  * rdpSettings creation flags
+  */
+#define FREERDP_SETTINGS_SERVER_MODE	0x00000001
+
+FREERDP_API rdpSettings* freerdp_settings_new(DWORD flags);
+FREERDP_API rdpSettings* freerdp_settings_clone(rdpSettings* settings);
 FREERDP_API void freerdp_settings_free(rdpSettings* settings);
 
 FREERDP_API int freerdp_addin_set_argument(ADDIN_ARGV* args, char* argument);
@@ -1308,15 +1356,23 @@ FREERDP_API int freerdp_addin_replace_argument_value(ADDIN_ARGV* args, char* pre
 
 FREERDP_API void freerdp_device_collection_add(rdpSettings* settings, RDPDR_DEVICE* device);
 FREERDP_API RDPDR_DEVICE* freerdp_device_collection_find(rdpSettings* settings, const char* name);
+FREERDP_API RDPDR_DEVICE* freerdp_device_clone(RDPDR_DEVICE* device);
 FREERDP_API void freerdp_device_collection_free(rdpSettings* settings);
 
 FREERDP_API void freerdp_static_channel_collection_add(rdpSettings* settings, ADDIN_ARGV* channel);
 FREERDP_API ADDIN_ARGV* freerdp_static_channel_collection_find(rdpSettings* settings, const char* name);
+FREERDP_API ADDIN_ARGV* freerdp_static_channel_clone(ADDIN_ARGV* channel);
 FREERDP_API void freerdp_static_channel_collection_free(rdpSettings* settings);
 
 FREERDP_API void freerdp_dynamic_channel_collection_add(rdpSettings* settings, ADDIN_ARGV* channel);
 FREERDP_API ADDIN_ARGV* freerdp_dynamic_channel_collection_find(rdpSettings* settings, const char* name);
+FREERDP_API ADDIN_ARGV* freerdp_dynamic_channel_clone(ADDIN_ARGV* channel);
 FREERDP_API void freerdp_dynamic_channel_collection_free(rdpSettings* settings);
+
+FREERDP_API void freerdp_target_net_addresses_free(rdpSettings* settings);
+
+FREERDP_API void freerdp_performance_flags_make(rdpSettings* settings);
+FREERDP_API void freerdp_performance_flags_split(rdpSettings* settings);
 
 FREERDP_API BOOL freerdp_get_param_bool(rdpSettings* settings, int id);
 FREERDP_API int freerdp_set_param_bool(rdpSettings* settings, int id, BOOL param);
@@ -1331,7 +1387,7 @@ FREERDP_API UINT64 freerdp_get_param_uint64(rdpSettings* settings, int id);
 FREERDP_API int freerdp_set_param_uint64(rdpSettings* settings, int id, UINT64 param);
 
 FREERDP_API char* freerdp_get_param_string(rdpSettings* settings, int id);
-FREERDP_API int freerdp_set_param_string(rdpSettings* settings, int id, char* param);
+FREERDP_API int freerdp_set_param_string(rdpSettings* settings, int id, const char* param);
 
 FREERDP_API double freerdp_get_param_double(rdpSettings* settings, int id);
 FREERDP_API int freerdp_set_param_double(rdpSettings* settings, int id, double param);

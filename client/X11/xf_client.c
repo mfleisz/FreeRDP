@@ -22,6 +22,8 @@
 #include "config.h"
 #endif
 
+#include <assert.h>
+
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
@@ -48,6 +50,8 @@
 #ifdef WITH_XRENDER
 #include <X11/extensions/Xrender.h>
 #endif
+
+#define WITH_AUTORECONNECT
 
 #include <errno.h>
 #include <stdio.h>
@@ -718,6 +722,24 @@ int _xf_error_handler(Display* d, XErrorEvent* ev)
 	return xf_error_handler(d, ev);
 }
 
+static void xf_post_disconnect(freerdp *instance)
+{
+	xfContext* xfc = (xfContext*) instance->context;
+
+	assert(NULL != instance);
+	assert(NULL != xfc);
+	assert(NULL != instance->settings);
+
+	if (xfc->mutex)
+	{
+		WaitForSingleObject(xfc->mutex, INFINITE);
+		CloseHandle(xfc->mutex);
+		xfc->mutex = NULL;
+	}
+
+	xf_monitors_free(xfc, instance->settings);
+}
+
 /**
  * Callback given to freerdp_connect() to process the pre-connect operations.
  * It will fill the rdp_freerdp structure (instance) with the appropriate options to use for the connection.
@@ -734,41 +756,40 @@ BOOL xf_pre_connect(freerdp* instance)
 	rdpSettings* settings;
 	xfContext* xfc = (xfContext*) instance->context;
 
-	xfc->mutex = CreateMutex(NULL, FALSE, NULL);
-
 	xfc->settings = instance->settings;
 	xfc->instance = instance;
 
 	settings = instance->settings;
 	channels = instance->context->channels;
 
-	PubSub_SubscribeChannelConnected(instance->context->pubSub,
-			(pChannelConnectedEventHandler) xf_OnChannelConnectedEventHandler);
+	settings->OsMajorType = OSMAJORTYPE_UNIX;
+	settings->OsMinorType = OSMINORTYPE_NATIVE_XSERVER;
 
-	PubSub_SubscribeChannelDisconnected(instance->context->pubSub,
-			(pChannelDisconnectedEventHandler) xf_OnChannelDisconnectedEventHandler);
-
-	freerdp_client_load_addins(channels, instance->settings);
-
-	freerdp_channels_pre_connect(channels, instance);
-
-	if (settings->AuthenticationOnly)
-	{
-		/* Check --authonly has a username and password. */
-		if (settings->Username == NULL)
-		{
-			fprintf(stderr, "--authonly, but no -u username. Please provide one.\n");
-			exit(1);
-		}
-		if (settings->Password == NULL)
-		{
-			fprintf(stderr, "--authonly, but no -p password. Please provide one.\n");
-			exit(1);
-		}
-		fprintf(stderr, "%s:%d: Authentication only. Don't connect to X.\n", __FILE__, __LINE__);
-		/* Avoid XWindows initialization and configuration below. */
-		return TRUE;
-	}
+	ZeroMemory(settings->OrderSupport, 32);
+	settings->OrderSupport[NEG_DSTBLT_INDEX] = TRUE;
+	settings->OrderSupport[NEG_PATBLT_INDEX] = TRUE;
+	settings->OrderSupport[NEG_SCRBLT_INDEX] = TRUE;
+	settings->OrderSupport[NEG_OPAQUE_RECT_INDEX] = TRUE;
+	settings->OrderSupport[NEG_DRAWNINEGRID_INDEX] = FALSE;
+	settings->OrderSupport[NEG_MULTIDSTBLT_INDEX] = FALSE;
+	settings->OrderSupport[NEG_MULTIPATBLT_INDEX] = FALSE;
+	settings->OrderSupport[NEG_MULTISCRBLT_INDEX] = FALSE;
+	settings->OrderSupport[NEG_MULTIOPAQUERECT_INDEX] = TRUE;
+	settings->OrderSupport[NEG_MULTI_DRAWNINEGRID_INDEX] = FALSE;
+	settings->OrderSupport[NEG_LINETO_INDEX] = TRUE;
+	settings->OrderSupport[NEG_POLYLINE_INDEX] = TRUE;
+	settings->OrderSupport[NEG_MEMBLT_INDEX] = settings->BitmapCacheEnabled;
+	settings->OrderSupport[NEG_MEM3BLT_INDEX] = (settings->SoftwareGdi) ? TRUE : FALSE;
+	settings->OrderSupport[NEG_MEMBLT_V2_INDEX] = settings->BitmapCacheEnabled;
+	settings->OrderSupport[NEG_MEM3BLT_V2_INDEX] = FALSE;
+	settings->OrderSupport[NEG_SAVEBITMAP_INDEX] = FALSE;
+	settings->OrderSupport[NEG_GLYPH_INDEX_INDEX] = TRUE;
+	settings->OrderSupport[NEG_FAST_INDEX_INDEX] = TRUE;
+	settings->OrderSupport[NEG_FAST_GLYPH_INDEX] = TRUE;
+	settings->OrderSupport[NEG_POLYGON_SC_INDEX] = (settings->SoftwareGdi) ? FALSE : TRUE;
+	settings->OrderSupport[NEG_POLYGON_CB_INDEX] = (settings->SoftwareGdi) ? FALSE : TRUE;
+	settings->OrderSupport[NEG_ELLIPSE_SC_INDEX] = FALSE;
+	settings->OrderSupport[NEG_ELLIPSE_CB_INDEX] = FALSE;
 
 	xfc->UseXThreads = TRUE;
 
@@ -795,6 +816,36 @@ BOOL xf_pre_connect(freerdp* instance)
 		fprintf(stderr, "Enabling X11 debug mode.\n");
 		XSynchronize(xfc->display, TRUE);
 		_def_error_handler = XSetErrorHandler(_xf_error_handler);
+	}
+
+	xfc->mutex = CreateMutex(NULL, FALSE, NULL);
+
+	PubSub_SubscribeChannelConnected(instance->context->pubSub,
+			(pChannelConnectedEventHandler) xf_OnChannelConnectedEventHandler);
+
+	PubSub_SubscribeChannelDisconnected(instance->context->pubSub,
+			(pChannelDisconnectedEventHandler) xf_OnChannelDisconnectedEventHandler);
+
+	freerdp_client_load_addins(channels, instance->settings);
+
+	freerdp_channels_pre_connect(channels, instance);
+
+	if (settings->AuthenticationOnly)
+	{
+		/* Check --authonly has a username and password. */
+		if (settings->Username == NULL)
+		{
+			fprintf(stderr, "--authonly, but no -u username. Please provide one.\n");
+			return FALSE;
+		}
+		if (settings->Password == NULL)
+		{
+			fprintf(stderr, "--authonly, but no -p password. Please provide one.\n");
+			return FALSE;
+		}
+		fprintf(stderr, "%s:%d: Authentication only. Don't connect to X.\n", __FILE__, __LINE__);
+		/* Avoid XWindows initialization and configuration below. */
+		return TRUE;
 	}
 
 	xfc->_NET_WM_ICON = XInternAtom(xfc->display, "_NET_WM_ICON", False);
@@ -893,7 +944,7 @@ BOOL xf_post_connect(freerdp* instance)
 
 		if (instance->settings->RemoteFxCodec)
 		{
-			rfx_context = (void*) rfx_context_new();
+			rfx_context = (void*) rfx_context_new(FALSE);
 			xfc->rfx_context = rfx_context;
 		}
 
@@ -922,6 +973,10 @@ BOOL xf_post_connect(freerdp* instance)
 	xf_create_window(xfc);
 
 	ZeroMemory(&gcv, sizeof(gcv));
+
+	if (xfc->modifier_map)
+		XFreeModifiermap(xfc->modifier_map);
+
 	xfc->modifier_map = XGetModifierMapping(xfc->display);
 
 	xfc->gc = XCreateGC(xfc->display, xfc->drawable, GCGraphicsExposures, &gcv);
@@ -1209,6 +1264,8 @@ void* xf_update_thread(void* arg)
 	wMessageQueue* queue;
 	freerdp* instance = (freerdp*) arg;
 
+	assert( NULL != instance);
+
 	status = 1;
 	queue = freerdp_get_message_queue(instance, FREERDP_UPDATE_MESSAGE_QUEUE);
 
@@ -1226,6 +1283,7 @@ void* xf_update_thread(void* arg)
 			break;
 	}
 
+	ExitThread(0);
 	return NULL;
 }
 
@@ -1238,9 +1296,12 @@ void* xf_input_thread(void* arg)
 	int pending_status = 1;
 	int process_status = 1;
 	freerdp* instance = (freerdp*) arg;
+	assert(NULL != instance);
 
 	xfc = (xfContext*) instance->context;
+	assert(NULL != xfc);
 
+	queue = freerdp_get_message_queue(instance, FREERDP_INPUT_MESSAGE_QUEUE);
 	event = CreateFileDescriptorEvent(NULL, FALSE, FALSE, xfc->xfds);
 
 	while (WaitForSingleObject(event, INFINITE) == WAIT_OBJECT_0)
@@ -1273,9 +1334,8 @@ void* xf_input_thread(void* arg)
 			break;
 	}
 
-	queue = freerdp_get_message_queue(instance, FREERDP_INPUT_MESSAGE_QUEUE);
 	MessageQueue_PostQuit(queue, 0);
-
+	ExitThread(0);
 	return NULL;
 }
 
@@ -1286,8 +1346,10 @@ void* xf_channels_thread(void* arg)
 	HANDLE event;
 	rdpChannels* channels;
 	freerdp* instance = (freerdp*) arg;
+	assert(NULL != instance);
 
 	xfc = (xfContext*) instance->context;
+	assert(NULL != xfc);
 
 	channels = instance->context->channels;
 	event = freerdp_channels_get_event_handle(instance);
@@ -1295,11 +1357,60 @@ void* xf_channels_thread(void* arg)
 	while (WaitForSingleObject(event, INFINITE) == WAIT_OBJECT_0)
 	{
 		status = freerdp_channels_process_pending_messages(instance);
+		if (!status)
+			break;
+
 		xf_process_channel_event(channels, instance);
 	}
 
+	ExitThread(0);
 	return NULL;
 }
+
+#ifdef WITH_AUTORECONNECT
+BOOL xf_auto_reconnect(freerdp* instance)
+{
+	xfContext* xfc = (xfContext*)instance->context;
+
+	UINT32 num_retries = 0;
+	UINT32 max_retries = instance->settings->AutoReconnectMaxRetries;
+
+	/* Only auto reconnect on network disconnects. */
+	if (freerdp_error_info(instance) != 0) return FALSE;
+
+	/* A network disconnect was detected */
+	fprintf(stderr, "Network disconnect!\n");
+	if (!instance->settings->AutoReconnectionEnabled)
+	{
+		/* No auto-reconnect - just quit */
+		return FALSE;
+	}
+
+	/* Perform an auto-reconnect. */
+	for (;;)
+	{
+		/* Quit retrying if max retries has been exceeded */
+		if (num_retries++ >= max_retries)
+		{
+			return FALSE;
+		}
+
+		/* Attempt the next reconnect */
+		fprintf(stderr, "Attempting reconnect (%u of %u)\n", num_retries, max_retries);
+		if (freerdp_reconnect(instance))
+		{
+			xfc->disconnect = FALSE;
+			return TRUE;
+		}
+
+		sleep(5);
+	}
+
+	fprintf(stderr, "Maximum reconnect retries exceeded\n");
+
+	return FALSE;
+}
+#endif
 
 /** Main loop for the rdp connection.
  *  It will be run from the thread's entry point (thread_func()).
@@ -1341,25 +1452,41 @@ void* xf_thread(void* param)
 	input_event = NULL;
 
 	instance = (freerdp*) param;
+	assert(NULL != instance);
 
 	ZeroMemory(rfds, sizeof(rfds));
 	ZeroMemory(wfds, sizeof(wfds));
 	ZeroMemory(&timeout, sizeof(struct timeval));
 
+#ifdef WITH_AUTORECONNECT
+	instance->settings->AutoReconnectionEnabled = TRUE;
+	instance->settings->AutoReconnectMaxRetries = 20;
+#endif
+
 	status = freerdp_connect(instance);
 
 	xfc = (xfContext*) instance->context;
+	assert(NULL != xfc);
 
 	/* Connection succeeded. --authonly ? */
 	if (instance->settings->AuthenticationOnly)
 	{
 		freerdp_disconnect(instance);
 		fprintf(stderr, "%s:%d: Authentication only, exit status %d\n", __FILE__, __LINE__, !status);
-		exit(!status);
+		ExitThread(exit_code);
 	}
 
 	if (!status)
 	{
+		if (xfc->mutex)
+		{
+			WaitForSingleObject(xfc->mutex, INFINITE);
+			CloseHandle(xfc->mutex);
+			xfc->mutex = NULL;
+		}
+
+		xf_monitors_free(xfc, instance->settings);
+
 		exit_code = XF_EXIT_CONN_FAILED;
 		ExitThread(exit_code);
 	}
@@ -1392,8 +1519,14 @@ void* xf_thread(void* param)
 		rcount = 0;
 		wcount = 0;
 
+		/*
+		 * win8 and server 2k12 seem to have some timing issue/race condition
+		 * when a initial sync request is send to sync the keyboard inidcators
+		 * sending the sync event twice fixed this problem
+		 */
 		if (freerdp_focus_required(instance))
 		{
+			xf_kbd_focus_in(xfc);
 			xf_kbd_focus_in(xfc);
 		}
 
@@ -1474,6 +1607,9 @@ void* xf_thread(void* param)
 		{
 			if (freerdp_check_fds(instance) != TRUE)
 			{
+#ifdef WITH_AUTORECONNECT
+				if (xf_auto_reconnect(instance)) continue;
+#endif
 				fprintf(stderr, "Failed to check FreeRDP file descriptor\n");
 				break;
 			}
@@ -1512,12 +1648,30 @@ void* xf_thread(void* param)
 		}
 	}
 
+	/* Close the channels first. This will signal the internal message pipes
+	 * that the threads should quit. */
+	freerdp_channels_close(channels, instance);
+
 	if (async_update)
 	{
 		wMessageQueue* update_queue = freerdp_get_message_queue(instance, FREERDP_UPDATE_MESSAGE_QUEUE);
 		MessageQueue_PostQuit(update_queue, 0);
 		WaitForSingleObject(update_thread, INFINITE);
 		CloseHandle(update_thread);
+	}
+
+	if (async_input)
+	{
+		wMessageQueue* input_queue = freerdp_get_message_queue(instance, FREERDP_INPUT_MESSAGE_QUEUE);
+		MessageQueue_PostQuit(input_queue, 0);
+		WaitForSingleObject(input_thread, INFINITE);
+		CloseHandle(input_thread);
+	}
+
+	if (async_channels)
+	{
+		WaitForSingleObject(channels_thread, INFINITE);
+		CloseHandle(channels_thread);
 	}
 
 	FILE* fin = fopen("/tmp/tsmf.tid", "rt");
@@ -1556,7 +1710,6 @@ void* xf_thread(void* param)
 	if (!exit_code)
 		exit_code = freerdp_error_info(instance);
 
-	freerdp_channels_close(channels, instance);
 	freerdp_channels_free(channels);
 	freerdp_disconnect(instance);
 	gdi_free(instance);
@@ -1604,38 +1757,7 @@ void xf_TerminateEventHandler(rdpContext* context, TerminateEventArgs* e)
 	}
 }
 
-void xf_ParamChangeEventHandler(rdpContext* context, ParamChangeEventArgs* e)
-{
-
-	xfContext* xfc = (xfContext*) context;
-
-	switch (e->id)
-	{
-	case FreeRDP_ScalingFactor:
-
-		xfc->currentWidth = xfc->originalWidth * xfc->settings->ScalingFactor;
-		xfc->currentHeight = xfc->originalHeight * xfc->settings->ScalingFactor;
-
-		xf_transform_window(xfc);
-
-		{
-			ResizeWindowEventArgs e;
-
-			EventArgsInit(&e, "xfreerdp");
-			e.width = (int) xfc->originalWidth * xfc->settings->ScalingFactor;
-			e.height = (int) xfc->originalHeight * xfc->settings->ScalingFactor;
-			PubSub_OnResizeWindow(((rdpContext*) xfc)->pubSub, xfc, &e);
-		}
-		xf_draw_screen_scaled(xfc, 0, 0, 0, 0, FALSE);
-
-		break;
-
-	default:
-		break;
-	}
-}
-
-void xf_ScalingFactorChangeEventHandler(rdpContext* context, ScalingFactorChangeEventArgs* e)
+static void xf_ScalingFactorChangeEventHandler(rdpContext* context, ScalingFactorChangeEventArgs* e)
 {
 	xfContext* xfc = (xfContext*) context;
 
@@ -1653,12 +1775,12 @@ void xf_ScalingFactorChangeEventHandler(rdpContext* context, ScalingFactorChange
 	xf_transform_window(xfc);
 
 	{
-		ResizeWindowEventArgs e;
+		ResizeWindowEventArgs ev;
 
-		EventArgsInit(&e, "xfreerdp");
-		e.width = (int) xfc->originalWidth * xfc->settings->ScalingFactor;
-		e.height = (int) xfc->originalHeight * xfc->settings->ScalingFactor;
-		PubSub_OnResizeWindow(((rdpContext*) xfc)->pubSub, xfc, &e);
+		EventArgsInit(&ev, "xfreerdp");
+		ev.width = (int) xfc->originalWidth * xfc->settings->ScalingFactor;
+		ev.height = (int) xfc->originalHeight * xfc->settings->ScalingFactor;
+		PubSub_OnResizeWindow(((rdpContext*) xfc)->pubSub, xfc, &ev);
 	}
 	xf_draw_screen_scaled(xfc, 0, 0, 0, 0, FALSE);
 
@@ -1668,19 +1790,19 @@ void xf_ScalingFactorChangeEventHandler(rdpContext* context, ScalingFactorChange
  * Client Interface
  */
 
-void xfreerdp_client_global_init()
+static void xfreerdp_client_global_init()
 {
 	setlocale(LC_ALL, "");
 	freerdp_handle_signals();
 	freerdp_channels_global_init();
 }
 
-void xfreerdp_client_global_uninit()
+static void xfreerdp_client_global_uninit()
 {
 	freerdp_channels_global_uninit();
 }
 
-int xfreerdp_client_start(rdpContext* context)
+static int xfreerdp_client_start(rdpContext* context)
 {
 	xfContext* xfc = (xfContext*) context;
 
@@ -1692,14 +1814,17 @@ int xfreerdp_client_start(rdpContext* context)
 		return -1;
 	}
 
-	xfc->thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) xf_thread, context->instance, 0, NULL);
+	xfc->thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) xf_thread,
+			context->instance, 0, NULL);
 
 	return 0;
 }
 
-int xfreerdp_client_stop(rdpContext* context)
+static int xfreerdp_client_stop(rdpContext* context)
 {
 	xfContext* xfc = (xfContext*) context;
+
+	assert(NULL != context);
 
 	if (context->settings->AsyncInput)
 	{
@@ -1714,10 +1839,16 @@ int xfreerdp_client_stop(rdpContext* context)
 		xfc->disconnect = TRUE;
 	}
 
+	if (xfc->thread)
+	{
+		CloseHandle(xfc->thread);
+		xfc->thread = NULL;
+	}
+
 	return 0;
 }
 
-int xfreerdp_client_new(freerdp* instance, rdpContext* context)
+static int xfreerdp_client_new(freerdp* instance, rdpContext* context)
 {
 	xfContext* xfc;
 	rdpSettings* settings;
@@ -1726,6 +1857,7 @@ int xfreerdp_client_new(freerdp* instance, rdpContext* context)
 
 	instance->PreConnect = xf_pre_connect;
 	instance->PostConnect = xf_post_connect;
+	instance->PostDisconnect = xf_post_disconnect;
 	instance->Authenticate = xf_authenticate;
 	instance->VerifyCertificate = xf_verify_certificate;
 	instance->LogonErrorInfo = xf_logon_error_info;
@@ -1736,43 +1868,13 @@ int xfreerdp_client_new(freerdp* instance, rdpContext* context)
 	settings = instance->settings;
 	xfc->settings = instance->context->settings;
 
-	settings->OsMajorType = OSMAJORTYPE_UNIX;
-	settings->OsMinorType = OSMINORTYPE_NATIVE_XSERVER;
-
-	settings->OrderSupport[NEG_DSTBLT_INDEX] = TRUE;
-	settings->OrderSupport[NEG_PATBLT_INDEX] = TRUE;
-	settings->OrderSupport[NEG_SCRBLT_INDEX] = TRUE;
-	settings->OrderSupport[NEG_OPAQUE_RECT_INDEX] = TRUE;
-	settings->OrderSupport[NEG_DRAWNINEGRID_INDEX] = FALSE;
-	settings->OrderSupport[NEG_MULTIDSTBLT_INDEX] = FALSE;
-	settings->OrderSupport[NEG_MULTIPATBLT_INDEX] = FALSE;
-	settings->OrderSupport[NEG_MULTISCRBLT_INDEX] = FALSE;
-	settings->OrderSupport[NEG_MULTIOPAQUERECT_INDEX] = TRUE;
-	settings->OrderSupport[NEG_MULTI_DRAWNINEGRID_INDEX] = FALSE;
-	settings->OrderSupport[NEG_LINETO_INDEX] = TRUE;
-	settings->OrderSupport[NEG_POLYLINE_INDEX] = TRUE;
-	settings->OrderSupport[NEG_MEMBLT_INDEX] = settings->BitmapCacheEnabled;
-	settings->OrderSupport[NEG_MEM3BLT_INDEX] = (settings->SoftwareGdi) ? TRUE : FALSE;
-	settings->OrderSupport[NEG_MEMBLT_V2_INDEX] = settings->BitmapCacheEnabled;
-	settings->OrderSupport[NEG_MEM3BLT_V2_INDEX] = FALSE;
-	settings->OrderSupport[NEG_SAVEBITMAP_INDEX] = FALSE;
-	settings->OrderSupport[NEG_GLYPH_INDEX_INDEX] = TRUE;
-	settings->OrderSupport[NEG_FAST_INDEX_INDEX] = TRUE;
-	settings->OrderSupport[NEG_FAST_GLYPH_INDEX] = TRUE;
-	settings->OrderSupport[NEG_POLYGON_SC_INDEX] = (settings->SoftwareGdi) ? FALSE : TRUE;
-	settings->OrderSupport[NEG_POLYGON_CB_INDEX] = (settings->SoftwareGdi) ? FALSE : TRUE;
-	settings->OrderSupport[NEG_ELLIPSE_SC_INDEX] = FALSE;
-	settings->OrderSupport[NEG_ELLIPSE_CB_INDEX] = FALSE;
-
 	PubSub_SubscribeTerminate(context->pubSub, (pTerminateEventHandler) xf_TerminateEventHandler);
-	PubSub_SubscribeParamChange(context->pubSub, (pParamChangeEventHandler) xf_ParamChangeEventHandler);
 	PubSub_SubscribeScalingFactorChange(context->pubSub, (pScalingFactorChangeEventHandler) xf_ScalingFactorChangeEventHandler);
-
 
 	return 0;
 }
 
-void xfreerdp_client_free(freerdp* instance, rdpContext* context)
+static void xfreerdp_client_free(freerdp* instance, rdpContext* context)
 {
 	xfContext* xfc = (xfContext*) context;
 

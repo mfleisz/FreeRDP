@@ -5,16 +5,27 @@ CMakeCache.txt
 config.h
 install_manifest*.txt
 CTestTestfile.cmake
-freerdp.pc
+*.pc
 Makefile
 Testing
 cmake_install.cmake
 CPackConfig.cmake
 CPackSourceConfig.cmake
 DartConfiguration.tcl
+CMakeCPackOptions.cmake
 _CPack_Packages
-external/*
+LICENSE.txt
+/external/*
 !external/README
+*Config.cmake
+*ConfigVersion.cmake
+include/freerdp/version.h
+
+*.a.objlist.cmake
+*.a.objlist
+*.a.objdir
+*_dummy.c
+*_dummy.c.base
 
 # Packages
 *.zip
@@ -22,6 +33,7 @@ external/*
 *.sh
 *.deb
 *.rpm
+*.dmg
 *.tar.Z
 *.tar.gz
 
@@ -65,6 +77,14 @@ Thumbs.db
 ipch
 Debug
 RelWithDebInfo
+*.lib
+*.exp
+*.pdb
+*.dll
+*.ilk
+*.resource.txt
+*.embed.manifest*
+*.intermediate.manifest*
 
 # Binaries
 *.a

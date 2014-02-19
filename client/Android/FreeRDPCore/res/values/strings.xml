@@ -32,8 +32,8 @@
     <!-- List placeholder labels -->
     <string name="list_placeholder_login">Login</string>
     <string name="list_placeholder_no_servers">No Servers</string>
-    <string name="list_placeholder_connecting">Connecting ...</string>
-    <string name="list_placeholder_disconnecting">Disconnecting ...</string>
+    <string name="list_placeholder_connecting">Connecting &#8230;</string>
+    <string name="list_placeholder_disconnecting">Disconnecting &#8230;</string>
     <string name="list_placeholder_connection_error">Connection Lost</string>
     <string name="list_placeholder_wrong_password">Wrong Password</string>
     <string name="list_placeholder_invalid_username">Invalid Username</string>
@@ -64,9 +64,11 @@
     </string-array>
     <string name="settings_resolution">Resolution</string>
     <string name="resolution_automatic">Automatic</string>
+    <string name="resolution_fit">Fitscreen</string>
     <string name="resolution_custom">Custom</string>
     <string-array name="resolutions_array">
         <item>Automatic</item>
+        <item>Fit Screen</item>
         <item>Custom</item>
         <item>640x480</item>
         <item>720x480</item>
@@ -79,6 +81,7 @@
     </string-array>
     <string-array name="resolutions_values_array">
         <item>automatic</item>
+        <item>fitscreen</item>
         <item>custom</item>
         <item>640x480</item>
         <item>720x480</item>
@@ -109,6 +112,18 @@
     <string name="settings_enable_gateway_settings">Enable Gateway</string>
     <string name="settings_gateway_settings">Gateway Settings</string>    
     <string name="settings_redirect_sdcard">Redirect SDCard</string>
+		<string name="settings_redirect_sound">Redirect Sound</string>
+    <string-array name="redirect_sound_array">
+        <item>Do not play</item>
+        <item>Play on Server</item>
+        <item>Play on Device</item>
+    </string-array>
+    <string-array name="redirect_sound_values_array">
+        <item>0</item>
+        <item>1</item>
+        <item>2</item>
+    </string-array>
+    <string name="settings_redirect_microphone">Redirect Microphone</string>
     <string name="settings_security">Security</string>
     <string-array name="security_array">
         <item>Automatic</item>
@@ -124,6 +139,10 @@
     </string-array>
     <string name="settings_remote_program">Remote Program</string>
     <string name="settings_work_dir">Working Directory</string>
+    <string name="settings_async_channel">Async channel</string>
+    <string name="settings_async_transport">Async transport</string>
+    <string name="settings_async_input">Async input</string>
+    <string name="settings_async_update">Async update</string>
     <string name="settings_console_mode">Console Mode</string>
     <!-- App settings strings -->
     <string name="settings_password_present">*******</string>
@@ -163,10 +182,9 @@
     <string name="dlg_title_credentials">Please enter your credentials</string>
     <string name="dlg_title_create_shortcut">Create Shortcut</string>
     <string name="dlg_msg_create_shortcut">Shortcut name:</string>
-    <string name="dlg_msg_connecting">Connecting ...</string>
-    <string name="dlg_msg_logging_in">Logging in ...</string>
+    <string name="dlg_msg_connecting">Connecting &#8230;</string>
+    <string name="dlg_msg_logging_in">Logging in &#8230;</string>
     <string name="dlg_title_about">About aFreeRDP</string>
-    <string name="dlg_msg_about">Version: %1$s\n\u00A9 2012 Thinstuff Technologies GmbH</string>
     <string name="dlg_title_create_bookmark_after_qc">Save Connection Settings?</string>
     <string name="dlg_msg_create_bookmark_after_qc">Your connection settings have not been saved! Do you want to save them?</string>
     <string name="dlg_title_save_bookmark">Save Connection?</string>
@@ -176,4 +194,6 @@
     <string name="dlg_msg_exit">Are you sure you want to exit the application?</string>
     <string name="dlg_title_clear_cert_cache">Delete Certificates?</string>
     <string name="dlg_msg_clear_cert_cache">Are you sure you want to delete all your cached Certificates?</string>
+    <string name="debug_level">Debug Level</string>
+    <string name="settings_debug">Debug Settings</string>
 </resources>

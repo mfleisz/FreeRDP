@@ -25,6 +25,7 @@ typedef enum
 	TRANSPORT_LAYER_TCP,
 	TRANSPORT_LAYER_TLS,
 	TRANSPORT_LAYER_TSG,
+	TRANSPORT_LAYER_TSG_TLS,
 	TRANSPORT_LAYER_CLOSED
 } TRANSPORT_LAYER;
 
@@ -36,6 +37,7 @@ typedef struct rdp_transport rdpTransport;
 #include "gateway/tsg.h"
 
 #include <winpr/sspi.h>
+#include <winpr/wlog.h>
 #include <winpr/synch.h>
 #include <winpr/thread.h>
 #include <winpr/stream.h>
@@ -57,6 +59,7 @@ struct rdp_transport
 	rdpTcp* TcpOut;
 	rdpTls* TlsIn;
 	rdpTls* TlsOut;
+	rdpTls* TsgTls;
 	rdpCredssp* credssp;
 	rdpSettings* settings;
 	UINT32 SleepInterval;
@@ -72,8 +75,9 @@ struct rdp_transport
 	HANDLE stopEvent;
 	HANDLE thread;
 	BOOL async;
-	HANDLE ReadMutex;
-	HANDLE WriteMutex;
+	CRITICAL_SECTION ReadLock;
+	CRITICAL_SECTION WriteLock;
+	wLog* log;
 };
 
 wStream* transport_send_stream_init(rdpTransport* transport, int size);
@@ -90,7 +94,7 @@ BOOL transport_accept_nla(rdpTransport* transport);
 int transport_read(rdpTransport* transport, wStream* s);
 int transport_write(rdpTransport* transport, wStream* s);
 void transport_get_fds(rdpTransport* transport, void** rfds, int* rcount);
-int transport_check_fds(rdpTransport** ptransport);
+int transport_check_fds(rdpTransport* transport);
 BOOL transport_set_blocking_mode(rdpTransport* transport, BOOL blocking);
 void transport_get_read_handles(rdpTransport* transport, HANDLE* events, DWORD* count);
 

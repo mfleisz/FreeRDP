@@ -1,7 +1,7 @@
 /*
    Android FreeRDP JNI Wrapper
 
-   Copyright 2013 Thinstuff Technologies GmbH, Author: Martin Fleisz
+   Copyright 2013 Thincast Technologies GmbH, Author: Martin Fleisz
 
    This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. 
    If a copy of the MPL was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -35,11 +35,15 @@ public class LibFreeRDP
 		boolean disableMenuAnimations, boolean disableTheming,
 		boolean enableFontSmoothing, boolean enableDesktopComposition);
 
-	private static native void freerdp_set_advanced_settings(int inst, String remoteProgram, String workDir);
+	private static native void freerdp_set_advanced_settings(int inst,
+			String remoteProgram, String workDir, boolean async_channel,
+			boolean async_transport, boolean async_input, boolean async_update);
 	
 	private static native void freerdp_set_data_directory(int inst, String directory);
 	
 	private static native void freerdp_set_clipboard_redirection(int inst, boolean enable);
+	private static native void freerdp_set_sound_redirection(int inst, int redirect);
+	private static native void freerdp_set_microphone_redirection(int inst, boolean enable);
 	private static native void freerdp_set_drive_redirection(int inst, String path);
 	
 	private static native void freerdp_set_gateway_info(int inst, String gatewayhostname, int port, 
@@ -149,7 +153,11 @@ public class LibFreeRDP
 				flags.getDesktopComposition());
 		
 		BookmarkBase.AdvancedSettings advancedSettings = bookmark.getAdvancedSettings();
-		freerdp_set_advanced_settings(inst, advancedSettings.getRemoteProgram(), advancedSettings.getWorkDir());
+		BookmarkBase.DebugSettings debugSettings = bookmark.getDebugSettings();
+		freerdp_set_advanced_settings(inst, advancedSettings.getRemoteProgram(),
+				advancedSettings.getWorkDir(), debugSettings.getAsyncChannel(),
+				debugSettings.getAsyncTransport(), debugSettings.getAsyncInput(),
+				debugSettings.getAsyncUpdate());
 
 		// drive redirection enabled?
 		if (advancedSettings.getRedirectSDCard())
@@ -165,7 +173,15 @@ public class LibFreeRDP
 			freerdp_set_gateway_info(inst, gatewaySettings.getHostname(), gatewaySettings.getPort(), 
 					gatewaySettings.getUsername(), gatewaySettings.getPassword(), gatewaySettings.getDomain());			
 		}
-					
+			
+		// Sound redirection
+		freerdp_set_sound_redirection(inst,
+				advancedSettings.getRedirectSound());
+
+		// Microphone redirection
+		freerdp_set_microphone_redirection(inst,
+				advancedSettings.getRedirectMicrophone());
+
 		return true;
 	}
 	

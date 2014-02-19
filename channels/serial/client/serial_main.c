@@ -22,6 +22,7 @@
 #include "config.h"
 #endif
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,12 +47,13 @@
 #include <winpr/crt.h>
 #include <winpr/synch.h>
 #include <winpr/thread.h>
+#include <winpr/stream.h>
 #include <winpr/collections.h>
 
 #include <freerdp/freerdp.h>
 #include <freerdp/utils/list.h>
-#include <winpr/stream.h>
 #include <freerdp/channels/rdpdr.h>
+#include <freerdp/utils/svc_plugin.h>
 
 typedef struct _SERIAL_DEVICE SERIAL_DEVICE;
 
@@ -346,6 +348,7 @@ void* serial_thread_mfunc(void* arg)
 {
 	SERIAL_DEVICE* serial = (SERIAL_DEVICE*)arg;
 	
+	assert(NULL != serial);
 	while(1)
 	{
 		int sl;
@@ -366,6 +369,7 @@ void* serial_thread_mfunc(void* arg)
 		}
 	}
 
+	ExitThread(0);
 	return NULL;
 }
 
@@ -376,6 +380,7 @@ static void* serial_thread_func(void* arg)
 	SERIAL_DEVICE* serial = (SERIAL_DEVICE*)arg;
 	HANDLE ev[] = {serial->stopEvent, Queue_Event(serial->queue), serial->newEvent};
 
+	assert(NULL != serial);
 	while (1)
 	{
 		status = WaitForMultipleObjects(3, ev, FALSE, INFINITE);
@@ -401,6 +406,7 @@ static void* serial_thread_func(void* arg)
 			serial_check_fds(serial);
 	}
 
+	ExitThread(0);
 	return NULL;
 }
 

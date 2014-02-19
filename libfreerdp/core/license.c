@@ -28,8 +28,8 @@
 
 #include "license.h"
 
-//#define LICENSE_NULL_CLIENT_RANDOM		1
-#define LICENSE_NULL_PREMASTER_SECRET		1
+/* #define LICENSE_NULL_CLIENT_RANDOM		1 */
+/* #define LICENSE_NULL_PREMASTER_SECRET		1 */
 
 #ifdef WITH_DEBUG_LICENSE
 
@@ -191,11 +191,15 @@ BOOL license_send(rdpLicense* license, wStream* s, BYTE type)
 	sec_flags = SEC_LICENSE_PKT;
 	wMsgSize = length - LICENSE_PACKET_HEADER_MAX_LENGTH + 4;
 
+	flags = PREAMBLE_VERSION_3_0;
+
 	/**
 	 * Using EXTENDED_ERROR_MSG_SUPPORTED here would cause mstsc to crash when
 	 * running in server mode! This flag seems to be incorrectly documented.
 	 */
-	flags = PREAMBLE_VERSION_3_0;
+
+	if (!license->rdp->settings->ServerMode)
+		flags |= EXTENDED_ERROR_MSG_SUPPORTED;
 
 	rdp_write_header(license->rdp, s, length, MCS_GLOBAL_CHANNEL_ID);
 	rdp_write_security_header(s, sec_flags);
@@ -225,7 +229,7 @@ BOOL license_send(rdpLicense* license, wStream* s, BYTE type)
  * @return if the operation completed successfully
  */
 
-BOOL license_recv(rdpLicense* license, wStream* s)
+int license_recv(rdpLicense* license, wStream* s)
 {
 	BYTE flags;
 	BYTE bMsgType;
@@ -237,37 +241,41 @@ BOOL license_recv(rdpLicense* license, wStream* s)
 	if (!rdp_read_header(license->rdp, s, &length, &channelId))
 	{
 		fprintf(stderr, "Incorrect RDP header.\n");
-		return FALSE;
+		return -1;
 	}
 
 	if (!rdp_read_security_header(s, &securityFlags))
-		return FALSE;
+		return -1;
 
 	if (securityFlags & SEC_ENCRYPT)
 	{
 		if (!rdp_decrypt(license->rdp, s, length - 4, securityFlags))
 		{
 			fprintf(stderr, "rdp_decrypt failed\n");
-			return FALSE;
+			return -1;
 		}
 	}
 
 	if (!(securityFlags & SEC_LICENSE_PKT))
 	{
+		int status;
+
 		if (!(securityFlags & SEC_ENCRYPT))
 			Stream_Rewind(s, RDP_SECURITY_HEADER_LENGTH);
 
-		if (rdp_recv_out_of_sequence_pdu(license->rdp, s) != TRUE)
+		status = rdp_recv_out_of_sequence_pdu(license->rdp, s);
+
+		if (status < 0)
 		{
 			fprintf(stderr, "Unexpected license packet.\n");
-			return FALSE;
+			return status;
 		}
 
-		return TRUE;
+		return 0;
 	}
 
 	if (!license_read_preamble(s, &bMsgType, &flags, &wMsgSize)) /* preamble (4 bytes) */
-		return FALSE;
+		return -1;
 
 	DEBUG_LICENSE("Receiving %s Packet", LICENSE_MESSAGE_STRINGS[bMsgType & 0x1F]);
 
@@ -275,13 +283,13 @@ BOOL license_recv(rdpLicense* license, wStream* s)
 	{
 		case LICENSE_REQUEST:
 			if (!license_read_license_request_packet(license, s))
-				return FALSE;
+				return -1;
 			license_send_new_license_request_packet(license);
 			break;
 
 		case PLATFORM_CHALLENGE:
 			if (!license_read_platform_challenge_packet(license, s))
-				return FALSE;
+				return -1;
 			license_send_platform_challenge_response_packet(license);
 			break;
 
@@ -295,7 +303,7 @@ BOOL license_recv(rdpLicense* license, wStream* s)
 
 		case ERROR_ALERT:
 			if (!license_read_error_alert_packet(license, s))
-				return FALSE;
+				return -1;
 			break;
 
 		default:
@@ -303,7 +311,7 @@ BOOL license_recv(rdpLicense* license, wStream* s)
 			return FALSE;
 	}
 
-	return TRUE;
+	return 0;
 }
 
 void license_generate_randoms(rdpLicense* license)
@@ -409,7 +417,7 @@ void license_get_server_rsa_public_key(rdpLicense* license)
 
 	license->ModulusLength = ModulusLength;
 	license->Modulus = (BYTE*) malloc(ModulusLength);
-	ZeroMemory(license->Modulus, ModulusLength);
+	memcpy(license->Modulus, Modulus, ModulusLength);
 }
 
 void license_encrypt_premaster_secret(rdpLicense* license)
@@ -430,14 +438,15 @@ void license_encrypt_premaster_secret(rdpLicense* license)
 
 	EncryptedPremasterSecret = (BYTE*) malloc(license->ModulusLength);
 	ZeroMemory(EncryptedPremasterSecret, license->ModulusLength);
+	license->EncryptedPremasterSecret->type = BB_RANDOM_BLOB;
+	license->EncryptedPremasterSecret->length = PREMASTER_SECRET_LENGTH;
 
 #ifndef LICENSE_NULL_PREMASTER_SECRET
-	crypto_rsa_public_encrypt(license->PremasterSecret, PREMASTER_SECRET_LENGTH,
+	license->EncryptedPremasterSecret->length =
+		crypto_rsa_public_encrypt(license->PremasterSecret, PREMASTER_SECRET_LENGTH,
 			license->ModulusLength, license->Modulus, license->Exponent, EncryptedPremasterSecret);
 #endif
 
-	license->EncryptedPremasterSecret->type = BB_RANDOM_BLOB;
-	license->EncryptedPremasterSecret->length = PREMASTER_SECRET_LENGTH;
 	license->EncryptedPremasterSecret->data = EncryptedPremasterSecret;
 }
 
@@ -660,6 +669,8 @@ BOOL license_read_scope_list(wStream* s, SCOPE_LIST* scopeList)
 		return FALSE;
 
 	Stream_Read_UINT32(s, scopeCount); /* ScopeCount (4 bytes) */
+	if (scopeCount > Stream_GetRemainingLength(s) / 4)  /* every blob is at least 4 bytes */
+		return FALSE;
 
 	scopeList->count = scopeCount;
 	scopeList->array = (LICENSE_BLOB*) malloc(sizeof(LICENSE_BLOB) * scopeCount);
@@ -1044,11 +1055,11 @@ void license_send_platform_challenge_response_packet(rdpLicense* license)
 	fprintf(stderr, "\n");
 
 	fprintf(stderr, "HardwareId:\n");
-	winpr_HexDump(license->HardwareId, 20);
+	winpr_HexDump(license->HardwareId, HWID_LENGTH);
 	fprintf(stderr, "\n");
 
 	fprintf(stderr, "EncryptedHardwareId:\n");
-	winpr_HexDump(license->EncryptedHardwareId->data, 20);
+	winpr_HexDump(license->EncryptedHardwareId->data, HWID_LENGTH);
 	fprintf(stderr, "\n");
 #endif
 

@@ -10,7 +10,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *	 http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <tchar.h>
+#include <assert.h>
 #include <sys/types.h>
 
 #ifdef _MSC_VER
@@ -48,6 +49,7 @@
 #include <freerdp/client/cmdline.h>
 #include <freerdp/client/channels.h>
 #include <freerdp/channels/channels.h>
+#include <freerdp/event.h>
 
 #include "wf_gdi.h"
 #include "wf_graphics.h"
@@ -330,6 +332,7 @@ BOOL wf_post_connect(freerdp* instance)
 	rdpContext* context;
 	WCHAR lpWindowName[64];
 	rdpSettings* settings;
+	EmbedWindowEventArgs e;
 
 	settings = instance->settings;
 	context = instance->context;
@@ -371,7 +374,7 @@ BOOL wf_post_connect(freerdp* instance)
 		if (settings->RemoteFxCodec)
 		{
 			wfc->tile = wf_image_new(wfc, 64, 64, 32, NULL);
-			wfc->rfx_context = rfx_context_new();
+			wfc->rfx_context = rfx_context_new(FALSE);
 		}
 
 		if (settings->NSCodec)
@@ -387,6 +390,9 @@ BOOL wf_post_connect(freerdp* instance)
 	else
 		_snwprintf(lpWindowName, ARRAYSIZE(lpWindowName), L"FreeRDP: %S:%d", settings->ServerHostname, settings->ServerPort);
 
+	if (settings->EmbeddedWindow)
+		settings->Decorations = FALSE;
+	
 	if (!settings->Decorations)
 		dwStyle = WS_CHILD | WS_BORDER;
 	else
@@ -397,7 +403,7 @@ BOOL wf_post_connect(freerdp* instance)
 		wfc->hwnd = CreateWindowEx((DWORD) NULL, wfc->wndClassName, lpWindowName, dwStyle,
 			0, 0, 0, 0, wfc->hWndParent, NULL, wfc->hInstance, NULL);
 
-		SetWindowLongPtr(wfc->hwnd, GWLP_USERDATA, (LONG_PTR) wfc);
+		SetWindowLongPtr(wfc->hwnd, GWLP_USERDATA, (LONG_PTR) wfc);	   
 	}
 
 	wf_resize_window(wfc);
@@ -407,6 +413,11 @@ BOOL wf_post_connect(freerdp* instance)
 	BitBlt(wfc->primary->hdc, 0, 0, wfc->width, wfc->height, NULL, 0, 0, BLACKNESS);
 	wfc->drawing = wfc->primary;
 
+	EventArgsInit(&e, "wfreerdp");
+	e.embed = FALSE;
+	e.handle = (void*) wfc->hwnd;
+	PubSub_OnEmbedWindow(context->pubSub, context, &e);		   
+	
 	ShowWindow(wfc->hwnd, SW_SHOWNORMAL);
 	UpdateWindow(wfc->hwnd);
 
@@ -532,12 +543,26 @@ int wf_receive_channel_data(freerdp* instance, int channelId, BYTE* data, int si
 
 void wf_process_channel_event(rdpChannels* channels, freerdp* instance)
 {
+	wfContext* wfc;
 	wMessage* event;
 
+	wfc = (wfContext*) instance->context;
 	event = freerdp_channels_pop_event(channels);
 
 	if (event)
+	{
+		switch (GetMessageClass(event->id))
+		{
+			case CliprdrChannel_Class:
+				wf_process_cliprdr_event(wfc, event);
+				break;
+
+			default:
+				break;
+		}
+
 		freerdp_event_free(event);
+	}
 }
 
 BOOL wf_get_fds(freerdp* instance, void** rfds, int* rcount, void** wfds, int* wcount)
@@ -569,7 +594,10 @@ DWORD WINAPI wf_client_thread(LPVOID lpParam)
 	rdpChannels* channels;
 
 	instance = (freerdp*) lpParam;
+	assert(NULL != instance);
+
 	wfc = (wfContext*) instance->context;
+	assert(NULL != wfc);
 
 	ZeroMemory(rfds, sizeof(rfds));
 	ZeroMemory(wfds, sizeof(wfds));
@@ -690,13 +718,13 @@ DWORD WINAPI wf_client_thread(LPVOID lpParam)
 	}
 
 	/* cleanup */
-	wfc->mainThreadId = 0;
-
 	freerdp_channels_close(channels, instance);
 	freerdp_disconnect(instance);
 
 	printf("Main thread exited.\n");
 
+	ExitThread(0);
+	
 	return 0;
 }
 
@@ -708,6 +736,7 @@ DWORD WINAPI wf_keyboard_thread(LPVOID lpParam)
 	HHOOK hook_handle;
 
 	wfc = (wfContext*) lpParam;
+	assert(NULL != wfc);
 
 	hook_handle = SetWindowsHookEx(WH_KEYBOARD_LL, wf_ll_kbd_proc, wfc->hInstance, 0);
 
@@ -734,9 +763,9 @@ DWORD WINAPI wf_keyboard_thread(LPVOID lpParam)
 		fprintf(stderr, "failed to install keyboard hook\n");
 	}
 
-	wfc->keyboardThreadId = 0;
 	printf("Keyboard thread exited.\n");
 
+	ExitThread(0);
 	return (DWORD) NULL;
 }
 
@@ -759,45 +788,14 @@ int freerdp_client_focus_out(wfContext* wfc)
 
 int freerdp_client_set_window_size(wfContext* wfc, int width, int height)
 {
+	fprintf(stderr, "freerdp_client_set_window_size %d, %d", width, height);
+	
 	if ((width != wfc->client_width) || (height != wfc->client_height))
 	{
 		PostThreadMessage(wfc->mainThreadId, WM_SIZE, SIZE_RESTORED, ((UINT) height << 16) | (UINT) width);
 	}
 
 	return 0;
-}
-
-void wf_on_param_change(freerdp* instance, int id)
-{
-	RECT rect;
-	HMENU hMenu;
-	wfContext* wfc = (wfContext*) instance->context;
-
-	// specific processing here
-	switch (id)
-	{
-		case FreeRDP_SmartSizing:
-			fprintf(stderr, "SmartSizing changed.\n");
-
-			if (!instance->settings->SmartSizing && (wfc->client_width > instance->settings->DesktopWidth || wfc->client_height > instance->settings->DesktopHeight))
-			{
-				GetWindowRect(wfc->hwnd, &rect);
-				SetWindowPos(wfc->hwnd, HWND_TOP, 0, 0, MIN(wfc->client_width + wfc->offset_x, rect.right - rect.left), MIN(wfc->client_height + wfc->offset_y, rect.bottom - rect.top), SWP_NOMOVE | SWP_FRAMECHANGED);
-				wf_update_canvas_diff(wfc);
-			}
-
-			hMenu = GetSystemMenu(wfc->hwnd, FALSE);
-			CheckMenuItem(hMenu, SYSCOMMAND_ID_SMARTSIZING, instance->settings->SmartSizing);
-			wf_size_scrollbars(wfc, wfc->client_width, wfc->client_height);
-			GetClientRect(wfc->hwnd, &rect);
-			InvalidateRect(wfc->hwnd, &rect, TRUE);
-			break;
-
-		case FreeRDP_ConnectionType:
-			fprintf(stderr, "ConnectionType changed.\n");
-			freerdp_set_connection_type(wfc->instance->settings, wfc->instance->settings->ConnectionType);
-			break;
-	}
 }
 
 // TODO: Some of that code is a duplicate of wf_pre_connect. Refactor?
@@ -826,37 +824,6 @@ int freerdp_client_load_settings_from_rdp_file(wfContext* wfc, char* filename)
 		{
 			return 2;
 		}
-	}
-
-	return 0;
-}
-
-int freerdp_client_save_settings_to_rdp_file(wfContext* wfc, char* filename)
-{
-	if (!filename)
-		return 1;
-
-	if (wfc->instance->settings->ConnectionFile)
-	{
-		free(wfc->instance->settings->ConnectionFile);
-	}
-
-	wfc->instance->settings->ConnectionFile = _strdup(filename);
-
-	// Reuse existing rdpFile structure if available, to preserve unsupported settings when saving to disk.
-	if (wfc->connectionRdpFile == NULL)
-	{
-		wfc->connectionRdpFile = freerdp_client_rdp_file_new();
-	}
-
-	if (!freerdp_client_populate_rdp_file_from_settings(wfc->connectionRdpFile, wfc->instance->settings))
-	{
-		return 1;
-	}
-
-	if (!freerdp_client_write_rdp_file(wfc->connectionRdpFile, filename, UNICODE));
-	{
-		return 2;
 	}
 
 	return 0;
@@ -1016,7 +983,7 @@ int wfreerdp_client_new(freerdp* instance, rdpContext* context)
 
 	wfc->instance = instance;
 	context->channels = freerdp_channels_new();
-
+	
 	return 0;
 }
 
@@ -1078,11 +1045,26 @@ int wfreerdp_client_stop(rdpContext* context)
 {
 	wfContext* wfc = (wfContext*) context;
 
-	if (wfc->mainThreadId)
+	if (wfc->thread)
+	{
 		PostThreadMessage(wfc->mainThreadId, WM_QUIT, 0, 0);
 
-	if (wfc->keyboardThreadId)
+		WaitForSingleObject(wfc->thread, INFINITE);
+		CloseHandle(wfc->thread);
+		wfc->thread = NULL;
+		wfc->mainThreadId = 0;
+	}
+
+	if (wfc->keyboardThread)
+	{
 		PostThreadMessage(wfc->keyboardThreadId, WM_QUIT, 0, 0);
+
+		WaitForSingleObject(wfc->keyboardThread, INFINITE);
+		CloseHandle(wfc->keyboardThread);
+
+		wfc->keyboardThread = NULL;
+		wfc->keyboardThreadId = 0;
+	}
 
 	return 0;
 }

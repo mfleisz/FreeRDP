@@ -31,10 +31,6 @@
 #include <openssl/conf.h>
 #include <openssl/x509v3.h>
 
-#ifdef _WIN32
-#include <openssl/applink.c>
-#endif
-
 #include "makecert.h"
 
 struct _MAKECERT_CONTEXT
@@ -301,6 +297,8 @@ int command_line_pre_filter(MAKECERT_CONTEXT* context, int index, int argc, LPCS
 	{
 		if (argv[index][0] != '-')
 			context->output_file = (char*) argv[index];
+
+		return 1;
 	}
 
 	return 0;

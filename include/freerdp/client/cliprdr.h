@@ -1,6 +1,6 @@
 /**
  * FreeRDP: A Remote Desktop Protocol Implementation
- * Clipboard Virtual Channel Types
+ * Clipboard Virtual Channel Extension
  *
  * Copyright 2011 Vic Lee
  *
@@ -20,42 +20,72 @@
 #ifndef FREERDP_CHANNEL_CLIENT_CLIPRDR_H
 #define FREERDP_CHANNEL_CLIENT_CLIPRDR_H
 
+#include <freerdp/types.h>
+
+#include <freerdp/message.h>
+#include <freerdp/channels/cliprdr.h>
+
 /**
  * Client Interface
  */
 
 typedef struct _cliprdr_client_context CliprdrClientContext;
 
-typedef int (*pcCliprdrMonitorReady)(CliprdrClientContext* context);
-typedef int (*pcCliprdrFormatList)(CliprdrClientContext* context);
-typedef int (*pcCliprdrDataRequest)(CliprdrClientContext* context);
-typedef int (*pcCliprdrDataResponse)(CliprdrClientContext* context);
+typedef int (*pcCliprdrServerCapabilities)(CliprdrClientContext* context, CLIPRDR_CAPABILITIES* capabilities);
+typedef int (*pcCliprdrClientCapabilities)(CliprdrClientContext* context, CLIPRDR_CAPABILITIES* capabilities);
+typedef int (*pcCliprdrMonitorReady)(CliprdrClientContext* context, CLIPRDR_MONITOR_READY* monitorReady);
+typedef int (*pcCliprdrClientFormatList)(CliprdrClientContext* context, CLIPRDR_FORMAT_LIST* formatList);
+typedef int (*pcCliprdrServerFormatList)(CliprdrClientContext* context, CLIPRDR_FORMAT_LIST* formatList);
+typedef int (*pcCliprdrClientFormatListResponse)(CliprdrClientContext* context, CLIPRDR_FORMAT_LIST_RESPONSE* formatListResponse);
+typedef int (*pcCliprdrServerFormatListResponse)(CliprdrClientContext* context, CLIPRDR_FORMAT_LIST_RESPONSE* formatListResponse);
+typedef int (*pcCliprdrClientFormatDataRequest)(CliprdrClientContext* context, CLIPRDR_FORMAT_DATA_REQUEST* formatDataRequest);
+typedef int (*pcCliprdrServerFormatDataRequest)(CliprdrClientContext* context, CLIPRDR_FORMAT_DATA_REQUEST* formatDataRequest);
+typedef int (*pcCliprdrClientFormatDataResponse)(CliprdrClientContext* context, CLIPRDR_FORMAT_DATA_RESPONSE* formatDataResponse);
+typedef int (*pcCliprdrServerFormatDataResponse)(CliprdrClientContext* context, CLIPRDR_FORMAT_DATA_RESPONSE* formatDataResponse);
 
 struct _cliprdr_client_context
 {
+	void* handle;
+	void* custom;
+
+	pcCliprdrServerCapabilities ServerCapabilities;
+	pcCliprdrClientCapabilities ClientCapabilities;
 	pcCliprdrMonitorReady MonitorReady;
-	pcCliprdrFormatList FormatList;
-	pcCliprdrDataRequest DataRequest;
-	pcCliprdrDataResponse DataResponse;
+	pcCliprdrClientFormatList ClientFormatList;
+	pcCliprdrServerFormatList ServerFormatList;
+	pcCliprdrClientFormatListResponse ClientFormatListResponse;
+	pcCliprdrServerFormatListResponse ServerFormatListResponse;
+	pcCliprdrClientFormatDataRequest ClientFormatDataRequest;
+	pcCliprdrServerFormatDataRequest ServerFormatDataRequest;
+	pcCliprdrClientFormatDataResponse ClientFormatDataResponse;
+	pcCliprdrServerFormatDataResponse ServerFormatDataResponse;
 };
 
-/**
- * Clipboard Formats
- */
-
-#define CB_FORMAT_RAW			0x0000
-#define CB_FORMAT_TEXT			0x0001
-#define CB_FORMAT_DIB			0x0008
-#define CB_FORMAT_UNICODETEXT		0x000D
-#define CB_FORMAT_HTML			0xD010
-#define CB_FORMAT_PNG			0xD011
-#define CB_FORMAT_JPEG			0xD012
-#define CB_FORMAT_GIF			0xD013
+struct _CLIPRDR_FORMAT_NAME
+{
+	UINT32 id;
+	char* name;
+	int length;
+};
+typedef struct _CLIPRDR_FORMAT_NAME CLIPRDR_FORMAT_NAME;
 
 /**
  * Clipboard Events
  */
-typedef wMessage RDP_CB_MONITOR_READY_EVENT;
+
+struct _RDP_CB_CLIP_CAPS
+{
+	wMessage event;
+	UINT32 capabilities;
+};
+typedef struct _RDP_CB_CLIP_CAPS RDP_CB_CLIP_CAPS;
+
+struct _RDP_CB_MONITOR_READY_EVENT
+{
+	wMessage event;
+	UINT32 capabilities;
+};
+typedef struct _RDP_CB_MONITOR_READY_EVENT RDP_CB_MONITOR_READY_EVENT;
 
 struct _RDP_CB_FORMAT_LIST_EVENT
 {
@@ -64,6 +94,7 @@ struct _RDP_CB_FORMAT_LIST_EVENT
 	UINT16 num_formats;
 	BYTE* raw_format_data;
 	UINT32 raw_format_data_size;
+	BOOL raw_format_unicode;
 };
 typedef struct _RDP_CB_FORMAT_LIST_EVENT RDP_CB_FORMAT_LIST_EVENT;
 

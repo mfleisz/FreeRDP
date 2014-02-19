@@ -191,16 +191,21 @@ struct _wListDictionary
 	CRITICAL_SECTION lock;
 
 	wListDictionaryItem* head;
+	wObject object;
 };
 typedef struct _wListDictionary wListDictionary;
+
+#define ListDictionary_Object(_dictionary)	(&_dictionary->object)
 
 WINPR_API int ListDictionary_Count(wListDictionary* listDictionary);
 
 WINPR_API void ListDictionary_Add(wListDictionary* listDictionary, void* key, void* value);
-WINPR_API void ListDictionary_Remove(wListDictionary* listDictionary, void* key);
+WINPR_API void* ListDictionary_Remove(wListDictionary* listDictionary, void* key);
+WINPR_API void* ListDictionary_Remove_Head(wListDictionary* listDictionary);
 WINPR_API void ListDictionary_Clear(wListDictionary* listDictionary);
 
 WINPR_API BOOL ListDictionary_Contains(wListDictionary* listDictionary, void* key);
+WINPR_API int ListDictionary_GetKeys(wListDictionary* listDictionary, ULONG_PTR** ppKeys);
 
 WINPR_API void* ListDictionary_GetItemValue(wListDictionary* listDictionary, void* key);
 WINPR_API BOOL ListDictionary_SetItemValue(wListDictionary* listDictionary, void* key, void* value);
@@ -247,7 +252,7 @@ WINPR_API void LinkedList_Enumerator_Reset(wLinkedList* list);
 WINPR_API void* LinkedList_Enumerator_Current(wLinkedList* list);
 WINPR_API BOOL LinkedList_Enumerator_MoveNext(wLinkedList* list);
 
-WINPR_API wLinkedList* LinkedList_New();
+WINPR_API wLinkedList* LinkedList_New(void);
 WINPR_API void LinkedList_Free(wLinkedList* list);
 
 /* System.Collections.Generic.KeyValuePair<TKey,TValue> */
@@ -321,10 +326,14 @@ typedef struct _wBufferPoolItem wBufferPoolItem;
 
 struct _wBufferPool
 {
-	int defaultSize;
+	int fixedSize;
 	DWORD alignment;
 	BOOL synchronized;
 	CRITICAL_SECTION lock;
+
+	int size;
+	int capacity;
+	void** array;
 
 	int aSize;
 	int aCapacity;
@@ -393,6 +402,8 @@ struct _wMessageQueue
 	wMessage* array;
 	CRITICAL_SECTION lock;
 	HANDLE event;
+
+	wObject object;
 };
 typedef struct _wMessageQueue wMessageQueue;
 
@@ -409,7 +420,43 @@ WINPR_API void MessageQueue_PostQuit(wMessageQueue* queue, int nExitCode);
 WINPR_API int MessageQueue_Get(wMessageQueue* queue, wMessage* message);
 WINPR_API int MessageQueue_Peek(wMessageQueue* queue, wMessage* message, BOOL remove);
 
-WINPR_API wMessageQueue* MessageQueue_New(void);
+/*! \brief Clears all elements in a message queue.
+ *
+ *  \note If dynamically allocated data is part of the messages,
+ *        a custom cleanup handler must be passed in the 'callback'
+ *        argument for MessageQueue_New.
+ *
+ *  \param queue The queue to clear.
+ *
+ *  \return 0 in case of success or a error code otherwise.
+ */
+WINPR_API int MessageQueue_Clear(wMessageQueue *queue);
+
+/*! \brief Creates a new message queue.
+ * 				 If 'callback' is null, no custom cleanup will be done
+ * 				 on message queue deallocation.
+ * 				 If the 'callback' argument contains valid uninit or
+ * 				 free functions those will be called by
+ * 				 'MessageQueue_Clear'.
+ *
+ * \param callback a pointer to custom initialization / cleanup functions.
+ * 								 Can be NULL if not used.
+ *
+ * \return A pointer to a newly allocated MessageQueue or NULL.
+ */
+WINPR_API wMessageQueue* MessageQueue_New(const wObject *callback);
+
+/*! \brief Frees resources allocated by a message queue.
+ * 				 This function will only free resources allocated
+ *				 internally.
+ *
+ * \note Empty the queue before calling this function with
+ * 			 'MessageQueue_Clear', 'MessageQueue_Get' or
+ * 			 'MessageQueue_Peek' to free all resources allocated
+ * 			 by the message contained.
+ *
+ * \param queue A pointer to the queue to be freed.
+ */
 WINPR_API void MessageQueue_Free(wMessageQueue* queue);
 
 /* Message Pipe */
@@ -475,9 +522,9 @@ typedef struct _wEventType wEventType;
 #define DEFINE_EVENT_END(_name) \
 	} _name ## EventArgs; \
 	DEFINE_EVENT_HANDLER(_name); \
-	DEFINE_EVENT_RAISE(_name); \
-	DEFINE_EVENT_SUBSCRIBE(_name); \
-	DEFINE_EVENT_UNSUBSCRIBE(_name);
+	DEFINE_EVENT_RAISE(_name) \
+	DEFINE_EVENT_SUBSCRIBE(_name) \
+	DEFINE_EVENT_UNSUBSCRIBE(_name)
 
 #define DEFINE_EVENT_ENTRY(_name) \
 	{ #_name, { sizeof( _name ## EventArgs) }, 0, { \

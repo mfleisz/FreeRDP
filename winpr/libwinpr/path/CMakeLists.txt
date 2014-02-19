@@ -28,11 +28,16 @@ add_complex_library(MODULE ${MODULE_NAME} TYPE "OBJECT"
 
 set_target_properties(${MODULE_NAME} PROPERTIES VERSION ${WINPR_VERSION_FULL} SOVERSION ${WINPR_VERSION} PREFIX "lib")
 
+set_complex_link_libraries(VARIABLE ${MODULE_PREFIX}_LIBS
+	MONOLITHIC ${MONOLITHIC_BUILD} INTERNAL
+	MODULE winpr
+	MODULES winpr-crt winpr-heap winpr-environment)
+	
 if(MONOLITHIC_BUILD)
-
+ 
 else()
-	target_link_libraries(${MODULE_NAME} winpr-crt winpr-heap winpr-environment)
-	install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR})
+	target_link_libraries(${MODULE_NAME} ${${MODULE_PREFIX}_LIBS})
+	install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR} EXPORT WinPRTargets)
 endif()
 
 set_property(TARGET ${MODULE_NAME} PROPERTY FOLDER "WinPR")

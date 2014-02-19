@@ -163,12 +163,12 @@ static BOOL audin_alsa_thread_receive(AudinALSADevice* alsa, BYTE* src, int size
 			}
 
 			if (WaitForSingleObject(alsa->stopEvent, 0) == WAIT_OBJECT_0)
-			{
-				ret = 0;
-				frames = 0;
-			}
+				break;
 			else
 			{
+				DEBUG_DVC("encoded %d [%d] to %d [%X]", alsa->buffer_frames,
+						tbytes_per_frame, encoded_size,
+						alsa->wformat);
 				ret = alsa->receive(encoded_data, encoded_size, alsa->user_data);
 			}
 
@@ -182,7 +182,7 @@ static BOOL audin_alsa_thread_receive(AudinALSADevice* alsa, BYTE* src, int size
 		frames -= cframes;
 	}
 
-	return ret;
+	return (ret) ? TRUE : FALSE;
 }
 
 static void* audin_alsa_thread_func(void* arg)
@@ -198,9 +198,6 @@ static void* audin_alsa_thread_func(void* arg)
 
 	rbytes_per_frame = alsa->actual_channels * alsa->bytes_per_channel;
 	tbytes_per_frame = alsa->target_channels * alsa->bytes_per_channel;
-	alsa->buffer = (BYTE*) malloc(tbytes_per_frame * alsa->frames_per_packet);
-	ZeroMemory(alsa->buffer, tbytes_per_frame * alsa->frames_per_packet);
-	alsa->buffer_frames = 0;
 	buffer = (BYTE*) malloc(rbytes_per_frame * alsa->frames_per_packet);
 	ZeroMemory(buffer, rbytes_per_frame * alsa->frames_per_packet);
 	freerdp_dsp_context_reset_adpcm(alsa->dsp_context);
@@ -241,15 +238,11 @@ static void* audin_alsa_thread_func(void* arg)
 
 	free(buffer);
 
-	free(alsa->buffer);
-	alsa->buffer = NULL;
-
 	if (capture_handle)
 		snd_pcm_close(capture_handle);
 
-	SetEvent(alsa->stopEvent);
-
 	DEBUG_DVC("out");
+	ExitThread(0);
 
 	return NULL;
 }
@@ -257,8 +250,6 @@ static void* audin_alsa_thread_func(void* arg)
 static void audin_alsa_free(IAudinDevice* device)
 {
 	AudinALSADevice* alsa = (AudinALSADevice*) device;
-
-	SetEvent(alsa->stopEvent);
 
 	freerdp_dsp_context_free(alsa->dsp_context);
 
@@ -337,6 +328,8 @@ static void audin_alsa_set_format(IAudinDevice* device, audinFormat* format, UIN
 
 static void audin_alsa_open(IAudinDevice* device, AudinReceive receive, void* user_data)
 {
+	int rbytes_per_frame;
+	int tbytes_per_frame;
 	AudinALSADevice* alsa = (AudinALSADevice*) device;
 
 	DEBUG_DVC("");
@@ -344,8 +337,15 @@ static void audin_alsa_open(IAudinDevice* device, AudinReceive receive, void* us
 	alsa->receive = receive;
 	alsa->user_data = user_data;
 
+	rbytes_per_frame = alsa->actual_channels * alsa->bytes_per_channel;
+	tbytes_per_frame = alsa->target_channels * alsa->bytes_per_channel;
+	alsa->buffer = (BYTE*) malloc(tbytes_per_frame * alsa->frames_per_packet);
+	ZeroMemory(alsa->buffer, tbytes_per_frame * alsa->frames_per_packet);
+	alsa->buffer_frames = 0;
+	
 	alsa->stopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-	alsa->thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) audin_alsa_thread_func, alsa, 0, NULL);
+	alsa->thread = CreateThread(NULL, 0,
+			(LPTHREAD_START_ROUTINE) audin_alsa_thread_func, alsa, 0, NULL);
 }
 
 static void audin_alsa_close(IAudinDevice* device)
@@ -355,7 +355,16 @@ static void audin_alsa_close(IAudinDevice* device)
 	DEBUG_DVC("");
 
 	SetEvent(alsa->stopEvent);
+	WaitForSingleObject(alsa->thread, INFINITE);
+	CloseHandle(alsa->stopEvent);
+	CloseHandle(alsa->thread);
 
+	if (alsa->buffer)
+		free(alsa->buffer);
+	alsa->buffer = NULL;
+
+	alsa->stopEvent = NULL;
+	alsa->thread = NULL;
 	alsa->receive = NULL;
 	alsa->user_data = NULL;
 }

@@ -92,8 +92,6 @@ if(WITH_MANPAGES)
 			MODULE freerdp
 			MODULES freerdp-core freerdp-utils)
 
-		message(WARNING "GAD_LIBS: ${GAD_LIBS}")
-
 		target_link_libraries(generate_argument_docbook ${GAD_LIBS})
 
 		add_custom_command(OUTPUT xfreerdp.1
@@ -206,7 +204,7 @@ if(WITH_IPP)
 endif()
 
 if(WITH_CLIENT_INTERFACE)
-	install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT libraries)
+	install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT libraries EXPORT FreeRDPTargets)
 	add_subdirectory(cli)
 else()
 	install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client)

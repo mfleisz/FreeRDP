@@ -46,7 +46,7 @@ ICON_INFO* icon_cache_get(rdpIconCache* cache, BYTE id, UINT16 index, void** ext
 
 	entry = cache->caches[id].entries[index].entry;
 
-	if (extra != NULL)
+	if (extra)
 		*extra = cache->caches[id].entries[index].extra;
 
 	return entry;
@@ -93,8 +93,11 @@ rdpIconCache* icon_cache_new(rdpRail* rail)
 
 		for (i = 0; i < cache->numCaches; i++)
 		{
-			cache->caches[i].entries = malloc(cache->numCacheEntries * sizeof(rdpIconCache));
-			ZeroMemory(cache->caches[i].entries, cache->numCacheEntries * sizeof(rdpIconCache));
+			if (cache->numCacheEntries)
+			{
+				cache->caches[i].entries = malloc(cache->numCacheEntries * sizeof(rdpIcon));
+				ZeroMemory(cache->caches[i].entries, cache->numCacheEntries * sizeof(rdpIcon));
+			}
 		}
 	}
 
@@ -103,7 +106,7 @@ rdpIconCache* icon_cache_new(rdpRail* rail)
 
 void icon_cache_free(rdpIconCache* cache)
 {
-	if (cache != NULL)
+	if (cache)
 	{
 		int i;
 

@@ -1,15 +1,6 @@
 #ifndef __CONFIG_H
 #define __CONFIG_H
 
-#define FREERDP_VERSION_MAJOR ${FREERDP_VERSION_MAJOR}
-#define FREERDP_VERSION_MINOR ${FREERDP_VERSION_MINOR}
-#define FREERDP_VERSION_REVISION ${FREERDP_VERSION_REVISION}
-#define FREERDP_VERSION_SUFFIX "${FREERDP_VERSION_SUFFIX}"
-#define FREERDP_API_VERSION "${FREERDP_API_VERSION}"
-#define FREERDP_VERSION "${FREERDP_VERSION}"
-#define FREERDP_VERSION_FULL "${FREERDP_VERSION_FULL}"
-#define GIT_REVISION "${GIT_REVISION}"
-
 #define FREERDP_DATA_PATH "${FREERDP_DATA_PATH}"
 #define FREERDP_KEYMAP_PATH "${FREERDP_KEYMAP_PATH}"
 #define FREERDP_PLUGIN_PATH "${FREERDP_PLUGIN_PATH}"
@@ -32,10 +23,13 @@
 #cmakedefine HAVE_EVENTFD_H
 #cmakedefine HAVE_TIMERFD_H
 #cmakedefine HAVE_TM_GMTOFF
+#cmakedefine HAVE_AIO_H
+#cmakedefine HAVE_PTHREAD_GNU_EXT
 
 
 /* Options */
 #cmakedefine WITH_PROFILER
+#cmakedefine WITH_GPROF
 #cmakedefine WITH_SSE2
 #cmakedefine WITH_NEON
 #cmakedefine WITH_IPP
@@ -43,6 +37,14 @@
 #cmakedefine WITH_JPEG
 #cmakedefine WITH_WIN8
 #cmakedefine WITH_RDPSND_DSOUND
+
+#cmakedefine WITH_WINMM
+#cmakedefine WITH_MACAUDIO
+#cmakedefine WITH_ALSA
+#cmakedefine WITH_PULSE
+#cmakedefine WITH_IOSAUDIO
+#cmakedefine WITH_OPENSLES
+#cmakedefine WITH_GSM
 
 /* Plugins */
 #cmakedefine STATIC_CHANNELS
@@ -68,6 +70,7 @@
 #cmakedefine WITH_DEBUG_REDIR
 #cmakedefine WITH_DEBUG_RFX
 #cmakedefine WITH_DEBUG_SCARD
+#cmakedefine WITH_DEBUG_SND
 #cmakedefine WITH_DEBUG_SVC
 #cmakedefine WITH_DEBUG_RDPEI
 #cmakedefine WITH_DEBUG_TIMEZONE

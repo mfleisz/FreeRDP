@@ -30,6 +30,8 @@
 #include "extension.h"
 #include "message.h"
 
+#include <assert.h>
+
 #include <winpr/crt.h>
 #include <winpr/stream.h>
 
@@ -37,6 +39,7 @@
 #include <freerdp/error.h>
 #include <freerdp/event.h>
 #include <freerdp/locale/keyboard.h>
+#include <freerdp/version.h>
 
 /* connectErrorCode is 'extern' in error.h. See comment there.*/
 
@@ -158,8 +161,12 @@ BOOL freerdp_connect(freerdp* instance)
 				update_recv_surfcmds(update, Stream_Length(s) , s);
 				update->EndPaint(update->context);
 				Stream_Release(s);
+			
+				StreamPool_Return(rdp->transport->ReceivePool, s);
 			}
 
+			pcap_close(update->pcap_rfx);
+			update->pcap_rfx = NULL;
 			status = TRUE;
 			goto freerdp_connect_finally;
 		}
@@ -200,6 +207,10 @@ BOOL freerdp_check_fds(freerdp* instance)
 {
 	int status;
 	rdpRdp* rdp;
+
+	assert(instance);
+	assert(instance->context);
+	assert(instance->context->rdp);
 
 	rdp = instance->context->rdp;
 
@@ -299,7 +310,21 @@ BOOL freerdp_disconnect(freerdp* instance)
 	rdp = instance->context->rdp;
 	transport_disconnect(rdp->transport);
 
+	IFCALL(instance->PostDisconnect, instance);
+
+	if (instance->update->pcap_rfx)
+	{
+		instance->update->dump_rfx = FALSE;
+		pcap_close(instance->update->pcap_rfx);
+		instance->update->pcap_rfx = NULL;
+	}
+
 	return TRUE;
+}
+
+BOOL freerdp_reconnect(freerdp* instance)
+{
+	return rdp_client_reconnect(instance->context->rdp);
 }
 
 BOOL freerdp_shall_disconnect(freerdp* instance)
@@ -344,7 +369,6 @@ static wEventType FreeRDP_Events[] =
 		DEFINE_EVENT_ENTRY(PanningChange)
 		DEFINE_EVENT_ENTRY(ScalingFactorChange)
 		DEFINE_EVENT_ENTRY(ErrorInfo)
-		DEFINE_EVENT_ENTRY(ParamChange)
 		DEFINE_EVENT_ENTRY(Terminate)
 		DEFINE_EVENT_ENTRY(ConnectionResult)
 		DEFINE_EVENT_ENTRY(ChannelConnected)
@@ -369,6 +393,9 @@ int freerdp_context_new(freerdp* instance)
 
 	context = instance->context;
 	context->instance = instance;
+
+	context->ServerMode = FALSE;
+	context->settings = instance->settings;
 
 	context->pubSub = PubSub_New(TRUE);
 	PubSub_AddEventTypes(context->pubSub, FreeRDP_Events, sizeof(FreeRDP_Events) / sizeof(wEventType));
@@ -410,6 +437,9 @@ int freerdp_context_new(freerdp* instance)
  */
 void freerdp_context_free(freerdp* instance)
 {
+	if (!instance)
+		return;
+
 	if (!instance->context)
 		return;
 

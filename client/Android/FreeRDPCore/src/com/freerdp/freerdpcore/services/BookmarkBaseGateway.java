@@ -1,7 +1,7 @@
 /*
    Helper class to access bookmark database
 
-   Copyright 2013 Thinstuff Technologies GmbH, Author: Martin Fleisz
+   Copyright 2013 Thincast Technologies GmbH, Author: Martin Fleisz
 
    This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. 
    If a copy of the MPL was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -64,10 +64,18 @@ public abstract class BookmarkBaseGateway
 		rowid = insertPerformanceFlags(db, bookmark.getAdvancedSettings().getPerformance3G());
 		values.put("performance_3g", rowid);
 		values.put("redirect_sdcard", bookmark.getAdvancedSettings().getRedirectSDCard());
+		values.put("redirect_sound", bookmark.getAdvancedSettings().getRedirectSound());
+		values.put("redirect_microphone", bookmark.getAdvancedSettings().getRedirectMicrophone());
 		values.put("security", bookmark.getAdvancedSettings().getSecurity());
 		values.put("console_mode", bookmark.getAdvancedSettings().getConsoleMode());
 		values.put("remote_program", bookmark.getAdvancedSettings().getRemoteProgram());
 		values.put("work_dir", bookmark.getAdvancedSettings().getWorkDir());
+		
+		values.put("async_channel", bookmark.getDebugSettings().getAsyncChannel());
+		values.put("async_transport", bookmark.getDebugSettings().getAsyncTransport());
+		values.put("async_input", bookmark.getDebugSettings().getAsyncInput());
+		values.put("async_update", bookmark.getDebugSettings().getAsyncUpdate());
+		values.put("debug_level", bookmark.getDebugSettings().getDebugLevel());
 
 		// add any special columns
 		addBookmarkSpecificColumns(bookmark, values);
@@ -100,10 +108,18 @@ public abstract class BookmarkBaseGateway
 		updateScreenSettings3G(db, bookmark);
 		updatePerformanceFlags3G(db, bookmark);
 		values.put("redirect_sdcard", bookmark.getAdvancedSettings().getRedirectSDCard());
+		values.put("redirect_sound", bookmark.getAdvancedSettings().getRedirectSound());
+		values.put("redirect_microphone", bookmark.getAdvancedSettings().getRedirectMicrophone());
 		values.put("security", bookmark.getAdvancedSettings().getSecurity());
 		values.put("console_mode", bookmark.getAdvancedSettings().getConsoleMode());
 		values.put("remote_program", bookmark.getAdvancedSettings().getRemoteProgram());
 		values.put("work_dir", bookmark.getAdvancedSettings().getWorkDir());
+		
+		values.put("async_channel", bookmark.getDebugSettings().getAsyncChannel());
+		values.put("async_transport", bookmark.getDebugSettings().getAsyncTransport());
+		values.put("async_input", bookmark.getDebugSettings().getAsyncInput());
+		values.put("async_update", bookmark.getDebugSettings().getAsyncUpdate());
+		values.put("debug_level", bookmark.getDebugSettings().getDebugLevel());
 		
 		addBookmarkSpecificColumns(bookmark, values);
 				
@@ -219,10 +235,19 @@ public abstract class BookmarkBaseGateway
 		// advanced settings
 		columns.add("enable_3g_settings");
 		columns.add("redirect_sdcard");
+		columns.add("redirect_sound");
+		columns.add("redirect_microphone");
 		columns.add("security");
 		columns.add("console_mode");
 		columns.add("remote_program");
 		columns.add("work_dir");
+		
+		// debug settings
+		columns.add("debug_level");
+		columns.add("async_channel");
+		columns.add("async_transport");
+		columns.add("async_update");
+		columns.add("async_input");
 		
 		addBookmarkSpecificColumns(columns);		
 	}
@@ -277,11 +302,23 @@ public abstract class BookmarkBaseGateway
 		readScreenSettings3G(bookmark, cursor);		
 		readPerformanceFlags3G(bookmark, cursor);		
 		bookmark.getAdvancedSettings().setRedirectSDCard(cursor.getInt(cursor.getColumnIndex("redirect_sdcard")) == 0 ? false : true);		
+		bookmark.getAdvancedSettings().setRedirectSound(cursor.getInt(cursor.getColumnIndex("redirect_sound")));		
+		bookmark.getAdvancedSettings().setRedirectMicrophone(cursor.getInt(cursor.getColumnIndex("redirect_microphone")) == 0 ? false : true);		
 		bookmark.getAdvancedSettings().setSecurity(cursor.getInt(cursor.getColumnIndex("security")));		
 		bookmark.getAdvancedSettings().setConsoleMode(cursor.getInt(cursor.getColumnIndex("console_mode")) == 0 ? false : true);		
 		bookmark.getAdvancedSettings().setRemoteProgram(cursor.getString(cursor.getColumnIndex("remote_program")));		
 		bookmark.getAdvancedSettings().setWorkDir(cursor.getString(cursor.getColumnIndex("work_dir")));		
 		
+		bookmark.getDebugSettings().setAsyncChannel(
+				cursor.getInt(cursor.getColumnIndex("async_channel")) == 1 ? true : false);		
+		bookmark.getDebugSettings().setAsyncTransport(
+				cursor.getInt(cursor.getColumnIndex("async_transport")) == 1 ? true : false);		
+		bookmark.getDebugSettings().setAsyncInput(
+				cursor.getInt(cursor.getColumnIndex("async_input")) == 1 ? true : false);		
+		bookmark.getDebugSettings().setAsyncUpdate(
+				cursor.getInt(cursor.getColumnIndex("async_update")) == 1 ? true : false);		
+		bookmark.getDebugSettings().setDebugLevel(cursor.getInt(cursor.getColumnIndex("debug_level")));	
+	
 		readBookmarkSpecificColumns(bookmark, cursor);
 
 		return bookmark;

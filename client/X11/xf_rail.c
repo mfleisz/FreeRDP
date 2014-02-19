@@ -565,7 +565,7 @@ const char* movetype_names[] =
 
 void xf_process_rail_server_localmovesize_event(xfContext* xfc, rdpChannels* channels, wMessage* event)
 {
-	int x, y;
+	int x = 0, y = 0;
 	rdpRail* rail;
 	int direction = 0;
 	Window child_window;
@@ -662,9 +662,9 @@ void xf_process_rail_appid_resp_event(xfContext* xfc, rdpChannels* channels, wMe
 
 	fprintf(stderr, "Server Application ID Response PDU: windowId=0x%X "
 		"applicationId=(length=%d dump)\n",
-		appid_resp->windowId, appid_resp->applicationId.length);
+		appid_resp->windowId, 512);
 
-	winpr_HexDump(appid_resp->applicationId.string, appid_resp->applicationId.length);
+	winpr_HexDump((BYTE*) &appid_resp->applicationId, 512);
 }
 
 void xf_process_rail_langbarinfo_event(xfContext* xfc, rdpChannels* channels, wMessage* event)

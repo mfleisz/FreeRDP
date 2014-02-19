@@ -34,6 +34,9 @@
 #include "license.h"
 #include "errinfo.h"
 #include "extension.h"
+#include "autodetect.h"
+#include "heartbeat.h"
+#include "multitransport.h"
 #include "security.h"
 #include "transport.h"
 #include "connection.h"
@@ -51,6 +54,8 @@
 
 /* Security Header Flags */
 #define SEC_EXCHANGE_PKT					0x0001
+#define SEC_TRANSPORT_REQ				0x0002
+#define SEC_TRANSPORT_RSP				0x0004
 #define SEC_ENCRYPT						0x0008
 #define SEC_RESET_SEQNO						0x0010
 #define SEC_IGNORE_SEQNO					0x0020
@@ -60,6 +65,9 @@
 #define SEC_LICENSE_ENCRYPT_SC					0x0200
 #define SEC_REDIRECTION_PKT					0x0400
 #define SEC_SECURE_CHECKSUM					0x0800
+#define SEC_AUTODETECT_REQ					0x1000
+#define SEC_AUTODETECT_RSP					0x2000
+#define SEC_HEARTBEAT						0x4000
 #define SEC_FLAGSHI_VALID					0x8000
 
 #define SEC_PKT_CS_MASK						(SEC_EXCHANGE_PKT | SEC_INFO_PKT)
@@ -121,16 +129,19 @@ struct rdp_rdp
 	int state;
 	freerdp* instance;
 	rdpContext* context;
-	struct rdp_mcs* mcs;
-	struct rdp_nego* nego;
-	struct rdp_input* input;
-	struct rdp_update* update;
-	struct rdp_fastpath* fastpath;
-	struct rdp_license* license;
-	struct rdp_redirection* redirection;
-	struct rdp_settings* settings;
-	struct rdp_transport* transport;
-	struct rdp_extension* extension;
+	rdpMcs* mcs;
+	rdpNego* nego;
+	rdpInput* input;
+	rdpUpdate* update;
+	rdpFastPath* fastpath;
+	rdpLicense* license;
+	rdpRedirection* redirection;
+	rdpSettings* settings;
+	rdpTransport* transport;
+	rdpExtension* extension;
+	rdpAutoDetect* autodetect;
+	rdpHeartbeat* heartbeat;
+	rdpMultitransport* multitransport;
 	struct rdp_mppc_dec* mppc_dec;
 	struct rdp_mppc_enc* mppc_enc;
 	struct crypto_rc4_struct* rc4_decrypt_key;
@@ -160,6 +171,7 @@ struct rdp_rdp
 	BOOL resendFocus;
 	BOOL deactivation_reactivation;
 	BOOL AwaitCapabilities;
+	rdpSettings* settingsCopy;
 };
 
 BOOL rdp_read_security_header(wStream* s, UINT16* flags);
@@ -190,12 +202,17 @@ BOOL rdp_send(rdpRdp* rdp, wStream* s, UINT16 channel_id);
 
 int rdp_send_channel_data(rdpRdp* rdp, int channel_id, BYTE* data, int size);
 
-BOOL rdp_recv_out_of_sequence_pdu(rdpRdp* rdp, wStream* s);
+wStream* rdp_message_channel_pdu_init(rdpRdp* rdp);
+BOOL rdp_send_message_channel_pdu(rdpRdp* rdp, wStream* s, UINT16 sec_flags);
+int rdp_recv_message_channel_pdu(rdpRdp* rdp, wStream* s);
+
+int rdp_recv_out_of_sequence_pdu(rdpRdp* rdp, wStream* s);
 
 void rdp_set_blocking_mode(rdpRdp* rdp, BOOL blocking);
 int rdp_check_fds(rdpRdp* rdp);
 
 rdpRdp* rdp_new(rdpContext* context);
+void rdp_reset(rdpRdp* rdp);
 void rdp_free(rdpRdp* rdp);
 
 #ifdef WITH_DEBUG_RDP

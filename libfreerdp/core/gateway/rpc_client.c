@@ -161,7 +161,7 @@ int rpc_client_on_fragment_received_event(rdpRpc* rpc)
 	if (StubLength == 4)
 	{
 		//fprintf(stderr, "Ignoring TsProxySendToServer Response\n");
-		printf("Got stub length 4 with flags %d and callid %d\n", header->common.pfc_flags, header->common.call_id);
+		//printf("Got stub length 4 with flags %d and callid %d\n", header->common.pfc_flags, header->common.call_id);
 
 		/* received a disconnect request from the server? */
 		if ((header->common.call_id == rpc->PipeCallId) && (header->common.pfc_flags & PFC_LAST_FRAG))
@@ -503,8 +503,6 @@ static void* rpc_client_thread(void* arg)
 
 	CloseHandle(ReadEvent);
 
-	rpc_client_free(rpc);
-
 	return NULL;
 }
 
@@ -571,6 +569,8 @@ int rpc_client_stop(rdpRpc* rpc)
 	SetEvent(rpc->client->StopEvent);
 
 	WaitForSingleObject(rpc->client->Thread, INFINITE);
+
+	rpc_client_free(rpc);
 
 	return 0;
 }

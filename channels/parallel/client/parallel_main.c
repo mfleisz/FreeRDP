@@ -137,7 +137,7 @@ static void parallel_process_irp_read(PARALLEL_DEVICE* parallel, IRP* irp)
 
 	buffer = (BYTE*) malloc(Length);
 
-	status = read(parallel->file, irp->output->pointer, Length);
+	status = read(parallel->file, buffer, Length);
 
 	if (status < 0)
 	{
@@ -327,7 +327,7 @@ int DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
 
 		parallel->path = path;
 
-		parallel->queue = MessageQueue_New();
+		parallel->queue = MessageQueue_New(NULL);
 
 		pEntryPoints->RegisterDevice(pEntryPoints->devman, (DEVICE*) parallel);
 

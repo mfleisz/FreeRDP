@@ -22,7 +22,13 @@ cmake_minimum_required(VERSION 2.8)
 
 project(FreeRDP C)
 
+if(NOT DEFINED VENDOR)
+	set(VENDOR "FreeRDP" CACHE STRING "FreeRDP package vendor")
+endif()
+
 set(CMAKE_COLOR_MAKEFILE ON)
+
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Include our extra modules
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/)
@@ -45,10 +51,11 @@ include(ComplexLibrary)
 include(FeatureSummary)
 include(CheckCCompilerFlag)
 include(GNUInstallDirsWrapper)
+include(CMakePackageConfigHelpers)
 
 # Soname versioning
 set(FREERDP_VERSION_MAJOR "1")
-set(FREERDP_VERSION_MINOR "1")
+set(FREERDP_VERSION_MINOR "2")
 set(FREERDP_VERSION_REVISION "0")
 set(FREERDP_VERSION_SUFFIX "beta1")
 set(FREERDP_API_VERSION "${FREERDP_VERSION_MAJOR}.${FREERDP_VERSION_MINOR}")
@@ -61,11 +68,11 @@ endif()
 
 # Allow to search the host machine for git
 if(ANDROID OR IOS)
-	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER, BOTH)
+	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM BOTH)
 endif(ANDROID OR IOS)
 include(GetGitRevisionDescription)
 if(ANDROID OR IOS)
-	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER, ONLY)
+	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY)
 endif(ANDROID OR IOS)
 
 git_describe(GIT_REVISION --match "[0-9]*" --abbrev=4 --tags --always)
@@ -117,7 +124,14 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		else()
 			set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=i686")
 		endif()
+	else()
+		if(CMAKE_POSITION_INDEPENDENT_CODE)
+			if(${CMAKE_VERSION} VERSION_LESS 2.8.9)
+				set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+			endif()
+		endif()
 	endif()
+
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 	CHECK_C_COMPILER_FLAG (-Wno-unused-result Wno-unused-result)
 	if(Wno-unused-result)
@@ -130,6 +144,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	CHECK_C_COMPILER_FLAG(-Wno-deprecated-declarations Wno-deprecated-declarations)
 	if(Wno-deprecated-declarations)
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-deprecated-declarations")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
 	endif()
 	if(NOT EXPORT_ALL_SYMBOLS)
 		message(STATUS "GCC default symbol visibility: hidden")
@@ -152,9 +167,17 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	endif()
 endif()
 
-if(CMAKE_COMPILER_IS_CLANG)
+if("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-parameter")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-macros -Wno-padded")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-c11-extensions -Wno-gnu")
 	if(WITH_SSE2)
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mssse3")
+	endif()
+	CHECK_C_COMPILER_FLAG(-Wno-deprecated-declarations Wno-deprecated-declarations)
+	if(Wno-deprecated-declarations)
+		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-deprecated-declarations")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
 	endif()
 endif()
 
@@ -184,83 +207,106 @@ if(WIN32)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DUNICODE -D_UNICODE")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_WIN32_WINNT=0x0501")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_CRT_SECURE_NO_WARNINGS")
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DWIN32_LEAN_AND_MEAN")	
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DWIN32_LEAN_AND_MEAN")
 endif()
 
 if(IOS)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -isysroot ${CMAKE_IOS_SDK_ROOT} -g")
 endif()
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DWINPR_EXPORTS")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DFREERDP_EXPORTS")
 
 # Include files
 if(NOT IOS)
-check_include_files(fcntl.h HAVE_FCNTL_H)
-check_include_files(unistd.h HAVE_UNISTD_H)
-check_include_files(stdint.h HAVE_STDINT_H)
-check_include_files(inttypes.h HAVE_INTTYPES_H)
-check_include_files(sys/modem.h HAVE_SYS_MODEM_H)
-check_include_files(sys/filio.h HAVE_SYS_FILIO_H)
-check_include_files(sys/strtio.h HAVE_SYS_STRTIO_H)
-check_include_files(sys/select.h HAVE_SYS_SELECT_H)
+	check_include_files(fcntl.h HAVE_FCNTL_H)
+	check_include_files(unistd.h HAVE_UNISTD_H)
+	check_include_files(stdint.h HAVE_STDINT_H)
+	check_include_files(inttypes.h HAVE_INTTYPES_H)
+	check_include_files(sys/modem.h HAVE_SYS_MODEM_H)
+	check_include_files(sys/filio.h HAVE_SYS_FILIO_H)
+	check_include_files(sys/strtio.h HAVE_SYS_STRTIO_H)
+	check_include_files(sys/select.h HAVE_SYS_SELECT_H)
 else()
-set(HAVE_FCNTL_H 1)
-set(HAVE_UNISTD_H 1)
-set(HAVE_STDINT_H 1)
-set(HAVE_INTTYPES_H 1)
-set(HAVE_SYS_FILIO_H 1)
+	set(HAVE_FCNTL_H 1)
+	set(HAVE_UNISTD_H 1)
+	set(HAVE_STDINT_H 1)
+	set(HAVE_INTTYPES_H 1)
+	set(HAVE_SYS_FILIO_H 1)
 endif()
 
 if(NOT IOS)
-check_struct_has_member("struct tm" tm_gmtoff time.h HAVE_TM_GMTOFF)
+	check_struct_has_member("struct tm" tm_gmtoff time.h HAVE_TM_GMTOFF)
 else()
-set(HAVE_TM_GMTOFF 1)
+	set(HAVE_TM_GMTOFF 1)
 endif()
 
 # Mac OS X
 if(APPLE)
-        if(IOS)
-                if (NOT FREERDP_IOS_EXTERNAL_SSL_PATH)
-                        message(STATUS "FREERDP_IOS_EXTERNAL_SSL_PATH not set! Required if openssl is not found in the iOS SDK (which usually isn't")
-                endif()
-                set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${FREERDP_IOS_EXTERNAL_SSL_PATH})
-        	set_property(GLOBAL PROPERTY XCODE_ATTRIBUTE_SKIP_INSTALL YES)
-	else()
-		set(CMAKE_OSX_DEPLOYMENT_TARGET 10.6)
-
+	if(IOS)
+		if (NOT FREERDP_IOS_EXTERNAL_SSL_PATH)
+			message(STATUS "FREERDP_IOS_EXTERNAL_SSL_PATH not set! Required if openssl is not found in the iOS SDK (which usually isn't")
+		endif()
+		set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${FREERDP_IOS_EXTERNAL_SSL_PATH})
+		set_property(GLOBAL PROPERTY XCODE_ATTRIBUTE_SKIP_INSTALL YES)
+	else(IOS)
 		if(NOT DEFINED CMAKE_OSX_ARCHITECTURES)
 			set(CMAKE_OSX_ARCHITECTURES i386 x86_64)
 		endif()
 
-                if(IS_DIRECTORY /opt/local/include)
-                        include_directories(/opt/local/include)
-                        link_directories(/opt/local/lib)
-                endif()
-        endif()
+		if(IS_DIRECTORY /opt/local/include)
+			include_directories(/opt/local/include)
+			link_directories(/opt/local/lib)
+		endif()
+	endif(IOS)
 
-        if(WITH_CLANG)
-                set(CMAKE_C_COMPILER "clang")
-        endif()
+# Temporarily disabled, causes the cmake script to be reexecuted, causing the compilation to fail.
+# Workaround: specify the parameter in the command-line
+#        if(WITH_CLANG)
+#                set(CMAKE_C_COMPILER "clang")
+#        endif()
 
-        if (WITH_VERBOSE)
-            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -v")
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -v")
-        endif()
-endif()
+	if (WITH_VERBOSE)
+		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -v")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -v")
+	endif()
+endif(APPLE)
 
 # Android
 if(ANDROID)
+	if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+		add_definitions(-DNDK_DEBUG=1)
+
+		# NOTE: Manually add -gdwarf-3, as newer toolchains default to -gdwarf-4,
+		#       which is not supported by the gdbserver binary shipped with
+		#       the android NDK (tested with r9b)
+		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_DEBUG} -gdwarf-3")
+	endif()
+	set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -llog")
 	if (NOT FREERDP_ANDROID_EXTERNAL_SSL_PATH)
 		if(IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/external/openssl")
 			set(FREERDP_ANDROID_EXTERNAL_SSL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/openssl")
 		else()
 			message(STATUS "FREERDP_ANDROID_EXTERNAL_SSL_PATH not set! - Needs to be set if openssl is not found in the android NDK (which usually isn't)")
 		endif()
+		if(WITH_GPROF)
+			if (NOT FREERDP_ANDROID_EXTERNAL_PROFILER_PATH)
+			if(IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/external/android-ndk-profiler")
+				set(FREERDP_ANDROID_EXTERNAL_PROFILER_PATH
+					"${CMAKE_CURRENT_SOURCE_DIR}/external/android-ndk-profiler")
+			else()
+				message(STATUS "FREERDP_ANDROID_EXTERNAL_PROFILER_PATH not set!")
+			endif()
+		endif()
 	endif()
+endif()
 	set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${FREERDP_ANDROID_EXTERNAL_SSL_PATH})
-	set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/client/Android/FreeRDPCore/libs/${ANDROID_ABI})
-	CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/scripts/regenerate_jni_headers.sh.cmake ${CMAKE_CURRENT_SOURCE_DIR}/scripts/regenerate_jni_headers.sh @ONLY)
+	set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/client/Android/FreeRDPCore/jni/${ANDROID_ABI})
+	CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/scripts/regenerate_jni_headers.sh.cmake
+		${CMAKE_BINARY_DIR}/scripts/regenerate_jni_headers.sh @ONLY)
+	if (WITH_GPROF)
+		CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/scripts/gprof_generate.sh.cmake ${CMAKE_BINARY_DIR}/scripts/gprof_generate.sh @ONLY)
+	endif(WITH_GPROF)
+
 endif()
 
 set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
@@ -269,7 +315,14 @@ if(NOT IOS AND NOT ANDROID)
 	find_package(Threads REQUIRED)
 endif()
 
+if(NOT WIN32)
+	list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
+	check_library_exists(pthread pthread_tryjoin_np "" HAVE_PTHREAD_GNU_EXT)
+	list(REMOVE_ITEM CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
+endif()
+
 if(UNIX OR CYGWIN)
+	check_include_files(sys/eventfd.h HAVE_AIO_H)
 	check_include_files(sys/eventfd.h HAVE_EVENTFD_H)
 	check_include_files(sys/timerfd.h HAVE_TIMERFD_H)
 	set(X11_FEATURE_TYPE "RECOMMENDED")
@@ -291,6 +344,10 @@ set(ZLIB_FEATURE_DESCRIPTION "data compression")
 set(OPENSSL_FEATURE_TYPE "REQUIRED")
 set(OPENSSL_FEATURE_PURPOSE "cryptography")
 set(OPENSSL_FEATURE_DESCRIPTION "encryption, certificate validation, hashing functions")
+
+set(OPENSLES_FEATURE_TYPE "OPTIONAL")
+set(OPENSLES_FEATURE_PURPOSE "multimedia")
+set(OPENSLES_FEATURE_DESCRIPTION "OpenSLES audio / video")
 
 set(ALSA_FEATURE_TYPE "RECOMMENDED")
 set(ALSA_FEATURE_PURPOSE "sound")
@@ -328,6 +385,10 @@ set(JPEG_FEATURE_TYPE "OPTIONAL")
 set(JPEG_FEATURE_PURPOSE "codec")
 set(JPEG_FEATURE_DESCRIPTION "use JPEG library")
 
+set(GSM_FEATURE_TYPE "OPTIONAL")
+set(GSM_FEATURE_PURPOSE "codec")
+set(GSM_FEATURE_DESCRIPTION "GSM audio codec library")
+
 if(WIN32)
 	set(X11_FEATURE_TYPE "DISABLED")
 	set(ZLIB_FEATURE_TYPE "DISABLED")
@@ -338,6 +399,7 @@ if(WIN32)
 	set(PCSC_FEATURE_TYPE "DISABLED")
 	set(FFMPEG_FEATURE_TYPE "DISABLED")
 	set(GSTREAMER_FEATURE_TYPE "DISABLED")
+	set(OPENSLES_FEATURE_TYPE "DISABLED")
 endif()
 
 if(APPLE)
@@ -353,6 +415,7 @@ if(APPLE)
 		set(PCSC_FEATURE_TYPE "DISABLED")
 		set(GSTREAMER_FEATURE_TYPE "DISABLED")
 	endif()
+	set(OPENSLES_FEATURE_TYPE "DISABLED")
 endif()
 
 if(ANDROID)
@@ -364,19 +427,19 @@ if(ANDROID)
 	set(PCSC_FEATURE_TYPE "DISABLED")
 	set(FFMPEG_FEATURE_TYPE "DISABLED")
 	set(GSTREAMER_FEATURE_TYPE "DISABLED")
+	set(OPENSLES_FEATURE_TYPE "REQUIRED")
 endif()
 
 
 find_feature(X11 ${X11_FEATURE_TYPE} ${X11_FEATURE_PURPOSE} ${X11_FEATURE_DESCRIPTION})
 find_feature(DirectFB ${DIRECTFB_FEATURE_TYPE} ${DIRECTFB_FEATURE_PURPOSE} ${DIRECTFB_FEATURE_DESCRIPTION})
 if (${WITH_DIRECTFB})
-	message(WARNING "
-DIRECTFB is orphaned and not maintained see docs/README.directfb for details
-")
+	message(WARNING "DIRECTFB is orphaned and not maintained see docs/README.directfb for details")
 endif()
 
 find_feature(ZLIB ${ZLIB_FEATURE_TYPE} ${ZLIB_FEATURE_PURPOSE} ${ZLIB_FEATURE_DESCRIPTION})
 find_feature(OpenSSL ${OPENSSL_FEATURE_TYPE} ${OPENSSL_FEATURE_PURPOSE} ${OPENSSL_FEATURE_DESCRIPTION})
+find_feature(OpenSLES ${OPENSLES_FEATURE_TYPE} ${OPENSLES_FEATURE_PURPOSE} ${OPENSLES_FEATURE_DESCRIPTION})
 
 find_feature(ALSA ${ALSA_FEATURE_TYPE} ${ALSA_FEATURE_PURPOSE} ${ALSA_FEATURE_DESCRIPTION})
 find_feature(Pulse ${PULSE_FEATURE_TYPE} ${PULSE_FEATURE_PURPOSE} ${PULSE_FEATURE_DESCRIPTION})
@@ -388,6 +451,7 @@ find_feature(FFmpeg ${FFMPEG_FEATURE_TYPE} ${FFMPEG_FEATURE_PURPOSE} ${FFMPEG_FE
 find_feature(Gstreamer ${GSTREAMER_FEATURE_TYPE} ${GSTREAMER_FEATURE_PURPOSE} ${GSTREAMER_FEATURE_DESCRIPTION})
 
 find_feature(JPEG ${JPEG_FEATURE_TYPE} ${JPEG_FEATURE_PURPOSE} ${JPEG_FEATURE_DESCRIPTION})
+find_feature(GSM ${GSM_FEATURE_TYPE} ${GSM_FEATURE_PURPOSE} ${GSM_FEATURE_DESCRIPTION})
 
 if(TARGET_ARCH MATCHES "x86|x64")
 	if (NOT APPLE)
@@ -398,7 +462,7 @@ if(TARGET_ARCH MATCHES "x86|x64")
 endif()
 
 # Installation Paths
-if(WIN32)
+if(WIN32 AND NOT FREERDP_SDK)
 	set(CMAKE_INSTALL_BINDIR ".")
 	set(CMAKE_INSTALL_LIBDIR ".")
 endif()
@@ -418,6 +482,7 @@ set(FREERDP_EXTENSION_PATH "${CMAKE_INSTALL_FULL_LIBDIR}/freerdp/extensions")
 
 # Include directories
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Configure files
@@ -429,6 +494,16 @@ set(CMAKE_SKIP_BUILD_RPATH FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 set(CMAKE_INSTALL_RPATH "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}:\$ORIGIN/..")
+
+# Android profiling
+if(ANDROID)
+	if(WITH_GPROF)
+		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pg")
+		set(PROFILER_LIBRARIES
+			"${FREERDP_ANDROID_EXTERNAL_PROFILER_PATH}/obj/local/${ANDROID_ABI}/libandroid-ndk-profiler.a")
+		include_directories("${FREERDP_ANDROID_EXTERNAL_PROFILER_PATH}")
+	endif()
+endif()
 
 # Unit Tests
 
@@ -452,12 +527,6 @@ include_directories("${CMAKE_BINARY_DIR}/winpr/include")
 
 add_subdirectory(winpr)
 
-# Generate pkg-config
-if(NOT MSVC)
-	configure_file(${CMAKE_CURRENT_SOURCE_DIR}/freerdp.pc.in ${CMAKE_CURRENT_BINARY_DIR}/freerdp.pc @ONLY)
-	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/freerdp.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
-endif()
-
 if(WITH_CUNIT)
 	message(FATAL_ERROR "cunit (WITH_CUNIT) is deprecated please use BUILD_TESTING to build ctest tests.
 The cunit directory contains the old tests and is kept until all tests are converted.")
@@ -474,9 +543,7 @@ endif()
 
 add_subdirectory(perftest)
 
-if (NOT WITH_WAYK)
-    add_subdirectory(include)
-endif()
+add_subdirectory(include)
 
 add_subdirectory(libfreerdp)
 
@@ -486,7 +553,11 @@ endif()
 
 if (IOS)
 	set(CMAKE_OSX_DEPLOYMENT_TARGET "")
-	set(CMAKE_OSX_SYSROOT "iphoneos")
+	if (IOS_PLATFORM MATCHES "SIMULATOR")
+		set(CMAKE_OSX_SYSROOT "iphonesimulator")
+	else()
+		set(CMAKE_OSX_SYSROOT "iphoneos")
+	endif()
 endif()
 
 if(WITH_CLIENT)
@@ -497,116 +568,43 @@ if(WITH_SERVER)
 	add_subdirectory(server)
 endif()
 
+# Exporting
+
+if(${CMAKE_VERSION} VERSION_GREATER "2.8.10")
+
+	export(PACKAGE freerdp)
+
+	set(FREERDP_CMAKE_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/FreeRDP")
+
+	set(FREERDP_INCLUDE_DIR "include")
+	set(FREERDP_MONOLITHIC_BUILD ${MONOLITHIC_BUILD})
+
+	configure_package_config_file(FreeRDPConfig.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/FreeRDPConfig.cmake
+		INSTALL_DESTINATION ${FREERDP_CMAKE_INSTALL_DIR}
+		PATH_VARS FREERDP_INCLUDE_DIR FREERDP_MONOLITHIC_BUILD)
+
+	write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/FreeRDPConfigVersion.cmake
+		VERSION ${FREERDP_VERSION} COMPATIBILITY SameMajorVersion)
+
+	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/FreeRDPConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/FreeRDPConfigVersion.cmake
+		DESTINATION ${FREERDP_CMAKE_INSTALL_DIR})
+
+	install(EXPORT FreeRDPTargets DESTINATION ${FREERDP_CMAKE_INSTALL_DIR})
+
+endif()
+
 # Packaging
 
-SET(CPACK_BINARY_ZIP "ON")
+set(CMAKE_CPACK_INCLUDE_FILE "CMakeCPack.cmake")
 
-if(NOT WITH_WAYK)
-
-set(CPACK_SOURCE_IGNORE_FILES "/\\\\.git/;/\\\\.gitignore;/CMakeCache.txt")
-
-if(NOT WIN32)
-    if(APPLE AND (NOT IOS))
-    #set(CPACK_PACKAGE_EXECUTABLES "mfreerdp")
-
-        if(WITH_SERVER)
-            set(CPACK_PACKAGE_EXECUTABLES ${CPACK_PACKAGE_EXECUTABLES} "mfreerdp-server")
-        endif()
+if(NOT (VENDOR MATCHES "FreeRDP"))
+	if(DEFINED CLIENT_VENDOR_PATH)
+		if(EXISTS "${CMAKE_SOURCE_DIR}/${CLIENT_VENDOR_PATH}/CMakeCPack.cmake")
+			set(CMAKE_CPACK_INCLUDE_FILE "${CLIENT_VENDOR_PATH}/CMakeCPack.cmake")
+		endif()
 	endif()
-    
-    if(WITH_X11)
-        set(CPACK_PACKAGE_EXECUTABLES "xfreerdp")
-
-        if(WITH_SERVER)
-            set(CPACK_PACKAGE_EXECUTABLES ${CPACK_PACKAGE_EXECUTABLES} "xfreerdp-server")
-        endif()
-    endif()
-
 endif()
 
-set(CPACK_SYSTEM_NAME "${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
-set(CPACK_TOPLEVEL_TAG "${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+#message("VENDOR: ${VENDOR} CLIENT_VENDOR_PATH: ${CLIENT_VENDOR_PATH} CMAKE_CPACK_INCLUDE_FILE: ${CMAKE_CPACK_INCLUDE_FILE}")
 
-string(TOLOWER ${CMAKE_PROJECT_NAME} CMAKE_PROJECT_NAME_lower)
-set(CPACK_PACKAGE_FILE_NAME "${CMAKE_PROJECT_NAME_lower}-${FREERDP_VERSION_FULL}-${CPACK_SYSTEM_NAME}")
-set(CPACK_SOURCE_PACKAGE_FILE_NAME "${CMAKE_PROJECT_NAME_lower}-${FREERDP_VERSION_FULL}-${CPACK_SYSTEM_NAME}")
-
-set(CPACK_PACKAGE_NAME "FreeRDP")
-set(CPACK_PACKAGE_VENDOR "FreeRDP")
-set(CPACK_PACKAGE_VERSION ${FREERDP_VERSION_FULL})
-set(CPACK_PACKAGE_VERSION_MAJOR ${FREERDP_VERSION_MAJOR})
-set(CPACK_PACKAGE_VERSION_MINOR ${FREERDP_VERSION_MINOR})
-set(CPACK_PACKAGE_VERSION_PATCH ${FREERDP_VERSION_REVISION})
-SET(CPACK_PACKAGE_DESCRIPTION_SUMMARY "FreeRDP: A Remote Desktop Protocol Implementation")
-
-set(CPACK_PACKAGE_CONTACT "Marc-Andre Moreau")
-set(CPACK_DEBIAN_PACKAGE_MAINTAINER "marcandre.moreau@gmail.com")
-set(CPACK_DEBIAN_ARCHITECTURE ${CMAKE_SYSTEM_PROCESSOR})
-
-set(CPACK_PACKAGE_INSTALL_DIRECTORY "FreeRDP")
-set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_SOURCE_DIR}/LICENSE")
-set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
-
-set(CPACK_NSIS_MODIFY_PATH ON)
-set(CPACK_PACKAGE_ICON "${CMAKE_SOURCE_DIR}/resources\\\\FreeRDP_Install.bmp")
-set(CPACK_NSIS_MUI_ICON "${CMAKE_SOURCE_DIR}/resources\\\\FreeRDP_Icon_96px.ico")
-set(CPACK_NSIS_MUI_UNICON "${CMAKE_SOURCE_DIR}/resource\\\\FreeRDP_Icon_96px.ico")
-
-set(CPACK_COMPONENTS_ALL client server libraries headers)
-
-if(MSVC)
-	if(MSVC_RUNTIME STREQUAL "dynamic")
-		set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
-		include(InstallRequiredSystemLibraries)
-
-if(NOT WITH_WAYK)
-		install(PROGRAMS ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}
-			DESTINATION ${CMAKE_INSTALL_BINDIR}
-			COMPONENT libraries)
-endif()
-    endif()
-			
-    set(EXTRA_DATA_DIR "extra/")
-    file(GLOB EXTRA_FILES "${CMAKE_SOURCE_DIR}/extra/*")
-    install(FILES ${EXTRA_FILES}
-        DESTINATION ${EXTRA_DATA_DIR}
-        COMPONENT extra)
-			
-    set(REV_DATA_DIR "REV/")
-    file(GLOB REV_FILES "${CMAKE_SOURCE_DIR}/REV/*")
-    install(FILES ${REV_FILES}
-        DESTINATION ${REV_DATA_DIR}
-        COMPONENT rev)
-	
-    set(CPACK_COMPONENTS_AL ${CPACK_COMPONENTS_ALL} extra rev)
-endif()
-
-
-set(CPACK_COMPONENT_CLIENT_DISPLAY_NAME "Client")
-set(CPACK_COMPONENT_CLIENT_GROUP "Applications")
-
-set(CPACK_COMPONENT_SERVER_DISPLAY_NAME "Server")
-set(CPACK_COMPONENT_SERVER_GROUP "Applications")
-
-set(CPACK_COMPONENT_LIBRARIES_DISPLAY_NAME "Libraries")
-set(CPACK_COMPONENT_LIBRARIES_GROUP "Runtime")
-
-set(CPACK_COMPONENT_HEADERS_DISPLAY_NAME "Headers")
-set(CPACK_COMPONENT_HEADERS_GROUP "Development")
-
-set(CPACK_COMPONENT_GROUP_RUNTIME_DESCRIPTION "Runtime")
-set(CPACK_COMPONENT_GROUP_APPLICATIONS_DESCRIPTION "Applications")
-set(CPACK_COMPONENT_GROUP_DEVELOPMENT_DESCRIPTION "Development")
-
-# Workaround to remove c++ compiler macros and defines for Eclipse.
-# If c++ macros/defines are set __cplusplus is also set which causes
-# problems when compiling freerdp/jni. To prevent this problem
-# we set the macros to "".
-if (ANDROID AND CMAKE_EXTRA_GENERATOR STREQUAL "Eclipse CDT4")
-	set(CMAKE_EXTRA_GENERATOR_CXX_SYSTEM_DEFINED_MACROS "")
-	message(STATUS "Disabled CXX system defines for eclipse (workaround).")
-endif()
-
-include(CPack)
-
-endif()
+include(${CMAKE_CPACK_INCLUDE_FILE})

@@ -31,7 +31,7 @@
 #include <freerdp/crypto/per.h>
 
 #ifdef WITH_DEBUG_RDP
-static const char* const DATA_PDU_TYPE_STRINGS[] =
+const char* DATA_PDU_TYPE_STRINGS[80] =
 {
 		"?", "?", /* 0x00 - 0x01 */
 		"Update", /* 0x02 */
@@ -65,7 +65,7 @@ static const char* const DATA_PDU_TYPE_STRINGS[] =
 		"?", "?", "?", /* 0x33 - 0x35 */
 		"Status Info", /* 0x36 */
 		"Monitor Layout" /* 0x37 */
-		"?", "?", "?", /* 0x38 - 0x40 */
+		"FrameAcknowledge", "?", "?", /* 0x38 - 0x40 */
 		"?", "?", "?", "?", "?", "?" /* 0x41 - 0x46 */
 };
 #endif
@@ -133,20 +133,21 @@ void rdp_write_share_control_header(wStream* s, UINT16 length, UINT16 type, UINT
 	Stream_Write_UINT16(s, channel_id); /* pduSource */
 }
 
-BOOL rdp_read_share_data_header(wStream* s, UINT16* length, BYTE* type, UINT32* share_id,
-					BYTE *compressed_type, UINT16 *compressed_len)
+BOOL rdp_read_share_data_header(wStream* s, UINT16* length, BYTE* type, UINT32* shareId,
+					BYTE *compressedType, UINT16 *compressedLen)
 {
 	if (Stream_GetRemainingLength(s) < 12)
 		return FALSE;
 
 	/* Share Data Header */
-	Stream_Read_UINT32(s, *share_id); /* shareId (4 bytes) */
+	Stream_Read_UINT32(s, *shareId); /* shareId (4 bytes) */
 	Stream_Seek_UINT8(s); /* pad1 (1 byte) */
 	Stream_Seek_UINT8(s); /* streamId (1 byte) */
 	Stream_Read_UINT16(s, *length); /* uncompressedLength (2 bytes) */
 	Stream_Read_UINT8(s, *type); /* pduType2, Data PDU Type (1 byte) */
-	Stream_Read_UINT8(s, *compressed_type); /* compressedType (1 byte) */
-	Stream_Read_UINT16(s, *compressed_len); /* compressedLength (2 bytes) */
+	Stream_Read_UINT8(s, *compressedType); /* compressedType (1 byte) */
+	Stream_Read_UINT16(s, *compressedLen); /* compressedLength (2 bytes) */
+
 	return TRUE;
 }
 
@@ -228,6 +229,34 @@ wStream* rdp_data_pdu_init(rdpRdp* rdp)
 	return s;
 }
 
+BOOL rdp_set_error_info(rdpRdp* rdp, UINT32 errorInfo)
+{
+	rdp->errorInfo = errorInfo;
+
+	if (rdp->errorInfo != ERRINFO_SUCCESS)
+	{
+		ErrorInfoEventArgs e;
+		rdpContext* context = rdp->instance->context;
+
+		rdp_print_errinfo(rdp->errorInfo);
+
+		EventArgsInit(&e, "freerdp");
+		e.code = rdp->errorInfo;
+		PubSub_OnErrorInfo(context->pubSub, context, &e);
+	}
+
+	return TRUE;
+}
+
+wStream* rdp_message_channel_pdu_init(rdpRdp* rdp)
+{
+	wStream* s;
+	s = transport_send_stream_init(rdp->transport, 2048);
+	Stream_Seek(s, RDP_PACKET_HEADER_MAX_LENGTH);
+	rdp_security_stream_init(rdp, s);
+	return s;
+}
+
 /**
  * Read an RDP packet header.\n
  * @param rdp rdp module
@@ -255,12 +284,30 @@ BOOL rdp_read_header(rdpRdp* rdp, wStream* s, UINT16* length, UINT16* channelId)
 
 	if (MCSPDU == DomainMCSPDU_DisconnectProviderUltimatum)
 	{
-		BYTE reason;
+		int reason = 0;
 		TerminateEventArgs e;
 		rdpContext* context = rdp->instance->context;
 
-		(void) per_read_enumerated(s, &reason, 0);
-		DEBUG_RDP("DisconnectProviderUltimatum from server, reason code 0x%02x\n", reason);
+		if (!mcs_recv_disconnect_provider_ultimatum(rdp->mcs, s, &reason))
+			return FALSE;
+
+		if (rdp->errorInfo == ERRINFO_SUCCESS)
+		{
+			/**
+			 * Some servers like Windows Server 2008 R2 do not send the error info pdu
+			 * when the user logs off like they should. Map DisconnectProviderUltimatum
+			 * to a ERRINFO_LOGOFF_BY_USER when the errinfo code is ERRINFO_SUCCESS.
+			 */
+
+			if (reason == MCS_Reason_provider_initiated)
+				rdp_set_error_info(rdp, ERRINFO_RPC_INITIATED_DISCONNECT);
+			else if (reason == MCS_Reason_user_requested)
+				rdp_set_error_info(rdp, ERRINFO_LOGOFF_BY_USER);
+			else
+				rdp_set_error_info(rdp, ERRINFO_RPC_INITIATED_DISCONNECT);
+		}
+
+		fprintf(stderr, "DisconnectProviderUltimatum: reason: %d\n", reason);
 
 		rdp->disconnect = TRUE;
 
@@ -327,13 +374,12 @@ void rdp_write_header(rdpRdp* rdp, wStream* s, UINT16 length, UINT16 channelId)
 	Stream_Write_UINT16_BE(s, length); /* userData (OCTET_STRING) */
 }
 
-static UINT32 rdp_security_stream_out(rdpRdp* rdp, wStream* s, int length)
+static UINT32 rdp_security_stream_out(rdpRdp* rdp, wStream* s, int length, UINT32 sec_flags)
 {
 	BYTE* data;
-	UINT32 sec_flags;
 	UINT32 pad = 0;
 
-	sec_flags = rdp->sec_flags;
+	sec_flags |= rdp->sec_flags;
 
 	if (sec_flags != 0)
 	{
@@ -430,7 +476,7 @@ BOOL rdp_send(rdpRdp* rdp, wStream* s, UINT16 channel_id)
 	Stream_Seek(s, sec_bytes);
 
 	Stream_SetPosition(s, secm);
-	length += rdp_security_stream_out(rdp, s, length);
+	length += rdp_security_stream_out(rdp, s, length, 0);
 
 	Stream_SetPosition(s, length);
 	Stream_SealLength(s);
@@ -459,7 +505,7 @@ BOOL rdp_send_pdu(rdpRdp* rdp, wStream* s, UINT16 type, UINT16 channel_id)
 	rdp_write_share_control_header(s, length - sec_bytes, type, channel_id);
 
 	Stream_SetPosition(s, sec_hold);
-	length += rdp_security_stream_out(rdp, s, length);
+	length += rdp_security_stream_out(rdp, s, length, 0);
 
 	Stream_SetPosition(s, length);
 	Stream_SealLength(s);
@@ -489,7 +535,7 @@ BOOL rdp_send_data_pdu(rdpRdp* rdp, wStream* s, BYTE type, UINT16 channel_id)
 	rdp_write_share_data_header(s, length - sec_bytes, type, rdp->settings->ShareId);
 
 	Stream_SetPosition(s, sec_hold);
-	length += rdp_security_stream_out(rdp, s, length);
+	length += rdp_security_stream_out(rdp, s, length, 0);
 
 	Stream_SetPosition(s, length);
 	Stream_SealLength(s);
@@ -500,23 +546,158 @@ BOOL rdp_send_data_pdu(rdpRdp* rdp, wStream* s, BYTE type, UINT16 channel_id)
 	return TRUE;
 }
 
-BOOL rdp_recv_set_error_info_data_pdu(rdpRdp* rdp, wStream* s)
+BOOL rdp_send_message_channel_pdu(rdpRdp* rdp, wStream* s, UINT16 sec_flags)
 {
+	UINT16 length;
+	UINT32 sec_bytes;
+	int sec_hold;
+
+	length = Stream_GetPosition(s);
+	Stream_SetPosition(s, 0);
+
+	rdp_write_header(rdp, s, length, rdp->mcs->message_channel_id);
+
+	sec_bytes = rdp_get_sec_bytes(rdp);
+	sec_hold = Stream_GetPosition(s);
+	Stream_Seek(s, sec_bytes);
+
+	Stream_SetPosition(s, sec_hold);
+	length += rdp_security_stream_out(rdp, s, length, sec_flags);
+
+	Stream_SetPosition(s, length);
+	Stream_SealLength(s);
+
+	if (transport_write(rdp->transport, s) < 0)
+		return FALSE;
+
+	return TRUE;
+}
+
+BOOL rdp_recv_server_shutdown_denied_pdu(rdpRdp* rdp, wStream* s)
+{
+	return TRUE;
+}
+
+BOOL rdp_recv_server_set_keyboard_indicators_pdu(rdpRdp* rdp, wStream* s)
+{
+	UINT16 unitId;
+	UINT16 ledFlags;
+
 	if (Stream_GetRemainingLength(s) < 4)
 		return FALSE;
 
-	Stream_Read_UINT32(s, rdp->errorInfo); /* errorInfo (4 bytes) */
+	Stream_Read_UINT16(s, unitId); /* unitId (2 bytes) */
+	Stream_Read_UINT16(s, ledFlags); /* ledFlags (2 bytes) */
 
-	if (rdp->errorInfo != ERRINFO_SUCCESS)
+	return TRUE;
+}
+
+BOOL rdp_recv_server_set_keyboard_ime_status_pdu(rdpRdp* rdp, wStream* s)
+{
+	UINT16 unitId;
+	UINT32 imeState;
+	UINT32 imeConvMode;
+
+	if (Stream_GetRemainingLength(s) < 10)
+		return FALSE;
+
+	Stream_Read_UINT16(s, unitId); /* unitId (2 bytes) */
+	Stream_Read_UINT32(s, imeState); /* imeState (4 bytes) */
+	Stream_Read_UINT32(s, imeConvMode); /* imeConvMode (4 bytes) */
+
+	return TRUE;
+}
+
+BOOL rdp_recv_set_error_info_data_pdu(rdpRdp* rdp, wStream* s)
+{
+	UINT32 errorInfo;
+
+	if (Stream_GetRemainingLength(s) < 4)
+		return FALSE;
+
+	Stream_Read_UINT32(s, errorInfo); /* errorInfo (4 bytes) */
+
+	rdp_set_error_info(rdp, errorInfo);
+
+	return TRUE;
+}
+
+BOOL rdp_recv_server_auto_reconnect_status_pdu(rdpRdp* rdp, wStream* s)
+{
+	UINT32 arcStatus;
+
+	if (Stream_GetRemainingLength(s) < 4)
+		return FALSE;
+
+	Stream_Read_UINT32(s, arcStatus); /* arcStatus (4 bytes) */
+
+	return TRUE;
+}
+
+BOOL rdp_recv_server_status_info_pdu(rdpRdp* rdp, wStream* s)
+{
+	UINT32 statusCode;
+
+	if (Stream_GetRemainingLength(s) < 4)
+		return FALSE;
+
+	Stream_Read_UINT32(s, statusCode); /* statusCode (4 bytes) */
+
+	return TRUE;
+}
+
+BOOL rdp_recv_monitor_layout_pdu(rdpRdp* rdp, wStream* s)
+{
+	int index;
+	UINT32 monitorCount;
+	MONITOR_DEF* monitor;
+	MONITOR_DEF* monitorDefArray;
+
+	if (Stream_GetRemainingLength(s) < 4)
+		return FALSE;
+
+	Stream_Read_UINT32(s, monitorCount); /* monitorCount (4 bytes) */
+
+	if (Stream_GetRemainingLength(s) < (monitorCount * 20))
+		return FALSE;
+
+	monitorDefArray = (MONITOR_DEF*) malloc(sizeof(MONITOR_DEF) * monitorCount);
+	ZeroMemory(monitorDefArray, sizeof(MONITOR_DEF) * monitorCount);
+
+	for (index = 0; index < monitorCount; index++)
 	{
-		ErrorInfoEventArgs e;
-		rdpContext* context = rdp->instance->context;
+		monitor = &(monitorDefArray[index]);
 
-		rdp_print_errinfo(rdp->errorInfo);
+		Stream_Read_UINT32(s, monitor->left); /* left (4 bytes) */
+		Stream_Read_UINT32(s, monitor->top); /* top (4 bytes) */
+		Stream_Read_UINT32(s, monitor->right); /* right (4 bytes) */
+		Stream_Read_UINT32(s, monitor->bottom); /* bottom (4 bytes) */
+		Stream_Read_UINT32(s, monitor->flags); /* flags (4 bytes) */
+	}
 
-		EventArgsInit(&e, "freerdp");
-		e.code = rdp->errorInfo;
-		PubSub_OnErrorInfo(context->pubSub, context, &e);
+	free(monitorDefArray);
+
+	return TRUE;
+}
+
+BOOL rdp_write_monitor_layout_pdu(wStream* s, UINT32 monitorCount, MONITOR_DEF* monitorDefArray)
+{
+	int index;
+	MONITOR_DEF* monitor;
+
+	Stream_EnsureRemainingCapacity(s, 4 + (monitorCount * 20));
+
+	Stream_Write_UINT32(s, monitorCount); /* monitorCount (4 bytes) */
+
+	for (index = 0; index < monitorCount; index++)
+	{
+		monitor = &(monitorDefArray[index]);
+
+		Stream_Write_UINT32(s, monitor->left); /* left (4 bytes) */
+		Stream_Write_UINT32(s, monitor->top); /* top (4 bytes) */
+		Stream_Write_UINT32(s, monitor->right); /* right (4 bytes) */
+		Stream_Write_UINT32(s, monitor->bottom); /* bottom (4 bytes) */
+		Stream_Write_UINT32(s, monitor->flags); /* flags (4 bytes) */
 	}
 
 	return TRUE;
@@ -567,8 +748,7 @@ int rdp_recv_data_pdu(rdpRdp* rdp, wStream* s)
 	}
 
 #ifdef WITH_DEBUG_RDP
-	/* if (type != DATA_PDU_TYPE_UPDATE) */
-		DEBUG_RDP("recv %s Data PDU (0x%02X), length:%d",
+	printf("recv %s Data PDU (0x%02X), length: %d\n",
 				type < ARRAYSIZE(DATA_PDU_TYPE_STRINGS) ? DATA_PDU_TYPE_STRINGS[type] : "???", type, length);
 #endif
 
@@ -589,15 +769,9 @@ int rdp_recv_data_pdu(rdpRdp* rdp, wStream* s)
 				return -1;
 			break;
 
-		case DATA_PDU_TYPE_INPUT:
-			break;
-
 		case DATA_PDU_TYPE_SYNCHRONIZE:
 			if (!rdp_recv_synchronize_pdu(rdp, cs))
 				return -1;
-			break;
-
-		case DATA_PDU_TYPE_REFRESH_RECT:
 			break;
 
 		case DATA_PDU_TYPE_PLAY_SOUND:
@@ -605,21 +779,14 @@ int rdp_recv_data_pdu(rdpRdp* rdp, wStream* s)
 				return -1;
 			break;
 
-		case DATA_PDU_TYPE_SUPPRESS_OUTPUT:
-			break;
-
-		case DATA_PDU_TYPE_SHUTDOWN_REQUEST:
-			break;
-
 		case DATA_PDU_TYPE_SHUTDOWN_DENIED:
+			if (!rdp_recv_server_shutdown_denied_pdu(rdp, cs))
+				return -1;
 			break;
 
 		case DATA_PDU_TYPE_SAVE_SESSION_INFO:
 			if (!rdp_recv_save_session_info(rdp, cs))
 				return -1;
-			break;
-
-		case DATA_PDU_TYPE_FONT_LIST:
 			break;
 
 		case DATA_PDU_TYPE_FONT_MAP:
@@ -628,18 +795,13 @@ int rdp_recv_data_pdu(rdpRdp* rdp, wStream* s)
 			break;
 
 		case DATA_PDU_TYPE_SET_KEYBOARD_INDICATORS:
-			break;
-
-		case DATA_PDU_TYPE_BITMAP_CACHE_PERSISTENT_LIST:
-			break;
-
-		case DATA_PDU_TYPE_BITMAP_CACHE_ERROR:
+			if (!rdp_recv_server_set_keyboard_indicators_pdu(rdp, cs))
+				return -1;
 			break;
 
 		case DATA_PDU_TYPE_SET_KEYBOARD_IME_STATUS:
-			break;
-
-		case DATA_PDU_TYPE_OFFSCREEN_CACHE_ERROR:
+			if (!rdp_recv_server_set_keyboard_ime_status_pdu(rdp, cs))
+				return -1;
 			break;
 
 		case DATA_PDU_TYPE_SET_ERROR_INFO:
@@ -647,19 +809,19 @@ int rdp_recv_data_pdu(rdpRdp* rdp, wStream* s)
 				return -1;
 			break;
 
-		case DATA_PDU_TYPE_DRAW_NINEGRID_ERROR:
-			break;
-
-		case DATA_PDU_TYPE_DRAW_GDIPLUS_ERROR:
-			break;
-
 		case DATA_PDU_TYPE_ARC_STATUS:
+			if (!rdp_recv_server_auto_reconnect_status_pdu(rdp, cs))
+				return -1;
 			break;
 
 		case DATA_PDU_TYPE_STATUS_INFO:
+			if (!rdp_recv_server_status_info_pdu(rdp, cs))
+				return -1;
 			break;
 
 		case DATA_PDU_TYPE_MONITOR_LAYOUT:
+			if (!rdp_recv_monitor_layout_pdu(rdp, cs))
+				return -1;
 			break;
 
 		default:
@@ -672,18 +834,46 @@ int rdp_recv_data_pdu(rdpRdp* rdp, wStream* s)
 	return 0;
 }
 
-BOOL rdp_recv_out_of_sequence_pdu(rdpRdp* rdp, wStream* s)
+int rdp_recv_message_channel_pdu(rdpRdp* rdp, wStream* s)
+{
+	UINT16 securityFlags;
+
+	if (!rdp_read_security_header(s, &securityFlags))
+		return -1;
+
+	if (securityFlags & SEC_AUTODETECT_REQ)
+	{
+		/* Server Auto-Detect Request PDU */
+		return rdp_recv_autodetect_packet(rdp, s);
+	}
+
+	if (securityFlags & SEC_HEARTBEAT)
+	{
+		/* Heartbeat PDU */
+		return rdp_recv_heartbeat_packet(rdp, s);
+	}
+
+	if (securityFlags & SEC_TRANSPORT_REQ)
+	{
+		/* Initiate Multitransport Request PDU */
+		return rdp_recv_multitransport_packet(rdp, s);
+	}
+
+	return -1;
+}
+
+int rdp_recv_out_of_sequence_pdu(rdpRdp* rdp, wStream* s)
 {
 	UINT16 type;
 	UINT16 length;
 	UINT16 channelId;
 
 	if (!rdp_read_share_control_header(s, &length, &type, &channelId))
-		return FALSE;
+		return -1;
 
 	if (type == PDU_TYPE_DATA)
 	{
-		return (rdp_recv_data_pdu(rdp, s) < 0) ? FALSE : TRUE;
+		return rdp_recv_data_pdu(rdp, s);
 	}
 	else if (type == PDU_TYPE_SERVER_REDIRECTION)
 	{
@@ -691,7 +881,7 @@ BOOL rdp_recv_out_of_sequence_pdu(rdpRdp* rdp, wStream* s)
 	}
 	else
 	{
-		return FALSE;
+		return -1;
 	}
 }
 
@@ -784,7 +974,7 @@ static int rdp_recv_tpkt_pdu(rdpRdp* rdp, wStream* s)
 	UINT16 pduType;
 	UINT16 pduLength;
 	UINT16 pduSource;
-	UINT16 channelId;
+	UINT16 channelId = 0;
 	UINT16 securityFlags;
 	int nextPosition;
 
@@ -815,17 +1005,12 @@ static int rdp_recv_tpkt_pdu(rdpRdp* rdp, wStream* s)
 			 *  - no share control header, nor the 2 byte pad
 			 */
 			Stream_Rewind(s, 2);
-			rdp_recv_enhanced_security_redirection_packet(rdp, s);
-			return -1;
+
+			return rdp_recv_enhanced_security_redirection_packet(rdp, s);
 		}
 	}
 
-	if (channelId != MCS_GLOBAL_CHANNEL_ID)
-	{
-		if (!freerdp_channel_process(rdp->instance, s, channelId))
-			return -1;
-	}
-	else
+	if (channelId == MCS_GLOBAL_CHANNEL_ID)
 	{
 		while (Stream_GetRemainingLength(s) > 3)
 		{
@@ -854,8 +1039,7 @@ static int rdp_recv_tpkt_pdu(rdpRdp* rdp, wStream* s)
 					break;
 
 				case PDU_TYPE_SERVER_REDIRECTION:
-					if (!rdp_recv_enhanced_security_redirection_packet(rdp, s))
-						return -1;
+					return rdp_recv_enhanced_security_redirection_packet(rdp, s);
 					break;
 
 				default:
@@ -865,6 +1049,15 @@ static int rdp_recv_tpkt_pdu(rdpRdp* rdp, wStream* s)
 
 			Stream_SetPosition(s, nextPosition);
 		}
+	}
+	else if (channelId == rdp->mcs->message_channel_id)
+	{
+		return rdp_recv_message_channel_pdu(rdp, s);
+	}
+	else
+	{
+		if (!freerdp_channel_process(rdp->instance, s, channelId))
+			return -1;
 	}
 
 	return 0;
@@ -910,6 +1103,19 @@ static int rdp_recv_callback(rdpTransport* transport, wStream* s, void* extra)
 	int status = 0;
 	rdpRdp* rdp = (rdpRdp*) extra;
 
+	/* 
+	 * At any point in the connection sequence between when all
+	 * MCS channels have been joined and when the RDP connection
+	 * enters the active state, an auto-detect PDU can be received
+	 * on the MCS message channel.
+	 */
+	if ((rdp->state > CONNECTION_STATE_MCS_CHANNEL_JOIN) &&
+		(rdp->state < CONNECTION_STATE_ACTIVE))
+	{
+		if (rdp_client_connect_auto_detect(rdp, s))
+			return 0;
+	}
+
 	switch (rdp->state)
 	{
 		case CONNECTION_STATE_NEGO:
@@ -928,13 +1134,11 @@ static int rdp_recv_callback(rdpTransport* transport, wStream* s, void* extra)
 			break;
 
 		case CONNECTION_STATE_LICENSING:
-			if (!rdp_client_connect_license(rdp, s))
-				status = -1;
+			status = rdp_client_connect_license(rdp, s);
 			break;
 
 		case CONNECTION_STATE_CAPABILITIES_EXCHANGE:
-			if (!rdp_client_connect_demand_active(rdp, s))
-				status = -1;
+			status = rdp_client_connect_demand_active(rdp, s);
 			break;
 
 		case CONNECTION_STATE_FINALIZATION:
@@ -976,7 +1180,9 @@ void rdp_set_blocking_mode(rdpRdp* rdp, BOOL blocking)
 
 int rdp_check_fds(rdpRdp* rdp)
 {
-	return transport_check_fds(&(rdp->transport));
+	int status;
+	status = transport_check_fds(rdp->transport);
+	return status;
 }
 
 /**
@@ -987,6 +1193,7 @@ int rdp_check_fds(rdpRdp* rdp)
 rdpRdp* rdp_new(rdpContext* context)
 {
 	rdpRdp* rdp;
+	DWORD flags;
 
 	rdp = (rdpRdp*) malloc(sizeof(rdpRdp));
 
@@ -995,9 +1202,18 @@ rdpRdp* rdp_new(rdpContext* context)
 		ZeroMemory(rdp, sizeof(rdpRdp));
 
 		rdp->context = context;
-
 		rdp->instance = context->instance;
-		rdp->settings = freerdp_settings_new((void*) context->instance);
+
+		flags = 0;
+
+		if (context->ServerMode)
+			flags |= FREERDP_SETTINGS_SERVER_MODE;
+
+		if (!context->settings)
+			context->settings = freerdp_settings_new(flags);
+
+		rdp->settings = context->settings;
+		rdp->settings->instance = context->instance;
 
 		if (context->instance)
 			context->instance->settings = rdp->settings;
@@ -1011,11 +1227,54 @@ rdpRdp* rdp_new(rdpContext* context)
 		rdp->nego = nego_new(rdp->transport);
 		rdp->mcs = mcs_new(rdp->transport);
 		rdp->redirection = redirection_new();
+		rdp->autodetect = autodetect_new();
+		rdp->heartbeat = heartbeat_new();
+		rdp->multitransport = multitransport_new();
 		rdp->mppc_dec = mppc_dec_new();
 		rdp->mppc_enc = mppc_enc_new(PROTO_RDP_50);
 	}
 
 	return rdp;
+}
+
+void rdp_reset(rdpRdp* rdp)
+{
+	rdpSettings* settings;
+
+	settings = rdp->settings;
+
+	crypto_rc4_free(rdp->rc4_decrypt_key);
+	rdp->rc4_decrypt_key = NULL;
+	crypto_rc4_free(rdp->rc4_encrypt_key);
+	rdp->rc4_encrypt_key = NULL;
+	crypto_des3_free(rdp->fips_encrypt);
+	rdp->fips_encrypt = NULL;
+	crypto_des3_free(rdp->fips_decrypt);
+	rdp->fips_decrypt = NULL;
+	crypto_hmac_free(rdp->fips_hmac);
+	rdp->fips_hmac = NULL;
+
+	mppc_enc_free(rdp->mppc_enc);
+	mppc_dec_free(rdp->mppc_dec);
+	mcs_free(rdp->mcs);
+	nego_free(rdp->nego);
+	license_free(rdp->license);
+	transport_free(rdp->transport);
+
+	free(settings->ServerRandom);
+	settings->ServerRandom = NULL;
+	free(settings->ServerCertificate);
+	settings->ServerCertificate = NULL;
+	free(settings->ClientAddress);
+	settings->ClientAddress = NULL;
+
+	rdp->transport = transport_new(rdp->settings);
+	rdp->license = license_new(rdp);
+	rdp->nego = nego_new(rdp->transport);
+	rdp->mcs = mcs_new(rdp->transport);
+	rdp->mppc_dec = mppc_dec_new();
+	rdp->mppc_enc = mppc_enc_new(PROTO_RDP_50);
+	rdp->transport->layer = TRANSPORT_LAYER_TCP;
 }
 
 /**
@@ -1025,7 +1284,7 @@ rdpRdp* rdp_new(rdpContext* context)
 
 void rdp_free(rdpRdp* rdp)
 {
-	if (rdp != NULL)
+	if (rdp)
 	{
 		crypto_rc4_free(rdp->rc4_decrypt_key);
 		crypto_rc4_free(rdp->rc4_encrypt_key);
@@ -1033,6 +1292,7 @@ void rdp_free(rdpRdp* rdp)
 		crypto_des3_free(rdp->fips_decrypt);
 		crypto_hmac_free(rdp->fips_hmac);
 		freerdp_settings_free(rdp->settings);
+		freerdp_settings_free(rdp->settingsCopy);
 		extension_free(rdp->extension);
 		transport_free(rdp->transport);
 		license_free(rdp->license);
@@ -1042,6 +1302,9 @@ void rdp_free(rdpRdp* rdp)
 		nego_free(rdp->nego);
 		mcs_free(rdp->mcs);
 		redirection_free(rdp->redirection);
+		autodetect_free(rdp->autodetect);
+		heartbeat_free(rdp->heartbeat);
+		multitransport_free(rdp->multitransport);
 		mppc_dec_free(rdp->mppc_dec);
 		mppc_enc_free(rdp->mppc_enc);
 		free(rdp);

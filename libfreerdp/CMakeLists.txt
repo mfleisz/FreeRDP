@@ -52,19 +52,20 @@ if(MONOLITHIC_BUILD)
 		set(${MODULE_PREFIX}_OBJECTS ${${MODULE_PREFIX}_OBJECTS} "$<TARGET_OBJECTS:${MODULE_NAME}-${${MODULE_PREFIX}_SUBMODULE}>")
 	endforeach()
 
-	add_library(${MODULE_NAME} dummy.c ${${MODULE_PREFIX}_OBJECTS})
+	add_library(${MODULE_NAME} dummy.c
+		${${MODULE_PREFIX}_OBJECTS})
 
 	set_target_properties(${MODULE_NAME} PROPERTIES LINKER_LANGUAGE C)
 	set_target_properties(${MODULE_NAME} PROPERTIES VERSION ${FREERDP_VERSION} SOVERSION ${FREERDP_API_VERSION} PREFIX "lib")
 
-	target_link_libraries(${MODULE_NAME} ${${MODULE_PREFIX}_LIBS})
+	target_link_libraries(${MODULE_NAME} ${${MODULE_PREFIX}_LIBS} ${PROFILER_LIBRARIES})
 
-	if(NOT WITH_WAYK)
-		install(TARGETS ${MODULE_NAME}
-			DESTINATION ${CMAKE_INSTALL_LIBDIR}
-			COMPONENT libraries)
-	endif()
+	install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT libraries EXPORT FreeRDPTargets)
 	
 	set_property(TARGET ${MODULE_NAME} PROPERTY FOLDER "FreeRDP/libfreerdp")
 endif()
 
+set(FREERDP_PC_LIBS "-lfreerdp -lwinpr")
+
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/freerdp.pc.in ${CMAKE_CURRENT_BINARY_DIR}/freerdp.pc @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/freerdp.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)

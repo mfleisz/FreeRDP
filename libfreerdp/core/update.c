@@ -1544,8 +1544,16 @@ int update_process_messages(rdpUpdate* update)
 	return update_message_queue_process_pending_messages(update);
 }
 
+static void update_free_queued_message(void *obj)
+{
+	wMessage *msg = (wMessage*)obj;
+
+	update_message_queue_free_message(msg);
+}
+
 rdpUpdate* update_new(rdpRdp* rdp)
 {
+	const wObject cb = { NULL, NULL, NULL,  update_free_queued_message, NULL };
 	rdpUpdate* update;
 
 	update = (rdpUpdate*) malloc(sizeof(rdpUpdate));
@@ -1555,6 +1563,9 @@ rdpUpdate* update_new(rdpRdp* rdp)
 		OFFSCREEN_DELETE_LIST* deleteList;
 
 		ZeroMemory(update, sizeof(rdpUpdate));
+
+		WLog_Init();
+		update->log = WLog_Get("com.freerdp.core.update");
 
 		update->bitmap_update.count = 64;
 		update->bitmap_update.rectangles = (BITMAP_DATA*) malloc(sizeof(BITMAP_DATA) * update->bitmap_update.count);
@@ -1584,7 +1595,7 @@ rdpUpdate* update_new(rdpRdp* rdp)
 
 		update->initialState = TRUE;
 
-		update->queue = MessageQueue_New();
+		update->queue = MessageQueue_New(&cb);
 	}
 
 	return update;
@@ -1609,6 +1620,8 @@ void update_free(rdpUpdate* update)
 
 		free(update->primary->polyline.points);
 		free(update->primary->polygon_sc.points);
+		if (update->primary->fast_glyph.glyphData.aj)
+			free(update->primary->fast_glyph.glyphData.aj);
 		free(update->primary);
 
 		free(update->secondary);

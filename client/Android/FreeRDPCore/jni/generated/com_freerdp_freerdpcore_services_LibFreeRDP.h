@@ -66,10 +66,10 @@ JNIEXPORT void JNICALL Java_com_freerdp_freerdpcore_services_LibFreeRDP_freerdp_
 /*
  * Class:     com_freerdp_freerdpcore_services_LibFreeRDP
  * Method:    freerdp_set_advanced_settings
- * Signature: (ILjava/lang/String;Ljava/lang/String;)V
+ * Signature: (ILjava/lang/String;Ljava/lang/String;ZZZZ)V
  */
 JNIEXPORT void JNICALL Java_com_freerdp_freerdpcore_services_LibFreeRDP_freerdp_1set_1advanced_1settings
-  (JNIEnv *, jclass, jint, jstring, jstring);
+  (JNIEnv *, jclass, jint, jstring, jstring, jboolean, jboolean, jboolean, jboolean);
 
 /*
  * Class:     com_freerdp_freerdpcore_services_LibFreeRDP
@@ -85,6 +85,22 @@ JNIEXPORT void JNICALL Java_com_freerdp_freerdpcore_services_LibFreeRDP_freerdp_
  * Signature: (IZ)V
  */
 JNIEXPORT void JNICALL Java_com_freerdp_freerdpcore_services_LibFreeRDP_freerdp_1set_1clipboard_1redirection
+  (JNIEnv *, jclass, jint, jboolean);
+
+/*
+ * Class:     com_freerdp_freerdpcore_services_LibFreeRDP
+ * Method:    freerdp_set_sound_redirection
+ * Signature: (IZ)V
+ */
+JNIEXPORT void JNICALL Java_com_freerdp_freerdpcore_services_LibFreeRDP_freerdp_1set_1sound_1redirection
+  (JNIEnv *, jclass, jint, jint);
+
+/*
+ * Class:     com_freerdp_freerdpcore_services_LibFreeRDP
+ * Method:    freerdp_set_microphone_redirection
+ * Signature: (IZ)V
+ */
+JNIEXPORT void JNICALL Java_com_freerdp_freerdpcore_services_LibFreeRDP_freerdp_1set_1microphone_1redirection
   (JNIEnv *, jclass, jint, jboolean);
 
 /*

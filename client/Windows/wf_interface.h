@@ -63,6 +63,7 @@ struct wf_pointer
 };
 typedef struct wf_pointer wfPointer;
 
+typedef struct cliprdr_context cliprdrContext;
 struct wf_context
 {
 	rdpContext context;
@@ -130,6 +131,7 @@ struct wf_context
 	int yMinScroll;       // minimum vertical scroll value
 	int yCurrentScroll;   // current vertical scroll value
 	int yMaxScroll;       // maximum vertical scroll value
+	cliprdrContext *cliprdr_context;
 };
 typedef struct wf_context wfContext;
 
@@ -138,6 +140,8 @@ typedef struct wf_context wfContext;
  */
 
 FREERDP_API int RdpClientEntry(RDP_CLIENT_ENTRY_POINTS* pEntryPoints);
+FREERDP_API int freerdp_client_set_window_size(wfContext* wfc, int width, int height);
+
 
 #ifdef __cplusplus
 }

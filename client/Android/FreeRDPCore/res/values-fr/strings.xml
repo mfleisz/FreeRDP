@@ -63,9 +63,11 @@
     </string-array>
     <string name="settings_resolution">"Résolution"</string>
     <string name="resolution_automatic">"Automatique"</string>
+    <string name="resolution_fit">"Agrandir la fenêtre"</string>
     <string name="resolution_custom">"Personalisé"</string>
     <string-array name="resolutions_array">
         <item>"Automatique"</item>
+        <item>"Agrandir la fenêtre"</item>
         <item>"Personalisé"</item>
         <item>"640x480"</item>
         <item>"720x480"</item>
@@ -76,18 +78,22 @@
         <item>"1920x1080"</item>
         <item>"1920x1200"</item>
     </string-array>
+    <!-- The strings in resolutions_values_array should not be localized -->
+    <!-- They are used for text comparison and must remain in english -->
     <string-array name="resolutions_values_array">
-        <item>"Automatique"</item>
-        <item>"Personalisé"</item>
-        <item>"640x480"</item>
-        <item>"720x480"</item>
-        <item>"800x600"</item>
-        <item>"1024x768"</item>
-        <item>"1280x1024"</item>
-        <item>"1440x900"</item>
-        <item>"1920x1080"</item>
-        <item>"1920x1200"</item>
+        <item>automatic</item>
+        <item>fitscreen</item>
+        <item>custom</item>
+        <item>640x480</item>
+        <item>720x480</item>
+        <item>800x600</item>
+        <item>1024x768</item>
+        <item>1280x1024</item>
+        <item>1440x900</item>
+        <item>1920x1080</item>
+        <item>1920x1200</item>
     </string-array>
+    <!-- end protected string section -->
     <string name="settings_width">"Largeur"</string>
     <string name="settings_height">"Hauteur"</string>
     <string name="settings_performance">"Performance"</string>
@@ -108,6 +114,18 @@
     <string name="settings_enable_gateway_settings">Enable Gateway</string>
     <string name="settings_gateway_settings">Gateway Settings</string>    
     <string name="settings_redirect_sdcard">"Redirect SDCard"</string>
+    <string name="settings_redirect_sound">Redirect Sound</string>
+    <string-array name="redirect_sound_array">
+        <item>Do not play</item>
+        <item>Play on Server</item>
+        <item>Play on Device</item>
+    </string-array>
+    <string-array name="redirect_sound_values_array">
+        <item>0</item>
+        <item>1</item>
+        <item>2</item>
+    </string-array>
+    <string name="settings_redirect_microphone">Redirect Microphone</string>
     <string name="settings_security">"Securité"</string>
     <string-array name="security_array">
         <item>"Automatique"</item>
@@ -123,6 +141,10 @@
     </string-array>
     <string name="settings_remote_program">"Lancement de programme"</string>
     <string name="settings_work_dir">"Répertoire de travail"</string>
+    <string name="settings_async_channel">Async channel</string>
+    <string name="settings_async_transport">Async transport</string>
+    <string name="settings_async_input">Async input</string>
+    <string name="settings_async_update">Async update</string>
     <string name="settings_console_mode">"Mode console"</string>
     <!-- App settings strings -->
     <string name="settings_password_present">"*******"</string>
@@ -165,7 +187,6 @@
     <string name="dlg_msg_connecting">"Connexion..."</string>
     <string name="dlg_msg_logging_in">"Connexion..."</string>
     <string name="dlg_title_about">"À propos de aFreeRDP"</string>
-    <string name="dlg_msg_about">"Version: %1$s \ n \ u00A9 2012 Technologies GmbH Thinstuff"</string>
     <string name="dlg_title_create_bookmark_after_qc">"Enregistrer les paramètres de connexion?"</string>
     <string name="dlg_msg_create_bookmark_after_qc">"Vos paramètres de connexion n'ont pas été sauvegardés! Voulez-vous les enregistrer?"</string>
     <string name="dlg_title_save_bookmark">"Enregistrer la connexion?"</string>

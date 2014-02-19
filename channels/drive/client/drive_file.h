@@ -40,13 +40,13 @@
 #endif
 
 #ifdef _WIN32
-#define STAT stat
+#define STAT __stat64
 #define OPEN _open
 #define close _close
 #define read  _read
 #define write _write
-#define LSEEK _lseek
-#define FSTAT fstat
+#define LSEEK _lseeki64
+#define FSTAT _fstat64
 #define STATVFS statvfs
 #define mkdir(a,b) _mkdir(a)
 #define rmdir _rmdir
@@ -117,5 +117,7 @@ BOOL drive_file_query_information(DRIVE_FILE* file, UINT32 FsInformationClass, w
 BOOL drive_file_set_information(DRIVE_FILE* file, UINT32 FsInformationClass, UINT32 Length, wStream* input);
 BOOL drive_file_query_directory(DRIVE_FILE* file, UINT32 FsInformationClass, BYTE InitialQuery,
 	const char* path, wStream* output);
+
+extern UINT sys_code_page;
 
 #endif /* FREERDP_CHANNEL_DRIVE_FILE_H */
