@@ -362,8 +362,9 @@ int CommandLineParseArgumentsA(int argc, LPCSTR* argv, COMMAND_LINE_ARGUMENT_A* 
 						return COMMAND_LINE_STATUS_PRINT_VERSION;
 			}
 			
-			if (!found)
-				return COMMAND_LINE_ERROR_NO_KEYWORD;
+			// for thincast server build: allow unknown command line options
+// 			if (!found)
+// 				return COMMAND_LINE_ERROR_NO_KEYWORD;
 		}
 	}
 

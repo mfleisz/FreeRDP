@@ -141,6 +141,7 @@ int credssp_ntlm_client_init(rdpCredssp* credssp)
 
 	if (PromptPassword)
 	{
+/*
 		if (instance->Authenticate)
 		{
 			BOOL proceed = instance->Authenticate(instance,
@@ -153,6 +154,7 @@ int credssp_ntlm_client_init(rdpCredssp* credssp)
 			}
 
 		}
+*/
 	}
 
 	sspi_SetAuthIdentity(&(credssp->identity), settings->Username, settings->Domain, settings->Password);
@@ -292,7 +294,7 @@ int credssp_client_authenticate(rdpCredssp* credssp)
 	cbMaxToken = pPackageInfo->cbMaxToken;
 
 	status = credssp->table->AcquireCredentialsHandle(NULL, NLA_PKG_NAME,
-			SECPKG_CRED_OUTBOUND, NULL, &credssp->identity, NULL, NULL, &credentials, &expiration);
+			SECPKG_CRED_OUTBOUND, NULL, (credssp->identity.User && credssp->identity.Password) ? &credssp->identity : NULL, NULL, NULL, &credentials, &expiration);
 			//SECPKG_CRED_OUTBOUND, NULL, NULL, NULL, NULL, &credentials, &expiration);
 
 	if (status != SEC_E_OK)
