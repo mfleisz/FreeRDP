@@ -2274,8 +2274,45 @@ BOOL rdp_read_multifragment_update_capability_set(wStream* s, UINT16 length, rdp
 		return FALSE;
 
 	Stream_Read_UINT32(s, multifragMaxRequestSize); /* MaxRequestSize (4 bytes) */
-	if (settings->RemoteFxCodec && settings->MultifragMaxRequestSize < multifragMaxRequestSize)
-		settings->MultifragMaxRequestSize = multifragMaxRequestSize;
+
+	if (settings->ServerMode)
+	{
+		if (settings->RemoteFxCodec)
+		{
+			/**
+			 * If we are using RemoteFX the client MUST use a value greater
+			 * than or equal to the value we've previously sent in the server to
+			 * client multi-fragment update capability set (MS-RDPRFX 1.5)
+			 */
+			if (multifragMaxRequestSize < settings->MultifragMaxRequestSize)
+			{
+				/**
+				 * If it happens to be smaller we honor the client's value but
+				 * have to disable RemoteFX
+				 */
+				settings->RemoteFxCodec = FALSE;
+				settings->MultifragMaxRequestSize = multifragMaxRequestSize;
+			}
+			else
+			{
+				/* no need to increase server's max request size setting here */
+			}
+		}
+		else
+		{
+			settings->MultifragMaxRequestSize = multifragMaxRequestSize;
+		}
+	}
+	else
+	{
+		/**
+		 * In client mode we keep up with the server's capabilites.
+		 * In RemoteFX mode we MUST do this but it might also be useful to
+		 * receive larger related bitmap updates.
+		 */
+		if (multifragMaxRequestSize > settings->MultifragMaxRequestSize)
+			settings->MultifragMaxRequestSize = multifragMaxRequestSize;
+	}
 
 	return TRUE;
 }
@@ -2292,6 +2329,29 @@ void rdp_write_multifragment_update_capability_set(wStream* s, rdpSettings* sett
 	int header;
 
 	Stream_EnsureRemainingCapacity(s, 32);
+
+	if (settings->ServerMode)
+	{
+		/**
+		 * In server mode we prefer to use the highest useful request size that
+		 * will allow us to pack a complete screen update into a single fast
+		 * path PDU using any of the supported codecs.
+		 * However, the client is completely free to accept our proposed
+		 * max request size or send a different value in the client-to-server
+		 * multi-fragment update capability set and we have to accept that,
+		 * unless we are using RemoteFX where the client MUST announce a value
+		 * greater than or equal to the value we're sending here.
+		 * See [MS-RDPRFX 1.5 capability #2]
+		 */
+
+		UINT32 tileNumX = (settings->DesktopWidth+63)/64;
+		UINT32 tileNumY = (settings->DesktopHeight+63)/64;
+
+		settings->MultifragMaxRequestSize = tileNumX * tileNumY * 16384;
+
+		/* and add room for headers, regions, frame markers, etc. */
+		settings->MultifragMaxRequestSize += 16384;
+	}
 
 	header = rdp_capability_set_start(s);
 
@@ -2395,7 +2455,7 @@ BOOL rdp_read_surface_commands_capability_set(wStream* s, UINT16 length, rdpSett
 	Stream_Seek_UINT32(s); /* reserved (4 bytes) */
 
 	settings->SurfaceCommandsEnabled = TRUE;
-	settings->SurfaceFrameMarkerEnabled = (cmdFlags & SURFCMDS_FRAME_MARKER);
+	settings->SurfaceFrameMarkerEnabled = (cmdFlags & SURFCMDS_FRAME_MARKER) ? TRUE : FALSE;
 
 	return TRUE;
 }
@@ -2530,19 +2590,14 @@ BOOL rdp_read_bitmap_codecs_capability_set(wStream* s, UINT16 length, rdpSetting
 	BYTE bitmapCodecCount;
 	UINT16 codecPropertiesLength;
 	UINT16 remainingLength;
+	BOOL receivedRemoteFxCodec = FALSE;
+	BOOL receivedNSCodec = FALSE;
 
 	if (length < 5)
 		return FALSE;
 
 	Stream_Read_UINT8(s, bitmapCodecCount); /* bitmapCodecCount (1 byte) */
 	remainingLength = length - 5;
-
-	if (settings->ServerMode)
-	{
-		settings->RemoteFxCodec = FALSE;
-		settings->NSCodec = FALSE;
-		settings->JpegCodec = FALSE;
-	}
 
 	while (bitmapCodecCount > 0)
 	{
@@ -2556,12 +2611,12 @@ BOOL rdp_read_bitmap_codecs_capability_set(wStream* s, UINT16 length, rdpSetting
 			if (UuidEqual(&codecGuid, &CODEC_GUID_REMOTEFX, &rpc_status))
 			{
 				Stream_Read_UINT8(s, settings->RemoteFxCodecId);
-				settings->RemoteFxCodec = TRUE;
+				receivedRemoteFxCodec = TRUE;
 			}
 			else if (UuidEqual(&codecGuid, &CODEC_GUID_NSCODEC, &rpc_status))
 			{
 				Stream_Read_UINT8(s, settings->NSCodecId);
-				settings->NSCodec = TRUE;
+				receivedNSCodec = TRUE;
 			}
 			else
 			{
@@ -2598,6 +2653,14 @@ BOOL rdp_read_bitmap_codecs_capability_set(wStream* s, UINT16 length, rdpSetting
 		remainingLength -= codecPropertiesLength;
 
 		bitmapCodecCount--;
+	}
+
+	if (settings->ServerMode)
+	{
+		/* only enable a codec if we've announced/enabled it before */
+		settings->RemoteFxCodec = settings->RemoteFxCodec && receivedRemoteFxCodec;
+		settings->NSCodec = settings->NSCodec && receivedNSCodec;
+		settings->JpegCodec = FALSE;
 	}
 
 	return TRUE;
@@ -2977,7 +3040,7 @@ BOOL rdp_print_capability_sets(wStream* s, UINT16 numberCapabilities, BOOL recei
 
 		em = bm + length;
 
-		if (Stream_GetRemainingLength(s) < length - 4)
+		if (Stream_GetRemainingLength(s) < (size_t) (length - 4))
 		{
 			fprintf(stderr, "error processing stream\n");
 			return FALSE;
@@ -3176,7 +3239,7 @@ BOOL rdp_read_capability_sets(wStream* s, rdpSettings* settings, UINT16 numberCa
 
 		em = bm + length;
 
-		if (Stream_GetRemainingLength(s) < length - 4)
+		if (Stream_GetRemainingLength(s) < ((size_t) length - 4))
 		{
 			fprintf(stderr, "error processing stream\n");
 			return FALSE;
@@ -3389,7 +3452,7 @@ BOOL rdp_recv_get_active_header(rdpRdp* rdp, wStream* s, UINT16* pChannelId)
 
 	if (*pChannelId != MCS_GLOBAL_CHANNEL_ID)
 	{
-		UINT16 mcsMessageChannelId = rdp->mcs->message_channel_id;
+		UINT16 mcsMessageChannelId = rdp->mcs->messageChannelId;
 
 		if ((mcsMessageChannelId == 0) || (*pChannelId != mcsMessageChannelId))
 		{
@@ -3526,11 +3589,11 @@ BOOL rdp_send_demand_active(rdpRdp* rdp)
 	s = Stream_New(NULL, 4096);
 	rdp_init_stream_pdu(rdp, s);
 
-	rdp->settings->ShareId = 0x10000 + rdp->mcs->user_id;
+	rdp->settings->ShareId = 0x10000 + rdp->mcs->userId;
 
 	rdp_write_demand_active(s, rdp->settings);
 
-	status = rdp_send_pdu(rdp, s, PDU_TYPE_DEMAND_ACTIVE, rdp->mcs->user_id);
+	status = rdp_send_pdu(rdp, s, PDU_TYPE_DEMAND_ACTIVE, rdp->mcs->userId);
 
 	Stream_Free(s, TRUE);
 
@@ -3555,7 +3618,7 @@ BOOL rdp_recv_confirm_active(rdpRdp* rdp, wStream* s)
 	Stream_Read_UINT16(s, lengthSourceDescriptor); /* lengthSourceDescriptor (2 bytes) */
 	Stream_Read_UINT16(s, lengthCombinedCapabilities); /* lengthCombinedCapabilities (2 bytes) */
 
-	if (Stream_GetRemainingLength(s) < lengthSourceDescriptor + 4)
+	if (((int) Stream_GetRemainingLength(s)) < lengthSourceDescriptor + 4)
 		return FALSE;
 
 	Stream_Seek(s, lengthSourceDescriptor); /* sourceDescriptor */
@@ -3567,6 +3630,8 @@ BOOL rdp_recv_confirm_active(rdpRdp* rdp, wStream* s)
 	if (!settings->ReceivedCapabilities[CAPSET_TYPE_SURFACE_COMMANDS])
 	{
 		/* client does not support surface commands */
+		settings->SurfaceCommandsEnabled = FALSE;
+		settings->SurfaceFrameMarkerEnabled = FALSE;
 	}
 
 	if (!settings->ReceivedCapabilities[CAPSET_TYPE_FRAME_ACKNOWLEDGE])
@@ -3741,7 +3806,7 @@ BOOL rdp_send_confirm_active(rdpRdp* rdp)
 
 	rdp_write_confirm_active(s, rdp->settings);
 
-	status = rdp_send_pdu(rdp, s, PDU_TYPE_CONFIRM_ACTIVE, rdp->mcs->user_id);
+	status = rdp_send_pdu(rdp, s, PDU_TYPE_CONFIRM_ACTIVE, rdp->mcs->userId);
 
 	Stream_Free(s, TRUE);
 

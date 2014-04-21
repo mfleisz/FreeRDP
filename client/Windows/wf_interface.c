@@ -59,8 +59,6 @@
 
 #include "resource.h"
 
-void wf_size_scrollbars(wfContext* wfc, int client_width, int client_height);
-
 int wf_create_console(void)
 {
 	if (!AllocConsole())
@@ -238,7 +236,8 @@ BOOL wf_pre_connect(freerdp* instance)
 	settings->GlyphSupportLevel = GLYPH_SUPPORT_NONE;
 
 	wfc->fullscreen = settings->Fullscreen;
-	wfc->fs_toggle = 1;
+	if (wfc->fullscreen)
+		wfc->fs_toggle = 1;
 	wfc->sw_gdi = settings->SoftwareGdi;
 
 	wfc->clrconv = (HCLRCONV) malloc(sizeof(CLRCONV));
@@ -260,21 +259,23 @@ BOOL wf_pre_connect(freerdp* instance)
 		desktopHeight = (GetSystemMetrics(SM_CYSCREEN) * wfc->percentscreen) / 100;
 		settings->DesktopHeight = desktopHeight;
 	}
-	
+
 	if (wfc->fullscreen)
 	{
 		if (settings->UseMultimon)
 		{
-			settings->DesktopWidth = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-			settings->DesktopHeight = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+			desktopWidth = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+			desktopHeight = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 		}
 		else
 		{
-			settings->DesktopWidth = GetSystemMetrics(SM_CXSCREEN);
-			settings->DesktopHeight = GetSystemMetrics(SM_CYSCREEN);
+			desktopWidth = GetSystemMetrics(SM_CXSCREEN);
+			desktopHeight = GetSystemMetrics(SM_CYSCREEN);
 		}
 	}
 
+	/* FIXME: desktopWidth has a limitation that it should be divisible by 4,
+	 *        otherwise the screen will crash when connecting to an XP desktop.*/
 	desktopWidth = (desktopWidth + 3) & (~3);
 
 	if (desktopWidth != settings->DesktopWidth)
@@ -312,7 +313,7 @@ void wf_add_system_menu(wfContext* wfc)
 	item_info.wID = SYSCOMMAND_ID_SMARTSIZING;
 	item_info.fType = MFT_STRING;
 	item_info.dwTypeData = _wcsdup(_T("Smart sizing"));
-	item_info.cch = _wcslen(_T("Smart sizing"));
+	item_info.cch = (UINT) _wcslen(_T("Smart sizing"));
 	item_info.dwItemData = (ULONG_PTR) wfc;
 
 	InsertMenuItem(hMenu, 6, TRUE, &item_info);
@@ -448,6 +449,8 @@ BOOL wf_post_connect(freerdp* instance)
 	freerdp_channels_post_connect(instance->context->channels, instance);
 
 	wf_cliprdr_init(wfc, instance->context->channels);
+	if (wfc->fullscreen)
+		floatbar_window_create(wfc);
 
 	return TRUE;
 }
@@ -536,7 +539,7 @@ BOOL wf_verify_certificate(freerdp* instance, char* subject, char* issuer, char*
 	return TRUE;
 }
 
-int wf_receive_channel_data(freerdp* instance, int channelId, BYTE* data, int size, int flags, int total_size)
+int wf_receive_channel_data(freerdp* instance, UINT16 channelId, BYTE* data, int size, int flags, int total_size)
 {
 	return freerdp_channels_data(instance, channelId, data, size, flags, total_size);
 }
@@ -829,14 +832,10 @@ int freerdp_client_load_settings_from_rdp_file(wfContext* wfc, char* filename)
 	return 0;
 }
 
-void wf_size_scrollbars(wfContext* wfc, int client_width, int client_height)
+void wf_size_scrollbars(wfContext* wfc, UINT32 client_width, UINT32 client_height)
 {
-	BOOL rc;
-
-	if (wfc->disablewindowtracking == TRUE)
-	{
+	if (wfc->disablewindowtracking)
 		return;
-	}
 
 	// prevent infinite message loop
 	wfc->disablewindowtracking = TRUE;

@@ -142,6 +142,7 @@ int rpc_ncacn_http_ntlm_init(rdpRpc* rpc, TSG_CHANNEL channel)
 			if (!proceed)
 			{
 				connectErrorCode = CANCELEDBYUSER;
+				freerdp_set_last_error(instance->context, FREERDP_ERROR_CONNECT_CANCELLED);
 				return 0;
 			}
 
@@ -161,7 +162,6 @@ int rpc_ncacn_http_ntlm_init(rdpRpc* rpc, TSG_CHANNEL channel)
 		return 0;
 	}
 
-	//ntlm_client_make_spn(ntlm, NULL, settings->GatewayHostname);
 	if (!ntlm_client_make_spn(ntlm, _T("HTTP"), settings->GatewayHostname))
 	{
 		return 0;
@@ -307,25 +307,34 @@ rdpNtlmHttp* ntlm_http_new()
 {
 	rdpNtlmHttp* ntlm_http;
 
-	ntlm_http = (rdpNtlmHttp*) malloc(sizeof(rdpNtlmHttp));
+	ntlm_http = (rdpNtlmHttp *)calloc(1, sizeof(rdpNtlmHttp));
 
-	if (ntlm_http != NULL)
-	{
-		ZeroMemory(ntlm_http, sizeof(rdpNtlmHttp));
-		ntlm_http->ntlm = ntlm_new();
-		ntlm_http->context = http_context_new();
-	}
+	if (!ntlm_http)
+		return NULL;
+
+	ntlm_http->ntlm = ntlm_new();
+	if (!ntlm_http->ntlm)
+		goto out_free;
+
+	ntlm_http->context = http_context_new();
+	if (!ntlm_http->context)
+		goto out_free_ntlm;
 
 	return ntlm_http;
+
+out_free_ntlm:
+	ntlm_free(ntlm_http->ntlm);
+out_free:
+	return NULL;
 }
 
 void ntlm_http_free(rdpNtlmHttp* ntlm_http)
 {
-	if (ntlm_http != NULL)
-	{
-		ntlm_free(ntlm_http->ntlm);
-		http_context_free(ntlm_http->context);
+	if (!ntlm_http)
+		return;
 
-		free(ntlm_http);
-	}
+	ntlm_free(ntlm_http->ntlm);
+	http_context_free(ntlm_http->context);
+
+	free(ntlm_http);
 }

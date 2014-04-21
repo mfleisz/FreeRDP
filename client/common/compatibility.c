@@ -263,8 +263,8 @@ int freerdp_client_old_command_line_pre_filter(void* context, int index, int arg
 					if (p != NULL)
 					{
 						p = strchr(p, ':');
-						length = p - a;
-						args->argv[j + 1] = malloc(length + 1);
+						length = (int) (p - a);
+						args->argv[j + 1] = (char*) malloc(length + 1);
 						CopyMemory(args->argv[j + 1], a, length);
 						args->argv[j + 1][length] = '\0';
 						p++;
@@ -693,7 +693,7 @@ int freerdp_client_parse_old_command_line_arguments(int argc, char** argv, rdpSe
 				settings->TlsSecurity = FALSE;
 				settings->NlaSecurity = FALSE;
 				settings->DisableEncryption = FALSE;
-				settings->EncryptionMethods = ENCRYPTION_METHOD_40BIT | ENCRYPTION_METHOD_128BIT | ENCRYPTION_METHOD_FIPS;
+				settings->EncryptionMethods = ENCRYPTION_METHOD_40BIT | ENCRYPTION_METHOD_56BIT | ENCRYPTION_METHOD_128BIT | ENCRYPTION_METHOD_FIPS;
 				settings->EncryptionLevel = ENCRYPTION_LEVEL_CLIENT_COMPATIBLE;
 			}
 			else if (strncmp("tls", arg->Value, 1) == 0) /* TLS */

@@ -278,10 +278,7 @@ void wf_resize_window(wfContext* wfc)
 		}
 	}
 	else if (!wfc->instance->settings->Decorations)
-	{
-		RECT rc_wnd;
-		RECT rc_client;
-		
+	{		
 		SetWindowLongPtr(wfc->hwnd, GWL_STYLE, WS_CHILD);
 
 		/* Now resize to get full canvas size and room for caption and borders */
@@ -292,9 +289,6 @@ void wf_resize_window(wfContext* wfc)
 	}
 	else
 	{
-		RECT rc_wnd;
-		RECT rc_client;
-
 		SetWindowLongPtr(wfc->hwnd, GWL_STYLE, WS_CAPTION | WS_OVERLAPPED | WS_SYSMENU | WS_MINIMIZEBOX | WS_SIZEBOX | WS_MAXIMIZEBOX);
 
 		if (!wfc->client_height)
@@ -327,6 +321,11 @@ void wf_toggle_fullscreen(wfContext* wfc)
 	{
 		wfc->disablewindowtracking = TRUE;
 	}
+
+	if (wfc->fullscreen)
+		floatbar_show(wfc->floatbar);
+	else
+		floatbar_hide(wfc->floatbar);
 
 	SetParent(wfc->hwnd, wfc->fullscreen ? NULL : wfc->hWndParent);
 	wf_resize_window(wfc);

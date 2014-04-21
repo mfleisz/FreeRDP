@@ -38,7 +38,7 @@
 
 #include "devman.h"
 
-static void devman_device_free(DEVICE* device)
+void devman_device_free(DEVICE* device)
 {
 	IFCALL(device->Free, device);
 }
@@ -55,7 +55,7 @@ DEVMAN* devman_new(rdpdrPlugin* rdpdr)
 
 	devman->devices = ListDictionary_New(TRUE);
 
-	ListDictionary_Object(devman->devices)->fnObjectFree =
+	ListDictionary_ValueObject(devman->devices)->fnObjectFree =
 			(OBJECT_FREE_FN) devman_device_free;
 
 	return devman;
@@ -65,6 +65,16 @@ void devman_free(DEVMAN* devman)
 {
 	ListDictionary_Free(devman->devices);
 	free(devman);
+}
+
+void devman_unregister_device(DEVMAN* devman, void* key)
+{
+	DEVICE* device;
+
+	device = (DEVICE*) ListDictionary_Remove(devman->devices, key);
+
+	if (device)
+		devman_device_free(device);
 }
 
 static void devman_register_device(DEVMAN* devman, DEVICE* device)

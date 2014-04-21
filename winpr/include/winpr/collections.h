@@ -27,6 +27,7 @@
 #include <winpr/winpr.h>
 #include <winpr/wtypes.h>
 
+#include <winpr/crt.h>
 #include <winpr/synch.h>
 #include <winpr/stream.h>
 
@@ -38,7 +39,7 @@ typedef void* (*OBJECT_NEW_FN)(void);
 typedef void (*OBJECT_INIT_FN)(void* obj);
 typedef void (*OBJECT_UNINIT_FN)(void* obj);
 typedef void (*OBJECT_FREE_FN)(void* obj);
-typedef void (*OBJECT_EQUALS_FN)(void* objA, void* objB);
+typedef BOOL (*OBJECT_EQUALS_FN)(void* objA, void* objB);
 
 struct _wObject
 {
@@ -82,7 +83,7 @@ WINPR_API void Queue_Clear(wQueue* queue);
 
 WINPR_API BOOL Queue_Contains(wQueue* queue, void* obj);
 
-WINPR_API void Queue_Enqueue(wQueue* queue, void* obj);
+WINPR_API BOOL Queue_Enqueue(wQueue* queue, void* obj);
 WINPR_API void* Queue_Dequeue(wQueue* queue);
 
 WINPR_API void* Queue_Peek(wQueue* queue);
@@ -153,10 +154,10 @@ WINPR_API void ArrayList_Clear(wArrayList* arrayList);
 WINPR_API BOOL ArrayList_Contains(wArrayList* arrayList, void* obj);
 
 WINPR_API int ArrayList_Add(wArrayList* arrayList, void* obj);
-WINPR_API void ArrayList_Insert(wArrayList* arrayList, int index, void* obj);
+WINPR_API BOOL ArrayList_Insert(wArrayList* arrayList, int index, void* obj);
 
-WINPR_API void ArrayList_Remove(wArrayList* arrayList, void* obj);
-WINPR_API void ArrayList_RemoveAt(wArrayList* arrayList, int index);
+WINPR_API BOOL ArrayList_Remove(wArrayList* arrayList, void* obj);
+WINPR_API BOOL ArrayList_RemoveAt(wArrayList* arrayList, int index);
 
 WINPR_API int ArrayList_IndexOf(wArrayList* arrayList, void* obj, int startIndex, int count);
 WINPR_API int ArrayList_LastIndexOf(wArrayList* arrayList, void* obj, int startIndex, int count);
@@ -191,15 +192,20 @@ struct _wListDictionary
 	CRITICAL_SECTION lock;
 
 	wListDictionaryItem* head;
-	wObject object;
+	wObject objectKey;
+	wObject objectValue;
 };
 typedef struct _wListDictionary wListDictionary;
 
-#define ListDictionary_Object(_dictionary)	(&_dictionary->object)
+#define ListDictionary_KeyObject(_dictionary)	(&_dictionary->objectKey)
+#define ListDictionary_ValueObject(_dictionary)	(&_dictionary->objectValue)
 
 WINPR_API int ListDictionary_Count(wListDictionary* listDictionary);
 
-WINPR_API void ListDictionary_Add(wListDictionary* listDictionary, void* key, void* value);
+WINPR_API void ListDictionary_Lock(wListDictionary* listDictionary);
+WINPR_API void ListDictionary_Unlock(wListDictionary* listDictionary);
+
+WINPR_API BOOL ListDictionary_Add(wListDictionary* listDictionary, void* key, void* value);
 WINPR_API void* ListDictionary_Remove(wListDictionary* listDictionary, void* key);
 WINPR_API void* ListDictionary_Remove_Head(wListDictionary* listDictionary);
 WINPR_API void ListDictionary_Clear(wListDictionary* listDictionary);
@@ -257,12 +263,15 @@ WINPR_API void LinkedList_Free(wLinkedList* list);
 
 /* System.Collections.Generic.KeyValuePair<TKey,TValue> */
 
+typedef struct _wKeyValuePair wKeyValuePair;
+
 struct _wKeyValuePair
 {
 	void* key;
 	void* value;
+
+	wKeyValuePair* next;
 };
-typedef struct _wKeyValuePair wKeyValuePair;
 
 /* Reference Table */
 
@@ -315,6 +324,40 @@ WINPR_API void CountdownEvent_Reset(wCountdownEvent* countdown, DWORD count);
 WINPR_API wCountdownEvent* CountdownEvent_New(DWORD initialCount);
 WINPR_API void CountdownEvent_Free(wCountdownEvent* countdown);
 
+/* Hash Table */
+
+struct _wHashTable
+{
+	BOOL synchronized;
+	CRITICAL_SECTION lock;
+
+	long numOfBuckets;
+	long numOfElements;
+	float idealRatio;
+	float lowerRehashThreshold;
+	float upperRehashThreshold;
+	wKeyValuePair** bucketArray;
+	int (*keycmp)(void* key1, void* key2);
+	int (*valuecmp)(void* value1, void* value2);
+	unsigned long (*hashFunction)(void* key);
+	void (*keyDeallocator)(void* key);
+	void (*valueDeallocator)(void* value);
+};
+typedef struct _wHashTable wHashTable;
+
+WINPR_API int HashTable_Count(wHashTable* table);
+WINPR_API int HashTable_Add(wHashTable* table, void* key, void* value);
+WINPR_API BOOL HashTable_Remove(wHashTable* table, void* key);
+WINPR_API void HashTable_Clear(wHashTable* table);
+WINPR_API BOOL HashTable_Contains(wHashTable* table, void* key);
+WINPR_API BOOL HashTable_ContainsKey(wHashTable* table, void* key);
+WINPR_API BOOL HashTable_ContainsValue(wHashTable* table, void* value);
+WINPR_API void* HashTable_GetItemValue(wHashTable* table, void* key);
+WINPR_API BOOL HashTable_SetItemValue(wHashTable* table, void* key, void* value);
+
+WINPR_API wHashTable* HashTable_New(BOOL synchronized);
+WINPR_API void HashTable_Free(wHashTable* table);
+
 /* BufferPool */
 
 struct _wBufferPoolItem
@@ -349,7 +392,7 @@ WINPR_API int BufferPool_GetPoolSize(wBufferPool* pool);
 WINPR_API int BufferPool_GetBufferSize(wBufferPool* pool, void* buffer);
 
 WINPR_API void* BufferPool_Take(wBufferPool* pool, int bufferSize);
-WINPR_API void BufferPool_Return(wBufferPool* pool, void* buffer);
+WINPR_API BOOL BufferPool_Return(wBufferPool* pool, void* buffer);
 WINPR_API void BufferPool_Clear(wBufferPool* pool);
 
 WINPR_API wBufferPool* BufferPool_New(BOOL synchronized, int fixedSize, DWORD alignment);
@@ -562,4 +605,5 @@ WINPR_API void PubSub_Free(wPubSub* pubSub);
 #ifdef __cplusplus
 }
 #endif
+
 #endif /* WINPR_COLLECTIONS_H */

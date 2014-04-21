@@ -133,6 +133,16 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	endif()
 
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
+
+	# Hack to strip absolute paths out of the __FILE__ macro
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILE__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__FILE__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
+	CHECK_C_COMPILER_FLAG (-Wno-builtin-macro-redefined Wno-builtin-macro-redefined)
+	if(Wno-builtin-macro-redefined)
+		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-builtin-macro-redefined")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-builtin-macro-redefined")
+	endif()
+
 	CHECK_C_COMPILER_FLAG (-Wno-unused-result Wno-unused-result)
 	if(Wno-unused-result)
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-result")
@@ -161,6 +171,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2")
 	else()
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
 	endif()
 	if(WITH_SSE2)
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse2")
@@ -183,17 +194,16 @@ endif()
 
 if(MSVC)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Gd")
-	#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MD")
-	#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /O2")
-	#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Ob2")
-	#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W2")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W3")
+
 	if(CMAKE_SIZEOF_VOID_P EQUAL 8)
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_AMD64_")
 	else()
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_X86_")
 	endif()
-	SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR})
-	SET(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR})
+
+	set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR})
+	set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR})
 
         if(CMAKE_BUILD_TYPE STREQUAL "Release")
         else()
@@ -214,6 +224,7 @@ if(IOS)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -isysroot ${CMAKE_IOS_SDK_ROOT} -g")
 endif()
 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DWINPR_EXPORTS")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DFREERDP_EXPORTS")
 
 # Include files
@@ -330,6 +341,8 @@ else()
 	set(X11_FEATURE_TYPE "DISABLED")
 endif()
 
+find_package(PCSCWinPR)
+
 set(X11_FEATURE_PURPOSE "X11")
 set(X11_FEATURE_DESCRIPTION "X11 client and server")
 
@@ -376,10 +389,6 @@ set(GSTREAMER_FEATURE_DESCRIPTION "multimedia redirection, audio and video playb
 set(IPP_FEATURE_TYPE "OPTIONAL")
 set(IPP_FEATURE_PURPOSE "performance")
 set(IPP_FEATURE_DESCRIPTION "Intel Integrated Performance Primitives library")
-
-set(NPP_FEATURE_TYPE "OPTIONAL")
-set(NPP_FEATURE_PURPOSE "performance")
-set(NPP_FEATURE_DESCRIPTION "NVIDIA Performance Primitives library")
 
 set(JPEG_FEATURE_TYPE "OPTIONAL")
 set(JPEG_FEATURE_PURPOSE "codec")
@@ -458,13 +467,6 @@ if(TARGET_ARCH MATCHES "x86|x64")
 		# Intel Performance Primitives
 		find_feature(IPP ${IPP_FEATURE_TYPE} ${IPP_FEATURE_PURPOSE} ${IPP_FEATURE_DESCRIPTION})
 	endif()
-	find_feature(NPP ${NPP_FEATURE_TYPE} ${NPP_FEATURE_PURPOSE} ${NPP_FEATURE_DESCRIPTION})
-endif()
-
-# Installation Paths
-if(WIN32 AND NOT FREERDP_SDK)
-	set(CMAKE_INSTALL_BINDIR ".")
-	set(CMAKE_INSTALL_LIBDIR ".")
 endif()
 
 # Path to put FreeRDP data
@@ -490,6 +492,10 @@ add_definitions("-DHAVE_CONFIG_H")
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
 # RPATH configuration
+if(CMAKE_SKIP_RPATH)
+       set(CMAKE_SKIP_RPATH FALSE)
+       set(CMAKE_SKIP_INSTALL_RPATH TRUE)
+endif()
 set(CMAKE_SKIP_BUILD_RPATH FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)

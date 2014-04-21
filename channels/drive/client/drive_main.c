@@ -650,7 +650,7 @@ void drive_register_drive_path(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints, char* 
 		drive->device.IRPRequest = drive_irp_request;
 		drive->device.Free = drive_free;
 
-		length = strlen(name);
+		length = (int) strlen(name);
 		drive->device.data = Stream_New(NULL, length + 1);
 
 		for (i = 0; i <= length; i++)
@@ -659,7 +659,7 @@ void drive_register_drive_path(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints, char* 
 		drive->path = path;
 
 		drive->files = ListDictionary_New(TRUE);
-		ListDictionary_Object(drive->files)->fnObjectFree = (OBJECT_FREE_FN) drive_file_free;
+		ListDictionary_ValueObject(drive->files)->fnObjectFree = (OBJECT_FREE_FN) drive_file_free;
 
 		drive->IrpQueue = MessageQueue_New(NULL);
 		drive->thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) drive_thread_func, drive, CREATE_SUSPENDED, NULL);

@@ -252,14 +252,21 @@ rdpSettings* freerdp_settings_new(DWORD flags)
 		settings->EncryptionMethods = ENCRYPTION_METHOD_NONE;
 		settings->EncryptionLevel = ENCRYPTION_LEVEL_NONE;
 
+		settings->CompressionEnabled = TRUE;
+
+		if (settings->ServerMode)
+			settings->CompressionLevel = PACKET_COMPR_TYPE_64K;
+		else
+			settings->CompressionLevel = PACKET_COMPR_TYPE_RDP6;
+
 		settings->Authentication = TRUE;
 		settings->AuthenticationOnly = FALSE;
 		settings->CredentialsFromStdin = FALSE;
 
 		settings->ChannelCount = 0;
 		settings->ChannelDefArraySize = 32;
-		settings->ChannelDefArray = (rdpChannel*) malloc(sizeof(rdpChannel) * settings->ChannelDefArraySize);
-		ZeroMemory(settings->ChannelDefArray, sizeof(rdpChannel) * settings->ChannelDefArraySize);
+		settings->ChannelDefArray = (CHANNEL_DEF*) malloc(sizeof(CHANNEL_DEF) * settings->ChannelDefArraySize);
+		ZeroMemory(settings->ChannelDefArray, sizeof(CHANNEL_DEF) * settings->ChannelDefArraySize);
 
 		settings->MonitorCount = 0;
 		settings->MonitorDefArraySize = 32;
@@ -387,7 +394,7 @@ rdpSettings* freerdp_settings_new(DWORD flags)
 		settings->FrameAcknowledge = 2;
 		settings->MouseMotion = TRUE;
 
-		settings->AutoReconnectionEnabled = TRUE;
+		settings->AutoReconnectionEnabled = FALSE;
 		settings->AutoReconnectMaxRetries = 20;
 
 		settings->ClientAutoReconnectCookie = (ARC_CS_PRIVATE_PACKET*) malloc(sizeof(ARC_CS_PRIVATE_PACKET));
@@ -426,7 +433,7 @@ rdpSettings* freerdp_settings_new(DWORD flags)
 
 rdpSettings* freerdp_settings_clone(rdpSettings* settings)
 {
-	int index;
+	UINT32 index;
 	rdpSettings* _settings;
 
 	_settings = (rdpSettings*) malloc(sizeof(rdpSettings));
@@ -453,6 +460,7 @@ rdpSettings* freerdp_settings_clone(rdpSettings* settings)
 		_settings->ClientAddress = _strdup(settings->ClientAddress); /* 769 */
 		_settings->ClientDir = _strdup(settings->ClientDir); /* 770 */
 		_settings->DynamicDSTTimeZoneKeyName = _strdup(settings->DynamicDSTTimeZoneKeyName); /* 897 */
+		_settings->AuthenticationServiceClass = _strdup(settings->AuthenticationServiceClass); /* 1098 */
 		_settings->PreconnectionBlob = _strdup(settings->PreconnectionBlob); /* 1155 */
 		_settings->KerberosKdc = _strdup(settings->KerberosKdc); /* 1344 */
 		_settings->KerberosRealm = _strdup(settings->KerberosRealm); /* 1345 */
@@ -508,6 +516,7 @@ rdpSettings* freerdp_settings_clone(rdpSettings* settings)
 		_settings->DesktopPosY = settings->DesktopPosY; /* 391 */
 		_settings->NumMonitorIds = settings->NumMonitorIds; /* 394 */
 		_settings->MultitransportFlags = settings->MultitransportFlags; /* 512 */
+		_settings->CompressionLevel = settings->CompressionLevel; /* 721 */
 		_settings->AutoReconnectMaxRetries = settings->AutoReconnectMaxRetries; /* 833 */
 		_settings->PerformanceFlags = settings->PerformanceFlags; /* 960 */
 		_settings->RequestedProtocols = settings->RequestedProtocols; /* 1093 */
@@ -617,6 +626,7 @@ rdpSettings* freerdp_settings_clone(rdpSettings* settings)
 		_settings->Authentication = settings->Authentication; /* 1092 */
 		_settings->NegotiateSecurityLayer = settings->NegotiateSecurityLayer; /* 1096 */
 		_settings->RestrictedAdminModeRequired = settings->RestrictedAdminModeRequired; /* 1097 */
+		_settings->DisableCredentialsDelegation = settings->DisableCredentialsDelegation; /* 1099 */
 		_settings->MstscCookieMode = settings->MstscCookieMode; /* 1152 */
 		_settings->SendPreconnectionPdu = settings->SendPreconnectionPdu; /* 1156 */
 		_settings->IgnoreCertificate = settings->IgnoreCertificate; /* 1408 */
@@ -641,6 +651,7 @@ rdpSettings* freerdp_settings_clone(rdpSettings* settings)
 		_settings->PlayRemoteFx = settings->PlayRemoteFx; /* 1857 */
 		_settings->GatewayUseSameCredentials = settings->GatewayUseSameCredentials; /* 1991 */
 		_settings->GatewayEnabled = settings->GatewayEnabled; /* 1992 */
+		_settings->GatewayBypassLocal = settings->GatewayBypassLocal; /* 1993 */
 		_settings->RemoteApplicationMode = settings->RemoteApplicationMode; /* 2112 */
 		_settings->DisableRemoteAppCapsCheck = settings->DisableRemoteAppCapsCheck; /* 2121 */
 		_settings->RemoteAppLanguageBarSupported = settings->RemoteAppLanguageBarSupported; /* 2124 */
@@ -692,8 +703,8 @@ rdpSettings* freerdp_settings_clone(rdpSettings* settings)
 
 		_settings->ChannelCount = settings->ChannelCount;
 		_settings->ChannelDefArraySize = settings->ChannelDefArraySize;
-		_settings->ChannelDefArray = (rdpChannel*) malloc(sizeof(rdpChannel) * settings->ChannelDefArraySize);
-		CopyMemory(_settings->ChannelDefArray, settings->ChannelDefArray, sizeof(rdpChannel) * settings->ChannelDefArraySize);
+		_settings->ChannelDefArray = (CHANNEL_DEF*) malloc(sizeof(CHANNEL_DEF) * settings->ChannelDefArraySize);
+		CopyMemory(_settings->ChannelDefArray, settings->ChannelDefArray, sizeof(CHANNEL_DEF) * settings->ChannelDefArraySize);
 
 		_settings->MonitorCount = settings->MonitorCount;
 		_settings->MonitorDefArraySize = settings->MonitorDefArraySize;
@@ -724,7 +735,7 @@ rdpSettings* freerdp_settings_clone(rdpSettings* settings)
 		CopyMemory(_settings->ServerAutoReconnectCookie, settings->ServerAutoReconnectCookie, sizeof(ARC_SC_PRIVATE_PACKET));
 
 		_settings->ClientTimeZone = (TIME_ZONE_INFO*) malloc(sizeof(TIME_ZONE_INFO));
-		CopyMemory(_settings->ClientTimeZone, _settings->ClientTimeZone, sizeof(TIME_ZONE_INFO));
+		CopyMemory(_settings->ClientTimeZone, settings->ClientTimeZone, sizeof(TIME_ZONE_INFO));
 
 		_settings->TargetNetAddressCount = settings->TargetNetAddressCount;
 
@@ -820,6 +831,7 @@ void freerdp_settings_free(rdpSettings* settings)
 		free(settings->RedirectionDomain);
 		free(settings->RedirectionPassword);
 		free(settings->RedirectionTsvUrl);
+		free(settings->AuthenticationServiceClass);
 		freerdp_target_net_addresses_free(settings);
 		freerdp_device_collection_free(settings);
 		freerdp_static_channel_collection_free(settings);

@@ -56,6 +56,7 @@ COMMAND_LINE_ARGUMENT_A args[] =
 	{ "pth", COMMAND_LINE_VALUE_REQUIRED, "<password hash>", NULL, NULL, -1, "pass-the-hash", "Pass the hash (restricted admin mode)" },
 	{ "client-hostname", COMMAND_LINE_VALUE_REQUIRED, "<name>", NULL, NULL, -1, NULL, "Client Hostname to send to server" },
 	{ "multimon", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, NULL, "Use multiple monitors" },
+	{ "span", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, NULL, "Span screen over multiple monitors" },
 	{ "workarea", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, NULL, "Use available work area" },
 	{ "monitors", COMMAND_LINE_VALUE_REQUIRED, "<0,1,2...>", NULL, NULL, -1, NULL, "Select monitors to use" },
 	{ "monitor-list", COMMAND_LINE_VALUE_FLAG | COMMAND_LINE_PRINT, NULL, NULL, NULL, -1, NULL, "List detected monitors" },
@@ -80,6 +81,7 @@ COMMAND_LINE_ARGUMENT_A args[] =
 	{ "app-file", COMMAND_LINE_VALUE_REQUIRED, "<file name>", NULL, NULL, -1, NULL, "File to open with remote application" },
 	{ "app-guid", COMMAND_LINE_VALUE_REQUIRED, "<app guid>", NULL, NULL, -1, NULL, "Remote application GUID" },
 	{ "compression", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, "z", "Compression" },
+	{ "compression-level", COMMAND_LINE_VALUE_REQUIRED, "<level>", NULL, NULL, -1, NULL, "Compression level (0,1,2)" },
 	{ "shell", COMMAND_LINE_VALUE_REQUIRED, NULL, NULL, NULL, -1, NULL, "Alternate shell" },
 	{ "shell-dir", COMMAND_LINE_VALUE_REQUIRED, NULL, NULL, NULL, -1, NULL, "Shell working directory" },
 	{ "sound", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, "audio", "Audio output (sound)" },
@@ -91,8 +93,8 @@ COMMAND_LINE_ARGUMENT_A args[] =
 	{ "drives", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Redirect all drives" },
 	{ "home-drive", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Redirect home drive" },
 	{ "clipboard", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Redirect clipboard" },
-	{ "serial", COMMAND_LINE_VALUE_REQUIRED, NULL, NULL, NULL, -1, "tty", "Redirect serial device" },
-	{ "parallel", COMMAND_LINE_VALUE_REQUIRED, NULL, NULL, NULL, -1, NULL, "Redirect parallel device" },
+	{ "serial", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, "tty", "Redirect serial device" },
+	{ "parallel", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, NULL, "Redirect parallel device" },
 	{ "smartcard", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, NULL, "Redirect smartcard device" },
 	{ "printer", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, NULL, "Redirect printer device" },
 	{ "usb", COMMAND_LINE_VALUE_REQUIRED, NULL, NULL, NULL, -1, NULL, "Redirect USB device" },
@@ -124,6 +126,8 @@ COMMAND_LINE_ARGUMENT_A args[] =
 	{ "cert-ignore", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, NULL, "ignore certificate" },
 	{ "pcb", COMMAND_LINE_VALUE_REQUIRED, "<blob>", NULL, NULL, -1, NULL, "Preconnection Blob" },
 	{ "pcid", COMMAND_LINE_VALUE_REQUIRED, "<id>", NULL, NULL, -1, NULL, "Preconnection Id" },
+	{ "spn-class", COMMAND_LINE_VALUE_REQUIRED, "<service class>", NULL, NULL, -1, NULL, "SPN authentication service class" },
+	{ "credentials-delegation", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Disable credentials delegation" },
 	{ "vmconnect", COMMAND_LINE_VALUE_OPTIONAL, "<vmid>", NULL, NULL, -1, NULL, "Hyper-V console (use port 2179, disable negotiation)" },
 	{ "authentication", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL, "authentication (hack!)" },
 	{ "encryption", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL, "encryption (hack!)" },
@@ -146,6 +150,7 @@ COMMAND_LINE_ARGUMENT_A args[] =
 	{ "help", COMMAND_LINE_VALUE_FLAG | COMMAND_LINE_PRINT_HELP, NULL, NULL, NULL, -1, "?", "print help" },
 	{ "play-rfx", COMMAND_LINE_VALUE_REQUIRED, "<pcap file>", NULL, NULL, -1, NULL, "Replay rfx pcap file" },
 	{ "auth-only", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Authenticate only." },
+	{ "auto-reconnect", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Automatic reconnection" },
 	{ "reconnect-cookie", COMMAND_LINE_VALUE_REQUIRED, "<base64 cookie>", NULL, NULL, -1, NULL, "Pass base64 reconnect cookie to the connection" },
 	{ "print-reconnect-cookie", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Print base64 reconnect cookie after connecting" },
 	{ "heartbeat", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Support heartbeat PDUs" },
@@ -195,7 +200,7 @@ int freerdp_client_print_command_line_help(int argc, char** argv)
 
 			if (arg->Format)
 			{
-				length = strlen(arg->Name) + strlen(arg->Format) + 2;
+				length = (int) (strlen(arg->Name) + strlen(arg->Format) + 2);
 				str = (char*) malloc(length + 1);
 				sprintf_s(str, length + 1, "%s:%s", arg->Name, arg->Format);
 				printf("%-20s", str);
@@ -210,7 +215,7 @@ int freerdp_client_print_command_line_help(int argc, char** argv)
 		}
 		else if (arg->Flags & COMMAND_LINE_VALUE_BOOL)
 		{
-			length = strlen(arg->Name) + 32;
+			length = (int) strlen(arg->Name) + 32;
 			str = (char*) malloc(length + 1);
 			sprintf_s(str, length + 1, "%s (default:%s)", arg->Name,
 					arg->Default ? "on" : "off");
@@ -266,7 +271,7 @@ int freerdp_client_command_line_pre_filter(void* context, int index, int argc, L
 		int length;
 		rdpSettings* settings;
 
-		length = strlen(argv[index]);
+		length = (int) strlen(argv[index]);
 
 		if (length > 4)
 		{
@@ -292,12 +297,18 @@ int freerdp_client_add_device_channel(rdpSettings* settings, int count, char** p
 		if (count < 3)
 			return -1;
 
-		drive = (RDPDR_DRIVE*) malloc(sizeof(RDPDR_DRIVE));
-		ZeroMemory(drive, sizeof(RDPDR_DRIVE));
+		drive = (RDPDR_DRIVE*) calloc(1, sizeof(RDPDR_DRIVE));
+
+		if (!drive)
+			return -1;
 
 		drive->Type = RDPDR_DTYP_FILESYSTEM;
-		drive->Name = _strdup(params[1]);
-		drive->Path = _strdup(params[2]);
+
+		if (count > 1)
+			drive->Name = _strdup(params[1]);
+
+		if (count > 2)
+			drive->Path = _strdup(params[2]);
 
 		freerdp_device_collection_add(settings, (RDPDR_DEVICE*) drive);
 		settings->DeviceRedirection = TRUE;
@@ -311,8 +322,10 @@ int freerdp_client_add_device_channel(rdpSettings* settings, int count, char** p
 		if (count < 1)
 			return -1;
 
-		printer = (RDPDR_PRINTER*) malloc(sizeof(RDPDR_PRINTER));
-		ZeroMemory(printer, sizeof(RDPDR_PRINTER));
+		printer = (RDPDR_PRINTER*) calloc(1, sizeof(RDPDR_PRINTER));
+
+		if (!printer)
+			return -1;
 
 		printer->Type = RDPDR_DTYP_PRINT;
 
@@ -334,12 +347,16 @@ int freerdp_client_add_device_channel(rdpSettings* settings, int count, char** p
 		if (count < 1)
 			return -1;
 
-		smartcard = (RDPDR_SMARTCARD*) malloc(sizeof(RDPDR_SMARTCARD));
-		ZeroMemory(smartcard, sizeof(RDPDR_SMARTCARD));
+		smartcard = (RDPDR_SMARTCARD*) calloc(1, sizeof(RDPDR_SMARTCARD));
+
+		if (!smartcard)
+			return -1;
 
 		smartcard->Type = RDPDR_DTYP_SMARTCARD;
+
 		if (count > 1)
 			smartcard->Name = _strdup(params[1]);
+
 		if (count > 2)
 			smartcard->Path = _strdup(params[2]);
 
@@ -355,12 +372,16 @@ int freerdp_client_add_device_channel(rdpSettings* settings, int count, char** p
 		if (count < 1)
 			return -1;
 
-		serial = (RDPDR_SERIAL*) malloc(sizeof(RDPDR_SERIAL));
-		ZeroMemory(serial, sizeof(RDPDR_SERIAL));
+		serial = (RDPDR_SERIAL*) calloc(1, sizeof(RDPDR_SERIAL));
+
+		if (!serial)
+			return -1;
 
 		serial->Type = RDPDR_DTYP_SERIAL;
+
 		if (count > 1)
 			serial->Name = _strdup(params[1]);
+
 		if (count > 2)
 			serial->Path = _strdup(params[2]);
 
@@ -376,13 +397,17 @@ int freerdp_client_add_device_channel(rdpSettings* settings, int count, char** p
 		if (count < 1)
 			return -1;
 
-		parallel = (RDPDR_PARALLEL*) malloc(sizeof(RDPDR_PARALLEL));
-		ZeroMemory(parallel, sizeof(RDPDR_PARALLEL));
+		parallel = (RDPDR_PARALLEL*) calloc(1, sizeof(RDPDR_PARALLEL));
+
+		if (!parallel)
+			return -1;
 
 		parallel->Type = RDPDR_DTYP_PARALLEL;
+
 		if (count > 1)
 			parallel->Name = _strdup(params[1]);
-		if (count > 1)
+
+		if (count > 2)
 			parallel->Path = _strdup(params[2]);
 
 		freerdp_device_collection_add(settings, (RDPDR_DEVICE*) parallel);
@@ -745,7 +770,7 @@ int freerdp_parse_username(char* username, char** user, char** domain)
 
 	if (p)
 	{
-		length = p - username;
+		length = (int) (p - username);
 		*domain = (char*) malloc(length + 1);
 		strncpy(*domain, username, length);
 		(*domain)[length] = '\0';
@@ -757,7 +782,7 @@ int freerdp_parse_username(char* username, char** user, char** domain)
 
 		if (p)
 		{
-			length = p - username;
+			length = (int) (p - username);
 			*user = (char*) malloc(length + 1);
 			strncpy(*user, username, length);
 			(*user)[length] = '\0';
@@ -893,7 +918,7 @@ int freerdp_detect_command_line_pre_filter(void* context, int index, int argc, L
 
 	if (index == 1)
 	{
-		length = strlen(argv[index]);
+		length = (int) strlen(argv[index]);
 
 		if (length > 4)
 		{
@@ -1127,7 +1152,7 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 
 			if (p)
 			{
-				length = p - arg->Value;
+				length = (int) (p - arg->Value);
 				settings->ServerPort = atoi(&p[1]);
 				settings->ServerHostname = (char*) malloc(length + 1);
 				strncpy(settings->ServerHostname, arg->Value, length);
@@ -1137,6 +1162,14 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 			{
 				settings->ServerHostname = _strdup(arg->Value);
 			}
+		}
+		CommandLineSwitchCase(arg, "spn-class")
+		{
+			settings->AuthenticationServiceClass = _strdup(arg->Value);
+		}
+		CommandLineSwitchCase(arg, "credentials-delegation")
+		{
+			settings->DisableCredentialsDelegation = arg->Value ? FALSE : TRUE;
 		}
 		CommandLineSwitchCase(arg, "vmconnect")
 		{
@@ -1176,13 +1209,10 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		{
 			settings->Fullscreen = TRUE;
 		}
-		CommandLineSwitchCase(arg, "span")
-		{
-			settings->SpanMonitors = TRUE;
-		}
 		CommandLineSwitchCase(arg, "multimon")
 		{
 			settings->UseMultimon = TRUE;
+			settings->SpanMonitors = FALSE;
 			settings->Fullscreen = TRUE;
 
 			if (arg->Flags & COMMAND_LINE_VALUE_PRESENT)
@@ -1193,6 +1223,12 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 				}
 			}
 		}
+		CommandLineSwitchCase(arg, "span")
+		{
+			settings->UseMultimon = TRUE;
+			settings->SpanMonitors = TRUE;
+			settings->Fullscreen = TRUE;
+		}
 		CommandLineSwitchCase(arg, "workarea")
 		{
 			settings->Workarea = TRUE;
@@ -1201,12 +1237,13 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		{
 			if (arg->Flags & COMMAND_LINE_VALUE_PRESENT)
 			{
+				UINT32 i;
 				char** p;
-				int i, count = 0;
+				int count = 0;
 
 				p = freerdp_command_line_parse_comma_separated_values(arg->Value, &count);
 
-				settings->NumMonitorIds = count;
+				settings->NumMonitorIds = (UINT32) count;
 				settings->MonitorIds = (UINT32*) malloc(sizeof(UINT32) * settings->NumMonitorIds);
 
 				for (i = 0; i < settings->NumMonitorIds; i++)
@@ -1316,7 +1353,7 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 
 				if (p)
 				{
-					length = p - arg->Value;
+					length = (int) (p - arg->Value);
 					settings->GatewayPort = atoi(&p[1]);
 					settings->GatewayHostname = (char*) malloc(length + 1);
 					strncpy(settings->GatewayHostname, arg->Value, length);
@@ -1332,9 +1369,11 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 				settings->GatewayHostname = _strdup(settings->ServerHostname);
 			}
 
-			settings->GatewayUsageMethod = TSC_PROXY_MODE_DIRECT;
 			settings->GatewayUseSameCredentials = TRUE;
+
+			settings->GatewayUsageMethod = TSC_PROXY_MODE_DETECT;
 			settings->GatewayEnabled = TRUE;
+			settings->GatewayBypassLocal = TRUE;
 		}
 		CommandLineSwitchCase(arg, "gu")
 		{
@@ -1371,7 +1410,7 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		CommandLineSwitchCase(arg, "load-balance-info")
 		{
 			settings->LoadBalanceInfo = (BYTE*) _strdup(arg->Value);
-			settings->LoadBalanceInfoLength = strlen((char*) settings->LoadBalanceInfo);
+			settings->LoadBalanceInfoLength = (UINT32) strlen((char*) settings->LoadBalanceInfo);
 		}
 		CommandLineSwitchCase(arg, "app-name")
 		{
@@ -1396,6 +1435,10 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		CommandLineSwitchCase(arg, "compression")
 		{
 			settings->CompressionEnabled = arg->Value ? TRUE : FALSE;
+		}
+		CommandLineSwitchCase(arg, "compression-level")
+		{
+			settings->CompressionLevel = atoi(arg->Value);
 		}
 		CommandLineSwitchCase(arg, "drives")
 		{
@@ -1558,7 +1601,7 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 				settings->NlaSecurity = FALSE;
 				settings->ExtSecurity = FALSE;
 				settings->DisableEncryption = TRUE;
-				settings->EncryptionMethods = ENCRYPTION_METHOD_40BIT | ENCRYPTION_METHOD_128BIT | ENCRYPTION_METHOD_FIPS;
+				settings->EncryptionMethods = ENCRYPTION_METHOD_40BIT | ENCRYPTION_METHOD_56BIT| ENCRYPTION_METHOD_128BIT | ENCRYPTION_METHOD_FIPS;
 				settings->EncryptionLevel = ENCRYPTION_LEVEL_CLIENT_COMPATIBLE;
 			}
 			else if (strcmp("tls", arg->Value) == 0) /* TLS */
@@ -1705,6 +1748,10 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		{
 			settings->AuthenticationOnly = arg->Value ? TRUE : FALSE;
 		}
+		CommandLineSwitchCase(arg, "auto-reconnect")
+		{
+			settings->AutoReconnectionEnabled = arg->Value ? TRUE : FALSE;
+		}
 		CommandLineSwitchCase(arg, "reconnect-cookie")
 		{
 			BYTE *base64;
@@ -1795,7 +1842,7 @@ int freerdp_client_load_static_channel_addin(rdpChannels* channels, rdpSettings*
 
 int freerdp_client_load_addins(rdpChannels* channels, rdpSettings* settings)
 {
-	int index;
+	UINT32 index;
 	ADDIN_ARGV* args;
 
 	if ((freerdp_static_channel_collection_find(settings, "rdpsnd")) ||

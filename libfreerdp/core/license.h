@@ -48,7 +48,6 @@ typedef struct rdp_license rdpLicense;
 #define LICENSE_PKT_MASK			(LICENSE_PKT_CS_MASK | LICENSE_PKT_SC_MASK)
 
 #define LICENSE_PREAMBLE_LENGTH			4
-#define LICENSE_PACKET_HEADER_MAX_LENGTH	(RDP_PACKET_HEADER_MAX_LENGTH + RDP_SECURITY_HEADER_LENGTH + LICENSE_PREAMBLE_LENGTH)
 
 /* Cryptographic Lengths */
 
@@ -148,7 +147,7 @@ typedef struct
 	BYTE* pbCompanyName;
 	UINT32 cbProductId;
 	BYTE* pbProductId;
-} PRODUCT_INFO;
+} LICENSE_PRODUCT_INFO;
 
 typedef struct
 {
@@ -187,7 +186,7 @@ struct rdp_license
 	BYTE SessionKeyBlob[SESSION_KEY_BLOB_LENGTH];
 	BYTE MacSaltKey[MAC_SALT_KEY_LENGTH];
 	BYTE LicensingEncryptionKey[LICENSING_ENCRYPTION_KEY_LENGTH];
-	PRODUCT_INFO* ProductInfo;
+	LICENSE_PRODUCT_INFO* ProductInfo;
 	LICENSE_BLOB* ErrorInfo;
 	LICENSE_BLOB* KeyExchangeList;
 	LICENSE_BLOB* ServerCertificate;
@@ -198,6 +197,7 @@ struct rdp_license
 	LICENSE_BLOB* EncryptedPlatformChallenge;
 	LICENSE_BLOB* EncryptedHardwareId;
 	SCOPE_LIST* ScopeList;
+	UINT32 PacketHeaderLength;
 };
 
 int license_recv(rdpLicense* license, wStream* s);
@@ -210,9 +210,9 @@ void license_generate_hwid(rdpLicense* license);
 void license_encrypt_premaster_secret(rdpLicense* license);
 void license_decrypt_platform_challenge(rdpLicense* license);
 
-PRODUCT_INFO* license_new_product_info(void);
-void license_free_product_info(PRODUCT_INFO* productInfo);
-BOOL license_read_product_info(wStream* s, PRODUCT_INFO* productInfo);
+LICENSE_PRODUCT_INFO* license_new_product_info(void);
+void license_free_product_info(LICENSE_PRODUCT_INFO* productInfo);
+BOOL license_read_product_info(wStream* s, LICENSE_PRODUCT_INFO* productInfo);
 
 LICENSE_BLOB* license_new_binary_blob(UINT16 type);
 void license_free_binary_blob(LICENSE_BLOB* blob);
