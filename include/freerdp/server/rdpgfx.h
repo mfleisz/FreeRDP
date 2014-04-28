@@ -26,6 +26,10 @@
 typedef struct _rdpgfx_server_context rdpgfx_server_context;
 
 typedef void (*psRdpgfxServerOpen)(rdpgfx_server_context* context);
+typedef BOOL (*psRdpgfxServerCreateSurface)(rdpgfx_server_context* context, RDPGFX_CREATE_SURFACE_PDU* create_surface);
+typedef BOOL (*psRdpgfxServerDeleteSurface)(rdpgfx_server_context* context, RDPGFX_DELETE_SURFACE_PDU* delete_surface);
+typedef BOOL (*psRdpgfxServerResetGraphics)(rdpgfx_server_context* context, RDPGFX_RESET_GRAPHICS_PDU* reset_graphics);
+typedef BOOL (*psRdpgfxServerMapSurfaceToOutput)(rdpgfx_server_context* context, RDPGFX_MAP_SURFACE_TO_OUTPUT_PDU* map_surface_to_output);
 
 typedef void (*psRdpgfxServerActivated)(rdpgfx_server_context* context);
 
@@ -45,6 +49,22 @@ struct _rdpgfx_server_context
 	 * before using the channel.
 	 */
 	psRdpgfxServerOpen Open;
+	/**
+	 * Create a surface.
+	 */
+	psRdpgfxServerCreateSurface CreateSurface;
+	/**
+	 * Delete a surface.
+	 */
+	psRdpgfxServerDeleteSurface DeleteSurface;
+	/**
+	 * Change the width and height of the graphics output buffer, and update the monitor layout.
+	 */
+	psRdpgfxServerResetGraphics ResetGraphics;
+	/**
+	 * Map a surface to a rectangular area of the graphics output buffer.
+	 */
+	psRdpgfxServerMapSurfaceToOutput MapSurfaceToOutput;
 
 	/*** Callbacks registered by the server. ***/
 	/**
