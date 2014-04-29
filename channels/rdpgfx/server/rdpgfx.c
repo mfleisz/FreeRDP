@@ -29,8 +29,14 @@
 #include <winpr/synch.h>
 #include <winpr/thread.h>
 #include <winpr/stream.h>
+#include <winpr/sysinfo.h>
 
 #include <freerdp/server/rdpgfx.h>
+
+#define RDPGFX_MAX_SEGMENT_LENGTH 65535
+
+#define RDPGFX_SINGLE 0xE0
+#define RDPGFX_MULTIPART 0xE1
 
 typedef struct _rdpgfx_server
 {
@@ -51,8 +57,8 @@ static void rdpgfx_server_send_capabilities(rdpgfx_server* rdpgfx, wStream* s)
 {
 	Stream_SetPosition(s, 0);
 
-	Stream_Write_UINT8(s, 0xE0); /* descriptor (1 byte) */
-	Stream_Write_UINT8(s, 0x04); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
+	Stream_Write_UINT8(s, RDPGFX_SINGLE); /* descriptor (1 byte) */
+	Stream_Write_UINT8(s, PACKET_COMPR_TYPE_RDP8); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
 
 	Stream_Write_UINT16(s, RDPGFX_CMDID_CAPSCONFIRM); /* RDPGFX_HEADER.cmdId (2 bytes) */
 	Stream_Write_UINT16(s, 0); /* RDPGFX_HEADER.flags (2 bytes) */
@@ -109,10 +115,26 @@ static BOOL rdpgfx_server_recv_capabilities(rdpgfx_server* rdpgfx, wStream* s, U
 	return TRUE;
 }
 
+static BOOL rdpgfx_server_recv_frameack(rdpgfx_server* rdpgfx, wStream* s, UINT32 length)
+{
+	RDPGFX_FRAME_ACKNOWLEDGE_PDU frame_acknowledge;
+
+	if (length < 12)
+		return FALSE;
+	Stream_Read_UINT32(s, frame_acknowledge.queueDepth);
+	Stream_Read_UINT32(s, frame_acknowledge.frameId);
+	Stream_Read_UINT32(s, frame_acknowledge.totalFramesDecoded);
+
+	IFCALL(rdpgfx->context.FrameAcknowledge, &rdpgfx->context, &frame_acknowledge);
+
+	return TRUE;
+}
+
 static BOOL rdpgfx_server_open_channel(rdpgfx_server* rdpgfx)
 {
 	DWORD Error;
 	HANDLE hEvent;
+	DWORD StartTick;
 	DWORD BytesReturned = 0;
 	PULONG pSessionId = NULL;
 
@@ -125,6 +147,7 @@ static BOOL rdpgfx_server_open_channel(rdpgfx_server* rdpgfx)
 	WTSFreeMemory(pSessionId);
 
 	hEvent = WTSVirtualChannelManagerGetEventHandle(rdpgfx->context.vcm);
+	StartTick = GetTickCount();
 
 	while (rdpgfx->rdpgfx_channel == NULL)
 	{
@@ -138,6 +161,9 @@ static BOOL rdpgfx_server_open_channel(rdpgfx_server* rdpgfx)
 
 		Error = GetLastError();
 		if (Error == ERROR_NOT_FOUND)
+			break;
+
+		if (GetTickCount() - StartTick > 5000)
 			break;
 	}
 
@@ -159,7 +185,10 @@ static void* rdpgfx_server_thread_func(void* arg)
 	rdpgfx_server* rdpgfx = (rdpgfx_server*) arg;
 
 	if (rdpgfx_server_open_channel(rdpgfx) == FALSE)
+	{
+		IFCALL(rdpgfx->context.OpenResult, &rdpgfx->context, 1);
 		return NULL;
+	}
 
 	buffer = NULL;
 	BytesReturned = 0;
@@ -177,7 +206,7 @@ static void* rdpgfx_server_thread_func(void* arg)
 	events[nCount++] = rdpgfx->stopEvent;
 	events[nCount++] = ChannelEvent;
 
-	/* Wait for the client to confirm that the Audio Input dynamic channel is ready */
+	/* Wait for the client to confirm that the Graphics Pipeline dynamic channel is ready */
 
 	while (1)
 	{
@@ -196,6 +225,11 @@ static void* rdpgfx_server_thread_func(void* arg)
 	}
 
 	s = Stream_New(NULL, 4096);
+
+	if (!ready)
+	{
+		IFCALL(rdpgfx->context.OpenResult, &rdpgfx->context, 2);
+	}
 
 	while (ready)
 	{
@@ -235,8 +269,16 @@ static void* rdpgfx_server_thread_func(void* arg)
 				if (rdpgfx_server_recv_capabilities(rdpgfx, s, BytesReturned))
 				{
 					rdpgfx_server_send_capabilities(rdpgfx, s);
-					IFCALL(rdpgfx->context.Activated, &rdpgfx->context);
+					IFCALL(rdpgfx->context.OpenResult, &rdpgfx->context, 0);
 				}
+				else
+				{
+					IFCALL(rdpgfx->context.OpenResult, &rdpgfx->context, 3);
+				}
+				break;
+
+			case RDPGFX_CMDID_FRAMEACKNOWLEDGE:
+				rdpgfx_server_recv_frameack(rdpgfx, s, BytesReturned);
 				break;
 
 			default:
@@ -260,6 +302,92 @@ static void rdpgfx_server_open(rdpgfx_server_context* context)
 	rdpgfx->thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) rdpgfx_server_thread_func, (void*) rdpgfx, 0, NULL);
 }
 
+static BOOL rdpgfx_server_wire_to_surface_1(rdpgfx_server_context* context, RDPGFX_WIRE_TO_SURFACE_PDU_1* wire_to_surface_1)
+{
+	wStream* s;
+	BOOL result;
+	rdpgfx_server* rdpgfx = (rdpgfx_server*) context;
+
+	if (25 + wire_to_surface_1->bitmapDataLength <= RDPGFX_MAX_SEGMENT_LENGTH)
+	{
+		s = Stream_New(NULL, 27 + wire_to_surface_1->bitmapDataLength);
+
+		Stream_Write_UINT8(s, RDPGFX_SINGLE); /* descriptor (1 byte) */
+		Stream_Write_UINT8(s, PACKET_COMPR_TYPE_RDP8); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
+
+		Stream_Write_UINT16(s, RDPGFX_CMDID_WIRETOSURFACE_1); /* RDPGFX_HEADER.cmdId (2 bytes) */
+		Stream_Write_UINT16(s, 0); /* RDPGFX_HEADER.flags (2 bytes) */
+		Stream_Write_UINT32(s, 25 + wire_to_surface_1->bitmapDataLength); /* RDPGFX_HEADER.pduLength (4 bytes) */
+		Stream_Write_UINT16(s, wire_to_surface_1->surfaceId);
+		Stream_Write_UINT16(s, wire_to_surface_1->codecId);
+		Stream_Write_UINT8(s, wire_to_surface_1->pixelFormat);
+		Stream_Write_UINT16(s, wire_to_surface_1->destRect.left);
+		Stream_Write_UINT16(s, wire_to_surface_1->destRect.top);
+		Stream_Write_UINT16(s, wire_to_surface_1->destRect.right);
+		Stream_Write_UINT16(s, wire_to_surface_1->destRect.bottom);
+		Stream_Write_UINT32(s, wire_to_surface_1->bitmapDataLength);
+		Stream_Write(s, wire_to_surface_1->bitmapData, wire_to_surface_1->bitmapDataLength);
+
+		result = WTSVirtualChannelWrite(rdpgfx->rdpgfx_channel, (PCHAR) Stream_Buffer(s), (ULONG) Stream_GetPosition(s), NULL);
+		Stream_Free(s, TRUE);
+	}
+	else
+	{
+		UINT32 segmentCount;
+		UINT32 segmentLength;
+		BYTE* bitmapData = wire_to_surface_1->bitmapData;
+		UINT32 bitmapDataLength = wire_to_surface_1->bitmapDataLength;
+
+		segmentCount = (25 + wire_to_surface_1->bitmapDataLength + (RDPGFX_MAX_SEGMENT_LENGTH - 1)) / RDPGFX_MAX_SEGMENT_LENGTH;
+		s = Stream_New(NULL, 7 + (5 + RDPGFX_MAX_SEGMENT_LENGTH) * segmentCount);
+
+		Stream_Write_UINT8(s, RDPGFX_MULTIPART); /* descriptor (1 byte) */
+		Stream_Write_UINT16(s, segmentCount);
+		Stream_Write_UINT32(s, 25 + wire_to_surface_1->bitmapDataLength); /* uncompressedSize (4 bytes) */
+
+		segmentLength = RDPGFX_MAX_SEGMENT_LENGTH - 25;
+
+		Stream_Write_UINT32(s, 1 + RDPGFX_MAX_SEGMENT_LENGTH);
+		Stream_Write_UINT8(s, PACKET_COMPR_TYPE_RDP8); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
+
+		Stream_Write_UINT16(s, RDPGFX_CMDID_WIRETOSURFACE_1); /* RDPGFX_HEADER.cmdId (2 bytes) */
+		Stream_Write_UINT16(s, 0); /* RDPGFX_HEADER.flags (2 bytes) */
+		Stream_Write_UINT32(s, 25 + wire_to_surface_1->bitmapDataLength); /* RDPGFX_HEADER.pduLength (4 bytes) */
+		Stream_Write_UINT16(s, wire_to_surface_1->surfaceId);
+		Stream_Write_UINT16(s, wire_to_surface_1->codecId);
+		Stream_Write_UINT8(s, wire_to_surface_1->pixelFormat);
+		Stream_Write_UINT16(s, wire_to_surface_1->destRect.left);
+		Stream_Write_UINT16(s, wire_to_surface_1->destRect.top);
+		Stream_Write_UINT16(s, wire_to_surface_1->destRect.right);
+		Stream_Write_UINT16(s, wire_to_surface_1->destRect.bottom);
+		Stream_Write_UINT32(s, wire_to_surface_1->bitmapDataLength);
+		Stream_Write(s, bitmapData, segmentLength);
+
+		bitmapData += segmentLength;
+		bitmapDataLength -= segmentLength;
+
+		while (bitmapDataLength > 0)
+		{
+			segmentLength = bitmapDataLength;
+			if (segmentLength > RDPGFX_MAX_SEGMENT_LENGTH)
+				segmentLength = RDPGFX_MAX_SEGMENT_LENGTH;
+
+			Stream_Write_UINT32(s, 1 + segmentLength);
+			Stream_Write_UINT8(s, PACKET_COMPR_TYPE_RDP8); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
+
+			Stream_Write(s, bitmapData, segmentLength);
+
+			bitmapData += segmentLength;
+			bitmapDataLength -= segmentLength;
+		}
+
+		result = WTSVirtualChannelWrite(rdpgfx->rdpgfx_channel, (PCHAR) Stream_Buffer(s), (ULONG) Stream_GetPosition(s), NULL);
+		Stream_Free(s, TRUE);
+	}
+
+	return result;
+}
+
 static BOOL rdpgfx_server_create_surface(rdpgfx_server_context* context, RDPGFX_CREATE_SURFACE_PDU* create_surface)
 {
 	wStream* s;
@@ -268,8 +396,8 @@ static BOOL rdpgfx_server_create_surface(rdpgfx_server_context* context, RDPGFX_
 
 	s = Stream_New(NULL, 17);
 
-	Stream_Write_UINT8(s, 0xE0); /* descriptor (1 byte) */
-	Stream_Write_UINT8(s, 0x04); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
+	Stream_Write_UINT8(s, RDPGFX_SINGLE); /* descriptor (1 byte) */
+	Stream_Write_UINT8(s, PACKET_COMPR_TYPE_RDP8); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
 
 	Stream_Write_UINT16(s, RDPGFX_CMDID_CREATESURFACE); /* RDPGFX_HEADER.cmdId (2 bytes) */
 	Stream_Write_UINT16(s, 0); /* RDPGFX_HEADER.flags (2 bytes) */
@@ -293,13 +421,58 @@ static BOOL rdpgfx_server_delete_surface(rdpgfx_server_context* context, RDPGFX_
 
 	s = Stream_New(NULL, 12);
 
-	Stream_Write_UINT8(s, 0xE0); /* descriptor (1 byte) */
-	Stream_Write_UINT8(s, 0x04); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
+	Stream_Write_UINT8(s, RDPGFX_SINGLE); /* descriptor (1 byte) */
+	Stream_Write_UINT8(s, PACKET_COMPR_TYPE_RDP8); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
 
 	Stream_Write_UINT16(s, RDPGFX_CMDID_DELETESURFACE); /* RDPGFX_HEADER.cmdId (2 bytes) */
 	Stream_Write_UINT16(s, 0); /* RDPGFX_HEADER.flags (2 bytes) */
 	Stream_Write_UINT32(s, 10); /* RDPGFX_HEADER.pduLength (4 bytes) */
 	Stream_Write_UINT16(s, delete_surface->surfaceId);
+
+	result = WTSVirtualChannelWrite(rdpgfx->rdpgfx_channel, (PCHAR) Stream_Buffer(s), (ULONG) Stream_GetPosition(s), NULL);
+	Stream_Free(s, TRUE);
+
+	return result;
+}
+
+static BOOL rdpgfx_server_start_frame(rdpgfx_server_context* context, RDPGFX_START_FRAME_PDU* start_frame)
+{
+	wStream* s;
+	BOOL result;
+	rdpgfx_server* rdpgfx = (rdpgfx_server*) context;
+
+	s = Stream_New(NULL, 18);
+
+	Stream_Write_UINT8(s, RDPGFX_SINGLE); /* descriptor (1 byte) */
+	Stream_Write_UINT8(s, PACKET_COMPR_TYPE_RDP8); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
+
+	Stream_Write_UINT16(s, RDPGFX_CMDID_STARTFRAME); /* RDPGFX_HEADER.cmdId (2 bytes) */
+	Stream_Write_UINT16(s, 0); /* RDPGFX_HEADER.flags (2 bytes) */
+	Stream_Write_UINT32(s, 16); /* RDPGFX_HEADER.pduLength (4 bytes) */
+	Stream_Write_UINT32(s, start_frame->timestamp);
+	Stream_Write_UINT32(s, start_frame->frameId);
+
+	result = WTSVirtualChannelWrite(rdpgfx->rdpgfx_channel, (PCHAR) Stream_Buffer(s), (ULONG) Stream_GetPosition(s), NULL);
+	Stream_Free(s, TRUE);
+
+	return result;
+}
+
+static BOOL rdpgfx_server_end_frame(rdpgfx_server_context* context, RDPGFX_END_FRAME_PDU* end_frame)
+{
+	wStream* s;
+	BOOL result;
+	rdpgfx_server* rdpgfx = (rdpgfx_server*) context;
+
+	s = Stream_New(NULL, 14);
+
+	Stream_Write_UINT8(s, RDPGFX_SINGLE); /* descriptor (1 byte) */
+	Stream_Write_UINT8(s, PACKET_COMPR_TYPE_RDP8); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
+
+	Stream_Write_UINT16(s, RDPGFX_CMDID_ENDFRAME); /* RDPGFX_HEADER.cmdId (2 bytes) */
+	Stream_Write_UINT16(s, 0); /* RDPGFX_HEADER.flags (2 bytes) */
+	Stream_Write_UINT32(s, 12); /* RDPGFX_HEADER.pduLength (4 bytes) */
+	Stream_Write_UINT32(s, end_frame->frameId);
 
 	result = WTSVirtualChannelWrite(rdpgfx->rdpgfx_channel, (PCHAR) Stream_Buffer(s), (ULONG) Stream_GetPosition(s), NULL);
 	Stream_Free(s, TRUE);
@@ -315,8 +488,8 @@ static BOOL rdpgfx_server_reset_graphics(rdpgfx_server_context* context, RDPGFX_
 
 	s = Stream_New(NULL, 342);
 
-	Stream_Write_UINT8(s, 0xE0); /* descriptor (1 byte) */
-	Stream_Write_UINT8(s, 0x04); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
+	Stream_Write_UINT8(s, RDPGFX_SINGLE); /* descriptor (1 byte) */
+	Stream_Write_UINT8(s, PACKET_COMPR_TYPE_RDP8); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
 
 	Stream_Write_UINT16(s, RDPGFX_CMDID_RESETGRAPHICS); /* RDPGFX_HEADER.cmdId (2 bytes) */
 	Stream_Write_UINT16(s, 0); /* RDPGFX_HEADER.flags (2 bytes) */
@@ -344,8 +517,8 @@ static BOOL rdpgfx_server_map_surface_to_output(rdpgfx_server_context* context, 
 
 	s = Stream_New(NULL, 22);
 
-	Stream_Write_UINT8(s, 0xE0); /* descriptor (1 byte) */
-	Stream_Write_UINT8(s, 0x04); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
+	Stream_Write_UINT8(s, RDPGFX_SINGLE); /* descriptor (1 byte) */
+	Stream_Write_UINT8(s, PACKET_COMPR_TYPE_RDP8); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
 
 	Stream_Write_UINT16(s, RDPGFX_CMDID_MAPSURFACETOOUTPUT); /* RDPGFX_HEADER.cmdId (2 bytes) */
 	Stream_Write_UINT16(s, 0); /* RDPGFX_HEADER.flags (2 bytes) */
@@ -392,8 +565,11 @@ rdpgfx_server_context* rdpgfx_server_context_new(HANDLE vcm)
 
 	rdpgfx->context.vcm = vcm;
 	rdpgfx->context.Open = rdpgfx_server_open;
+	rdpgfx->context.WireToSurface1 = rdpgfx_server_wire_to_surface_1;
 	rdpgfx->context.CreateSurface = rdpgfx_server_create_surface;
 	rdpgfx->context.DeleteSurface = rdpgfx_server_delete_surface;
+	rdpgfx->context.StartFrame = rdpgfx_server_start_frame;
+	rdpgfx->context.EndFrame = rdpgfx_server_end_frame;
 	rdpgfx->context.ResetGraphics = rdpgfx_server_reset_graphics;
 	rdpgfx->context.MapSurfaceToOutput = rdpgfx_server_map_surface_to_output;
 

@@ -26,12 +26,16 @@
 typedef struct _rdpgfx_server_context rdpgfx_server_context;
 
 typedef void (*psRdpgfxServerOpen)(rdpgfx_server_context* context);
+typedef BOOL (*psRdpgfxServerWireToSurface1)(rdpgfx_server_context* context, RDPGFX_WIRE_TO_SURFACE_PDU_1* wire_to_surface_1);
 typedef BOOL (*psRdpgfxServerCreateSurface)(rdpgfx_server_context* context, RDPGFX_CREATE_SURFACE_PDU* create_surface);
 typedef BOOL (*psRdpgfxServerDeleteSurface)(rdpgfx_server_context* context, RDPGFX_DELETE_SURFACE_PDU* delete_surface);
+typedef BOOL (*psRdpgfxServerStartFrame)(rdpgfx_server_context* context, RDPGFX_START_FRAME_PDU* start_frame);
+typedef BOOL (*psRdpgfxServerEndFrame)(rdpgfx_server_context* context, RDPGFX_END_FRAME_PDU* end_frame);
 typedef BOOL (*psRdpgfxServerResetGraphics)(rdpgfx_server_context* context, RDPGFX_RESET_GRAPHICS_PDU* reset_graphics);
 typedef BOOL (*psRdpgfxServerMapSurfaceToOutput)(rdpgfx_server_context* context, RDPGFX_MAP_SURFACE_TO_OUTPUT_PDU* map_surface_to_output);
 
-typedef void (*psRdpgfxServerActivated)(rdpgfx_server_context* context);
+typedef void (*psRdpgfxServerOpenResult)(rdpgfx_server_context* context, UINT32 result);
+typedef void (*psRdpgfxServerFrameAcknowledge)(rdpgfx_server_context* context, RDPGFX_FRAME_ACKNOWLEDGE_PDU* frame_acknowledge);
 
 struct _rdpgfx_server_context
 {
@@ -45,10 +49,14 @@ struct _rdpgfx_server_context
 
 	/*** APIs called by the server. ***/
 	/**
-	 * Open the graphics channel. The server MUST wait until Activated callback is called
+	 * Open the graphics channel. The server MUST wait until OpenResult callback is called
 	 * before using the channel.
 	 */
 	psRdpgfxServerOpen Open;
+	/**
+	 * Transfer bitmap data to surface.
+	 */
+	psRdpgfxServerWireToSurface1 WireToSurface1;
 	/**
 	 * Create a surface.
 	 */
@@ -57,6 +65,14 @@ struct _rdpgfx_server_context
 	 * Delete a surface.
 	 */
 	psRdpgfxServerDeleteSurface DeleteSurface;
+	/**
+	 * Start a frame.
+	 */
+	psRdpgfxServerStartFrame StartFrame;
+	/**
+	 * End a frame.
+	 */
+	psRdpgfxServerEndFrame EndFrame;
 	/**
 	 * Change the width and height of the graphics output buffer, and update the monitor layout.
 	 */
@@ -68,9 +84,13 @@ struct _rdpgfx_server_context
 
 	/*** Callbacks registered by the server. ***/
 	/**
-	 * The channel is activated and ready for sending graphics.
+	 * Indicate whether the channel is opened successfully.
 	 */
-	psRdpgfxServerActivated Activated;
+	psRdpgfxServerOpenResult OpenResult;
+	/**
+	 * A frame is acknowledged by the client.
+	 */
+	psRdpgfxServerFrameAcknowledge FrameAcknowledge;
 };
 
 #ifdef __cplusplus
