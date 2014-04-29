@@ -26,6 +26,7 @@
 typedef struct _rdpgfx_server_context rdpgfx_server_context;
 
 typedef void (*psRdpgfxServerOpen)(rdpgfx_server_context* context);
+typedef void (*psRdpgfxServerClose)(rdpgfx_server_context* context);
 typedef BOOL (*psRdpgfxServerWireToSurface1)(rdpgfx_server_context* context, RDPGFX_WIRE_TO_SURFACE_PDU_1* wire_to_surface_1);
 typedef BOOL (*psRdpgfxServerCreateSurface)(rdpgfx_server_context* context, RDPGFX_CREATE_SURFACE_PDU* create_surface);
 typedef BOOL (*psRdpgfxServerDeleteSurface)(rdpgfx_server_context* context, RDPGFX_DELETE_SURFACE_PDU* delete_surface);
@@ -53,6 +54,10 @@ struct _rdpgfx_server_context
 	 * before using the channel.
 	 */
 	psRdpgfxServerOpen Open;
+	/**
+	 * Close the graphics channel.
+	 */
+	psRdpgfxServerClose Close;
 	/**
 	 * Transfer bitmap data to surface.
 	 */

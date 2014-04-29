@@ -298,8 +298,11 @@ static void rdpgfx_server_open(rdpgfx_server_context* context)
 {
 	rdpgfx_server* rdpgfx = (rdpgfx_server*) context;
 
-	rdpgfx->stopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-	rdpgfx->thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) rdpgfx_server_thread_func, (void*) rdpgfx, 0, NULL);
+	if (rdpgfx->thread == NULL)
+	{
+		rdpgfx->stopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+		rdpgfx->thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) rdpgfx_server_thread_func, (void*) rdpgfx, 0, NULL);
+	}
 }
 
 static BOOL rdpgfx_server_wire_to_surface_1(rdpgfx_server_context* context, RDPGFX_WIRE_TO_SURFACE_PDU_1* wire_to_surface_1)
@@ -534,7 +537,7 @@ static BOOL rdpgfx_server_map_surface_to_output(rdpgfx_server_context* context, 
 	return result;
 }
 
-static BOOL rdpgfx_server_close(rdpgfx_server_context* context)
+static void rdpgfx_server_close(rdpgfx_server_context* context)
 {
 	rdpgfx_server* rdpgfx = (rdpgfx_server*) context;
 
@@ -547,14 +550,6 @@ static BOOL rdpgfx_server_close(rdpgfx_server_context* context)
 		rdpgfx->thread = NULL;
 		rdpgfx->stopEvent = NULL;
 	}
-
-	if (rdpgfx->rdpgfx_channel)
-	{
-		WTSVirtualChannelClose(rdpgfx->rdpgfx_channel);
-		rdpgfx->rdpgfx_channel = NULL;
-	}
-
-	return TRUE;
 }
 
 rdpgfx_server_context* rdpgfx_server_context_new(HANDLE vcm)
@@ -565,6 +560,7 @@ rdpgfx_server_context* rdpgfx_server_context_new(HANDLE vcm)
 
 	rdpgfx->context.vcm = vcm;
 	rdpgfx->context.Open = rdpgfx_server_open;
+	rdpgfx->context.Close = rdpgfx_server_close;
 	rdpgfx->context.WireToSurface1 = rdpgfx_server_wire_to_surface_1;
 	rdpgfx->context.CreateSurface = rdpgfx_server_create_surface;
 	rdpgfx->context.DeleteSurface = rdpgfx_server_delete_surface;
