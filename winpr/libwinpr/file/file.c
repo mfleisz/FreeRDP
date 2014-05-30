@@ -234,7 +234,7 @@ HANDLE CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, 
 
 	free(name);
 
-	pNamedPipe = (WINPR_NAMED_PIPE*) malloc(sizeof(WINPR_NAMED_PIPE));
+	pNamedPipe = (WINPR_NAMED_PIPE*) calloc(1, sizeof(WINPR_NAMED_PIPE));
 	hNamedPipe = (HANDLE) pNamedPipe;
 
 	WINPR_HANDLE_SET_TYPE(pNamedPipe, HANDLE_TYPE_NAMED_PIPE);
@@ -862,7 +862,7 @@ int GetNamePipeFileDescriptor(HANDLE hNamedPipe)
 
 	pNamedPipe = (WINPR_NAMED_PIPE*) hNamedPipe;
 
-	if (!pNamedPipe)
+	if (!pNamedPipe || pNamedPipe->Type != HANDLE_TYPE_NAMED_PIPE)
 		return -1;
 
 	fd = (pNamedPipe->ServerMode) ? pNamedPipe->serverfd : pNamedPipe->clientfd;

@@ -34,6 +34,8 @@
 #include <unistd.h>
 #endif
 
+#include <assert.h>
+
 #include "../handle/handle.h"
 
 BOOL CloseHandle(HANDLE hObject)
@@ -166,6 +168,21 @@ BOOL CloseHandle(HANDLE hObject)
 		WINPR_NAMED_PIPE* pipe;
 
 		pipe = (WINPR_NAMED_PIPE*) Object;
+
+		if (pipe->ServerMode)
+		{
+			assert(pipe->dwRefCount);
+
+			if (--pipe->dwRefCount == 0)
+			{
+				pipe->pfnRemoveBaseNamedPipeFromList(pipe);
+
+				if (pipe->pBaseNamedPipe)
+				{
+					CloseHandle((HANDLE) pipe->pBaseNamedPipe);
+				}
+			}
+		}
 
 		if (pipe->clientfd != -1)
 			close(pipe->clientfd);

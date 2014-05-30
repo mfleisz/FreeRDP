@@ -1,8 +1,8 @@
 /**
- * WinPR: Windows Portable Runtime
- * Handle Management
+ * FreeRDP: A Remote Desktop Protocol Implementation
+ * Bulk Data Compression
  *
- * Copyright 2012 Marc-Andre Moreau <marcandre.moreau@gmail.com>
+ * Copyright 2014 Marc-Andre Moreau <marcandre.moreau@gmail.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,24 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#ifndef FREERDP_CODEC_BULK_H
+#define FREERDP_CODEC_BULK_H
 
-#include <winpr/crt.h>
-#include <winpr/handle.h>
+#include <freerdp/api.h>
+#include <freerdp/types.h>
 
-#ifndef _WIN32
+/* Level-2 Compression Flags */
 
-#include "../handle/handle.h"
+#define PACKET_COMPRESSED		0x20
+#define PACKET_AT_FRONT			0x40
+#define PACKET_FLUSHED			0x80
 
-#endif
+/* Level-1 Compression Flags */
+
+#define L1_PACKET_AT_FRONT		0x04
+#define L1_NO_COMPRESSION		0x02
+#define L1_COMPRESSED			0x01
+#define L1_INNER_COMPRESSION		0x10
+
+#endif /* FREERDP_CODEC_BULK_H */
 

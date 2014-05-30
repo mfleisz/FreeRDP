@@ -297,7 +297,6 @@ int freerdp_client_add_device_channel(rdpSettings* settings, int count, char** p
 		if (count < 3)
 			return -1;
 
-		settings->RedirectDrives = TRUE;
 		settings->DeviceRedirection = TRUE;
 
 		drive = (RDPDR_DRIVE*) calloc(1, sizeof(RDPDR_DRIVE));
@@ -1087,19 +1086,19 @@ int freerdp_client_settings_command_line_status_print(rdpSettings* settings, int
 			layouts = freerdp_keyboard_get_layouts(RDP_KEYBOARD_LAYOUT_TYPE_STANDARD);
 			printf("\nKeyboard Layouts\n");
 			for (i = 0; layouts[i].code; i++)
-				printf("0x%08lX\t%s\n", layouts[i].code, layouts[i].name);
+				printf("0x%08X\t%s\n", (int) layouts[i].code, layouts[i].name);
 			free(layouts);
 
 			layouts = freerdp_keyboard_get_layouts(RDP_KEYBOARD_LAYOUT_TYPE_VARIANT);
 			printf("\nKeyboard Layout Variants\n");
 			for (i = 0; layouts[i].code; i++)
-				printf("0x%08lX\t%s\n", layouts[i].code, layouts[i].name);
+				printf("0x%08X\t%s\n", (int) layouts[i].code, layouts[i].name);
 			free(layouts);
 
 			layouts = freerdp_keyboard_get_layouts(RDP_KEYBOARD_LAYOUT_TYPE_IME);
 			printf("\nKeyboard Input Method Editors (IMEs)\n");
 			for (i = 0; layouts[i].code; i++)
-				printf("0x%08lX\t%s\n", layouts[i].code, layouts[i].name);
+				printf("0x%08X\t%s\n", (int) layouts[i].code, layouts[i].name);
 			free(layouts);
 
 			printf("\n");
@@ -1772,8 +1771,8 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		{
 			BYTE *base64;
 			int length;
-			crypto_base64_decode((BYTE *) (arg->Value),
-				(int) strlen(arg->Value), &base64, &length);
+			crypto_base64_decode((const char *) (arg->Value), (int) strlen(arg->Value),
+								&base64, &length);
 			if ((base64 != NULL) && (length == sizeof(ARC_SC_PRIVATE_PACKET)))
 			{
 				memcpy(settings->ServerAutoReconnectCookie, base64, length);

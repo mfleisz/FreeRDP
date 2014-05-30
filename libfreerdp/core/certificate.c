@@ -590,8 +590,8 @@ BOOL certificate_read_server_certificate(rdpCertificate* certificate, BYTE* serv
 	UINT32 dwVersion;
 	BOOL ret;
 
-	if (length < 4)
-		return FALSE;
+	if (length < 4)  /* NULL certificate is not an error see #1795 */
+		return TRUE;
 
 	s = Stream_New(server_cert, length);
 
@@ -717,13 +717,7 @@ void key_free(rdpRsaKey* key)
 
 rdpCertificate* certificate_new()
 {
-	rdpCertificate* certificate;
-
-	certificate = (rdpCertificate*) calloc(1, sizeof(rdpCertificate));
-	if (!certificate)
-		return NULL;
-
-	return certificate;
+	return (rdpCertificate*) calloc(1, sizeof(rdpCertificate));
 }
 
 /**
