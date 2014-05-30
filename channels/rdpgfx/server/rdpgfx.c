@@ -392,6 +392,41 @@ static BOOL rdpgfx_server_wire_to_surface_1(rdpgfx_server_context* context, RDPG
 	return result;
 }
 
+static BOOL rdpgfx_server_solidfill(rdpgfx_server_context* context, RDPGFX_SOLIDFILL_PDU* solidfill)
+{
+	UINT16 i;
+	wStream* s;
+	BOOL result;
+	rdpgfx_server* rdpgfx = (rdpgfx_server*) context;
+
+	s = Stream_New(NULL, 18 + solidfill->fillRectCount * 8);
+
+	Stream_Write_UINT8(s, RDPGFX_SINGLE); /* descriptor (1 byte) */
+	Stream_Write_UINT8(s, PACKET_COMPR_TYPE_RDP8); /* RDP8_BULK_ENCODED_DATA.header (1 byte) */
+
+	Stream_Write_UINT16(s, RDPGFX_CMDID_SOLIDFILL); /* RDPGFX_HEADER.cmdId (2 bytes) */
+	Stream_Write_UINT16(s, 0); /* RDPGFX_HEADER.flags (2 bytes) */
+	Stream_Write_UINT32(s, 16 + solidfill->fillRectCount * 8); /* RDPGFX_HEADER.pduLength (4 bytes) */
+	Stream_Write_UINT16(s, solidfill->surfaceId);
+	Stream_Write_UINT8(s, solidfill->fillPixel.B);
+	Stream_Write_UINT8(s, solidfill->fillPixel.G);
+	Stream_Write_UINT8(s, solidfill->fillPixel.R);
+	Stream_Write_UINT8(s, solidfill->fillPixel.XA);
+	Stream_Write_UINT16(s, solidfill->fillRectCount);
+	for (i = 0; i < solidfill->fillRectCount; i++)
+	{
+		Stream_Write_UINT16(s, solidfill->fillRects[i].left);
+		Stream_Write_UINT16(s, solidfill->fillRects[i].top);
+		Stream_Write_UINT16(s, solidfill->fillRects[i].right);
+		Stream_Write_UINT16(s, solidfill->fillRects[i].bottom);
+	}
+
+	result = WTSVirtualChannelWrite(rdpgfx->rdpgfx_channel, (PCHAR) Stream_Buffer(s), (ULONG) Stream_GetPosition(s), NULL);
+	Stream_Free(s, TRUE);
+
+	return result;
+}
+
 static BOOL rdpgfx_server_create_surface(rdpgfx_server_context* context, RDPGFX_CREATE_SURFACE_PDU* create_surface)
 {
 	wStream* s;
@@ -563,6 +598,7 @@ rdpgfx_server_context* rdpgfx_server_context_new(HANDLE vcm)
 	rdpgfx->context.Open = rdpgfx_server_open;
 	rdpgfx->context.Close = rdpgfx_server_close;
 	rdpgfx->context.WireToSurface1 = rdpgfx_server_wire_to_surface_1;
+	rdpgfx->context.SolidFill = rdpgfx_server_solidfill;
 	rdpgfx->context.CreateSurface = rdpgfx_server_create_surface;
 	rdpgfx->context.DeleteSurface = rdpgfx_server_delete_surface;
 	rdpgfx->context.StartFrame = rdpgfx_server_start_frame;

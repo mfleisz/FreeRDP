@@ -36,6 +36,7 @@ typedef struct _rdpgfx_server_context rdpgfx_server_context;
 typedef void (*psRdpgfxServerOpen)(rdpgfx_server_context* context);
 typedef void (*psRdpgfxServerClose)(rdpgfx_server_context* context);
 typedef BOOL (*psRdpgfxServerWireToSurface1)(rdpgfx_server_context* context, RDPGFX_WIRE_TO_SURFACE_PDU_1* wire_to_surface_1);
+typedef BOOL (*psRdpgfxServerSolidFill)(rdpgfx_server_context* context, RDPGFX_SOLIDFILL_PDU* solidfill);
 typedef BOOL (*psRdpgfxServerCreateSurface)(rdpgfx_server_context* context, RDPGFX_CREATE_SURFACE_PDU* create_surface);
 typedef BOOL (*psRdpgfxServerDeleteSurface)(rdpgfx_server_context* context, RDPGFX_DELETE_SURFACE_PDU* delete_surface);
 typedef BOOL (*psRdpgfxServerStartFrame)(rdpgfx_server_context* context, RDPGFX_START_FRAME_PDU* start_frame);
@@ -70,6 +71,10 @@ struct _rdpgfx_server_context
 	 * Transfer bitmap data to surface.
 	 */
 	psRdpgfxServerWireToSurface1 WireToSurface1;
+	/**
+	 * Fill solid color in surface.
+	 */
+	psRdpgfxServerSolidFill SolidFill;
 	/**
 	 * Create a surface.
 	 */
