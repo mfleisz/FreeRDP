@@ -186,7 +186,7 @@ static void* rdpgfx_server_thread_func(void* arg)
 
 	if (rdpgfx_server_open_channel(rdpgfx) == FALSE)
 	{
-		IFCALL(rdpgfx->context.OpenResult, &rdpgfx->context, 1);
+		IFCALL(rdpgfx->context.OpenResult, &rdpgfx->context, RDPGFX_SERVER_OPEN_RESULT_NOTSUPPORTED);
 		return NULL;
 	}
 
@@ -211,10 +211,16 @@ static void* rdpgfx_server_thread_func(void* arg)
 	while (1)
 	{
 		if (WaitForMultipleObjects(nCount, events, FALSE, 100) == WAIT_OBJECT_0)
+		{
+			IFCALL(rdpgfx->context.OpenResult, &rdpgfx->context, RDPGFX_SERVER_OPEN_RESULT_CLOSED);
 			break;
+		}
 
 		if (WTSVirtualChannelQuery(rdpgfx->rdpgfx_channel, WTSVirtualChannelReady, &buffer, &BytesReturned) == FALSE)
+		{
+			IFCALL(rdpgfx->context.OpenResult, &rdpgfx->context, RDPGFX_SERVER_OPEN_RESULT_ERROR);
 			break;
+		}
 
 		ready = *((BOOL*) buffer);
 
@@ -225,11 +231,6 @@ static void* rdpgfx_server_thread_func(void* arg)
 	}
 
 	s = Stream_New(NULL, 4096);
-
-	if (!ready)
-	{
-		IFCALL(rdpgfx->context.OpenResult, &rdpgfx->context, 2);
-	}
 
 	while (ready)
 	{
@@ -269,11 +270,11 @@ static void* rdpgfx_server_thread_func(void* arg)
 				if (rdpgfx_server_recv_capabilities(rdpgfx, s, BytesReturned))
 				{
 					rdpgfx_server_send_capabilities(rdpgfx, s);
-					IFCALL(rdpgfx->context.OpenResult, &rdpgfx->context, 0);
+					IFCALL(rdpgfx->context.OpenResult, &rdpgfx->context, RDPGFX_SERVER_OPEN_RESULT_OK);
 				}
 				else
 				{
-					IFCALL(rdpgfx->context.OpenResult, &rdpgfx->context, 3);
+					IFCALL(rdpgfx->context.OpenResult, &rdpgfx->context, RDPGFX_SERVER_OPEN_RESULT_ERROR);
 				}
 				break;
 

@@ -23,6 +23,14 @@
 #include <freerdp/channels/wtsvc.h>
 #include <freerdp/channels/rdpgfx.h>
 
+typedef enum RDPGFX_SERVER_OPEN_RESULT
+{
+	RDPGFX_SERVER_OPEN_RESULT_OK = 0,
+	RDPGFX_SERVER_OPEN_RESULT_CLOSED = 1,
+	RDPGFX_SERVER_OPEN_RESULT_NOTSUPPORTED = 2,
+	RDPGFX_SERVER_OPEN_RESULT_ERROR = 3
+} RDPGFX_SERVER_OPEN_RESULT;
+
 typedef struct _rdpgfx_server_context rdpgfx_server_context;
 
 typedef void (*psRdpgfxServerOpen)(rdpgfx_server_context* context);
@@ -35,7 +43,7 @@ typedef BOOL (*psRdpgfxServerEndFrame)(rdpgfx_server_context* context, RDPGFX_EN
 typedef BOOL (*psRdpgfxServerResetGraphics)(rdpgfx_server_context* context, RDPGFX_RESET_GRAPHICS_PDU* reset_graphics);
 typedef BOOL (*psRdpgfxServerMapSurfaceToOutput)(rdpgfx_server_context* context, RDPGFX_MAP_SURFACE_TO_OUTPUT_PDU* map_surface_to_output);
 
-typedef void (*psRdpgfxServerOpenResult)(rdpgfx_server_context* context, UINT32 result);
+typedef void (*psRdpgfxServerOpenResult)(rdpgfx_server_context* context, RDPGFX_SERVER_OPEN_RESULT result);
 typedef void (*psRdpgfxServerFrameAcknowledge)(rdpgfx_server_context* context, RDPGFX_FRAME_ACKNOWLEDGE_PDU* frame_acknowledge);
 
 struct _rdpgfx_server_context
