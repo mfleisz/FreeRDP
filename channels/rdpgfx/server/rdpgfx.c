@@ -239,21 +239,15 @@ static void* rdpgfx_server_thread_func(void* arg)
 
 		Stream_SetPosition(s, 0);
 
+		WTSVirtualChannelRead(rdpgfx->rdpgfx_channel, 0, NULL, 0, &BytesReturned);
+		if (BytesReturned < 1)
+			continue;
+		Stream_EnsureRemainingCapacity(s, BytesReturned);
 		if (WTSVirtualChannelRead(rdpgfx->rdpgfx_channel, 0, (PCHAR) Stream_Buffer(s),
-			(ULONG) Stream_Capacity(s), &BytesReturned) == FALSE)
+			Stream_Capacity(s), &BytesReturned) == FALSE)
 		{
-			if (BytesReturned == 0)
-				break;
-			
-			Stream_EnsureRemainingCapacity(s, BytesReturned);
-
-			if (WTSVirtualChannelRead(rdpgfx->rdpgfx_channel, 0, (PCHAR) Stream_Buffer(s),
-				(ULONG) Stream_Capacity(s), &BytesReturned) == FALSE)
-			{
-				break;
-			}
+			break;
 		}
-
 		if (BytesReturned < 8)
 			continue;
 
@@ -392,7 +386,7 @@ static BOOL rdpgfx_server_wire_to_surface_1(rdpgfx_server_context* context, RDPG
 	return result;
 }
 
-static BOOL rdpgfx_server_solidfill(rdpgfx_server_context* context, RDPGFX_SOLIDFILL_PDU* solidfill)
+static BOOL rdpgfx_server_solidfill(rdpgfx_server_context* context, RDPGFX_SOLID_FILL_PDU* solidfill)
 {
 	UINT16 i;
 	wStream* s;
