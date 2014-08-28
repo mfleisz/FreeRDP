@@ -90,9 +90,10 @@ int TestGetCommState(int argc, char* argv[])
 		return EXIT_FAILURE;
 	}
 
-	hComm = CreateFile("COM1",
+	hComm = CreateFileA("COM1",
 			GENERIC_READ | GENERIC_WRITE,
 			0, NULL, OPEN_EXISTING, 0, NULL);
+
 	if (hComm == INVALID_HANDLE_VALUE)
 	{
 		printf("CreateFileA failure: 0x%x\n", GetLastError());
@@ -128,7 +129,7 @@ int TestGetCommState(int argc, char* argv[])
 
 	if (!CloseHandle(hComm))
 	{
-		fprintf(stderr, "CloseHandle failure, GetLastError()=%0.8x\n", GetLastError());
+		fprintf(stderr, "CloseHandle failure, GetLastError()=%08x\n", GetLastError());
 		return EXIT_FAILURE;
 	}
 

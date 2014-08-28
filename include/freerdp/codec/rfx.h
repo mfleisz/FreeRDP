@@ -159,6 +159,8 @@ FREERDP_API void rfx_context_free(RFX_CONTEXT* context);
 FREERDP_API void rfx_context_set_pixel_format(RFX_CONTEXT* context, RDP_PIXEL_FORMAT pixel_format);
 FREERDP_API void rfx_context_reset(RFX_CONTEXT* context);
 
+FREERDP_API int rfx_rlgr_decode(const BYTE* pSrcData, UINT32 SrcSize, INT16* pDstData, UINT32 DstSize, int mode);
+
 FREERDP_API RFX_MESSAGE* rfx_process_message(RFX_CONTEXT* context, BYTE* data, UINT32 length);
 FREERDP_API UINT16 rfx_message_get_tile_count(RFX_MESSAGE* message);
 FREERDP_API RFX_TILE* rfx_message_get_tile(RFX_MESSAGE* message, int index);

@@ -48,7 +48,6 @@
  * two less significant bits of the first byte.
  */
 
-#define FASTPATH_MAX_PACKET_SIZE 0x3FFF
 
 #ifdef WITH_DEBUG_RDP
 static const char* const FASTPATH_UPDATETYPE_STRINGS[] =
@@ -272,7 +271,7 @@ static int fastpath_recv_update(rdpFastPath* fastpath, BYTE updateCode, UINT32 s
 
 		case FASTPATH_UPDATETYPE_SYNCHRONIZE:
 			if (!fastpath_recv_update_synchronize(fastpath, s))
-				fprintf(stderr, "fastpath_recv_update_synchronize failure but we continue\n");
+				DEBUG_WARN( "fastpath_recv_update_synchronize failure but we continue\n");
 			else
 				IFCALL(update->Synchronize, context);			
 			break;
@@ -378,7 +377,7 @@ static int fastpath_recv_update_data(rdpFastPath* fastpath, wStream* s)
 
 	if (bulkStatus < 0)
 	{
-		fprintf(stderr, "bulk_decompress() failed\n");
+		DEBUG_WARN( "bulk_decompress() failed\n");
 		return -1;
 	}
 
@@ -399,7 +398,7 @@ static int fastpath_recv_update_data(rdpFastPath* fastpath, wStream* s)
 	{
 		if (fastpath->fragmentation != -1)
 		{
-			fprintf(stderr, "Unexpected FASTPATH_FRAGMENT_SINGLE\n");
+			DEBUG_WARN( "Unexpected FASTPATH_FRAGMENT_SINGLE\n");
 			return -1;
 		}
 
@@ -415,7 +414,7 @@ static int fastpath_recv_update_data(rdpFastPath* fastpath, wStream* s)
 		{
 			if (fastpath->fragmentation != -1)
 			{
-				fprintf(stderr, "Unexpected FASTPATH_FRAGMENT_FIRST\n");
+				DEBUG_WARN( "Unexpected FASTPATH_FRAGMENT_FIRST\n");
 				return -1;
 			}
 
@@ -425,7 +424,7 @@ static int fastpath_recv_update_data(rdpFastPath* fastpath, wStream* s)
 
 			if (totalSize > transport->settings->MultifragMaxRequestSize)
 			{
-				fprintf(stderr, "Total size (%d) exceeds MultifragMaxRequestSize (%d)\n",
+				DEBUG_WARN( "Total size (%d) exceeds MultifragMaxRequestSize (%d)\n",
 						totalSize, transport->settings->MultifragMaxRequestSize);
 				return -1;
 			}
@@ -440,7 +439,7 @@ static int fastpath_recv_update_data(rdpFastPath* fastpath, wStream* s)
 			if ((fastpath->fragmentation != FASTPATH_FRAGMENT_FIRST) &&
 					(fastpath->fragmentation != FASTPATH_FRAGMENT_NEXT))
 			{
-				fprintf(stderr, "Unexpected FASTPATH_FRAGMENT_NEXT\n");
+				DEBUG_WARN( "Unexpected FASTPATH_FRAGMENT_NEXT\n");
 				return -1;
 			}
 
@@ -450,7 +449,7 @@ static int fastpath_recv_update_data(rdpFastPath* fastpath, wStream* s)
 
 			if (totalSize > transport->settings->MultifragMaxRequestSize)
 			{
-				fprintf(stderr, "Total size (%d) exceeds MultifragMaxRequestSize (%d)\n",
+				DEBUG_WARN( "Total size (%d) exceeds MultifragMaxRequestSize (%d)\n",
 						totalSize, transport->settings->MultifragMaxRequestSize);
 				return -1;
 			}
@@ -464,7 +463,7 @@ static int fastpath_recv_update_data(rdpFastPath* fastpath, wStream* s)
 			if ((fastpath->fragmentation != FASTPATH_FRAGMENT_FIRST) &&
 					(fastpath->fragmentation != FASTPATH_FRAGMENT_NEXT))
 			{
-				fprintf(stderr, "Unexpected FASTPATH_FRAGMENT_LAST\n");
+				DEBUG_WARN( "Unexpected FASTPATH_FRAGMENT_LAST\n");
 				return -1;
 			}
 
@@ -474,7 +473,7 @@ static int fastpath_recv_update_data(rdpFastPath* fastpath, wStream* s)
 
 			if (totalSize > transport->settings->MultifragMaxRequestSize)
 			{
-				fprintf(stderr, "Total size (%d) exceeds MultifragMaxRequestSize (%d)\n",
+				DEBUG_WARN( "Total size (%d) exceeds MultifragMaxRequestSize (%d)\n",
 						totalSize, transport->settings->MultifragMaxRequestSize);
 				return -1;
 			}
@@ -662,7 +661,7 @@ static BOOL fastpath_recv_input_event(rdpFastPath* fastpath, wStream* s)
 			break;
 
 		default:
-			fprintf(stderr, "Unknown eventCode %d\n", eventCode);
+			DEBUG_WARN( "Unknown eventCode %d\n", eventCode);
 			break;
 	}
 
@@ -769,7 +768,7 @@ BOOL fastpath_send_multiple_input_pdu(rdpFastPath* fastpath, wStream* s, int iNu
 
 	if (length >= (2 << 14))
 	{
-		fprintf(stderr, "Maximum FastPath PDU length is 32767\n");
+		DEBUG_WARN( "Maximum FastPath PDU length is 32767\n");
 		return FALSE;
 	}
 
