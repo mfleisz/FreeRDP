@@ -59,7 +59,13 @@
 #endif
 
 #ifndef RFX_INIT_RLGR_OPTIONS
-#define RFX_INIT_RLGR_OPTIONS(_rfx_context) do { } while (0)
+#define RFX_INIT_RLGR_OPTIONS(_ctx)                                          \
+{                                                                            \
+	IF_PROFILER(_ctx->priv->prof_rfx_rlgr_encode->name = "rfx_rlgr_encode"); \
+	_ctx->rlgr_encode = rfx_rlgr_encode;                                     \
+	IF_PROFILER(_ctx->priv->prof_rfx_rlgr_decode->name = "rfx_rlgr_decode"); \
+	_ctx->rlgr_decode = rfx_rlgr_decode;                                     \
+}
 #endif
 
 
