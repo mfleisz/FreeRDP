@@ -634,7 +634,7 @@ int progressive_rfx_decode_component(PROGRESSIVE_CONTEXT* progressive, RFX_COMPO
 	INT16* temp;
 	const primitives_t* prims = primitives_get();
 
-	status = rfx_rlgr_decode(data, length, buffer, 4096, 1);
+	status = rfx_rlgr_decode(RLGR1, data, length, buffer, 4096);
 
 	if (status < 0)
 		return status;
