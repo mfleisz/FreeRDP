@@ -29,6 +29,7 @@ endif()
 
 set(LIBFREERDP_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(LIBFREERDP_SRCS "")
+set(LIBFREERDP_DEPS "")
 set(LIBFREERDP_LIBS "")
 set(LIBFREERDP_INCLUDES "")
 set(LIBFREERDP_DEFINITIONS "")
@@ -77,6 +78,13 @@ macro (freerdp_definition_add)
             list (APPEND LIBFREERDP_DEFINITIONS "${_define}")
     endforeach()
      set (LIBFREERDP_DEFINITIONS ${LIBFREERDP_DEFINITIONS} PARENT_SCOPE)
+endmacro()
+
+macro (freerdp_dependency_add)
+    foreach (_dep ${ARGN})
+            list (APPEND LIBFREERDP_DEPS "${_dep}")
+    endforeach()
+     set (LIBFREERDP_DEPS ${LIBFREERDP_DEPS} PARENT_SCOPE)
 endmacro()
 
 set(${MODULE_PREFIX}_SUBMODULES
@@ -171,23 +179,47 @@ if(TARGET_ARCH MATCHES "x64|x86")
 	endif()
 	if(${WITH_RFX_RLGR_OPTION_INDEX} GREATER 0)
 		enable_language(ASM_NASM)
+		
 		if(WIN32)
-			set(CMAKE_ASM_NASM_FLAGS "-DWIN32")
+			set(CMAKE_ASM_NASM_FLAGS ${CMAKE_ASM_NASM_FLAGS} -DWIN32)
 		endif()
 
 		set(CODEC_SRCS ${CODEC_SRCS}
 			"codec/rfx_rlgr_options.h")
 
 		if(${WITH_RFX_RLGR_OPTION} STREQUAL "asm")
-			set(CODEC_SRCS ${CODEC_SRCS}
-				"codec/rfx_rlgr_asm_${TARGET_ARCH}.nasm")
+			set(ASM_SRCS ${ASM_SRCS} ${CMAKE_CURRENT_SOURCE_DIR}/codec/rfx_rlgr_asm_${TARGET_ARCH}.nasm)
 		endif()
 		if(${WITH_RFX_RLGR_OPTION} STREQUAL "microsoft")
-			set(CODEC_SRCS ${CODEC_SRCS}
-				"codec/rfx_rlgr_microsoft_decrlgr3_${TARGET_ARCH}.nasm"
-				"codec/rfx_rlgr_microsoft_encrlgr3_${TARGET_ARCH}.nasm")
+			set(ASM_SRCS ${ASM_SRCS} ${CMAKE_CURRENT_SOURCE_DIR}/codec/rfx_rlgr_microsoft_decrlgr3_${TARGET_ARCH}.nasm)
+			set(ASM_SRCS ${ASM_SRCS} ${CMAKE_CURRENT_SOURCE_DIR}/codec/rfx_rlgr_microsoft_encrlgr3_${TARGET_ARCH}.nasm)
 		endif()
 		add_definitions("-DRFX_RLGR_OPTION=${WITH_RFX_RLGR_OPTION_INDEX}")
+		
+		set(CODEC_SRCS ${CODEC_SRCS} ${ASM_SRCS})
+		foreach(ASM_SRC ${ASM_SRCS})
+			string(REPLACE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ASM_OBJ ${ASM_SRCS})
+			if (WIN32)
+				string(REPLACE ".nasm" ".obj" ASM_OBJ ${ASM_OBJ})
+			else()
+				string(REPLACE ".nasm" ".o" ASM_OBJ ${ASM_OBJ})
+			endif()
+			
+			GET_FILENAME_COMPONENT(ASM_OBJ_PATH ${ASM_OBJ} PATH)
+			GET_FILENAME_COMPONENT(ASM_OBJ_NAME ${ASM_OBJ} NAME)
+			add_custom_command(
+				OUTPUT ${ASM_OBJ}
+				COMMAND ${CMAKE_COMMAND} -E make_directory ${ASM_OBJ_PATH}
+				COMMAND ${CMAKE_ASM_NASM_COMPILER} -o ${ASM_OBJ} -f ${CMAKE_ASM_NASM_OBJECT_FORMAT} ${CMAKE_ASM_NASM_FLAGS} -- ${ASM_SRC}
+				DEPENDS ${ASM_SRC}
+				VERBATIM
+				WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+				COMMENT "NASM compile step")
+			add_custom_target(${ASM_OBJ_NAME}
+				DEPENDS ${ASM_OBJ})
+			freerdp_dependency_add(${ASM_OBJ_NAME})
+			freerdp_library_add(${ASM_OBJ})
+		endforeach()
 	endif()
 endif()
 
@@ -302,9 +334,13 @@ endif()
 
 list(REMOVE_DUPLICATES LIBFREERDP_DEFINITIONS)
 list(REMOVE_DUPLICATES LIBFREERDP_LIBS)
+list(REMOVE_DUPLICATES LIBFREERDP_DEPS)
 list(REMOVE_DUPLICATES LIBFREERDP_INCLUDES)
 include_directories(${LIBFREERDP_INCLUDES})
 add_library(${MODULE_NAME} ${LIBFREERDP_SRCS})
+if (${LIBFREERDP_DEPS})
+	add_dependencies(${MODULE_NAME} ${LIBFREERDP_DEPS})
+endif()
 add_definitions(${LIBFREERDP_DEFINITIONS})
 
 set_target_properties(${MODULE_NAME} PROPERTIES LINKER_LANGUAGE C)
