@@ -113,6 +113,10 @@ if (WIN32)
 endif()
 
 add_library(${MODULE_NAME} ${WINPR_SRCS})
+# This is necessary to fix http://public.kitware.com/Bug/view.php?id=11240 with VS2010 64 bit builds.
+if( WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 )
+	set_target_properties(${MODULE_NAME} PROPERTIES STATIC_LIBRARY_FLAGS "/machine:x64")
+endif()
 set_target_properties(${MODULE_NAME} PROPERTIES LINKER_LANGUAGE C)
 if (WITH_LIBRARY_VERSIONING)
  	set_target_properties(${MODULE_NAME} PROPERTIES VERSION ${WINPR_VERSION_FULL} SOVERSION ${WINPR_VERSION})

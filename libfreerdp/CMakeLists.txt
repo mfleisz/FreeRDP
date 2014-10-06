@@ -22,8 +22,12 @@ set(MODULE_PREFIX "FREERDP")
 
 if(IPP_FOUND)
     foreach(ipp_lib ${IPP_LIBRARIES})
-			add_library("${ipp_lib}_imported" STATIC IMPORTED)
+		add_library("${ipp_lib}_imported" STATIC IMPORTED)
 		set_property(TARGET "${ipp_lib}_imported" PROPERTY IMPORTED_LOCATION "${IPP_LIBRARY_DIRS}/${ipp_lib}")
+		# This is necessary to fix http://public.kitware.com/Bug/view.php?id=11240 with VS2010 64 bit builds.
+		if( WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 )
+			set_target_properties(${ipp_lib} PROPERTIES STATIC_LIBRARY_FLAGS "/machine:x64")
+		endif()
 	endforeach()
 endif()
 

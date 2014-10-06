@@ -162,20 +162,20 @@ macro(add_channel_client_library _module_prefix _module_name _channel_name _dyna
 	if(${_dynamic} AND (NOT STATIC_CHANNELS))
 # On windows create dll version information.
 # Vendor, product and year are already set in top level CMakeLists.txt
-    if (WIN32)
-      set (RC_VERSION_MAJOR ${FREERDP_VERSION_MAJOR})
-      set (RC_VERSION_MINOR ${FREERDP_VERSION_MINOR})
-      set (RC_VERSION_BUILD ${FREERDP_VERSION_REVISION})
-      set (RC_VERSION_PATCH 0)
-      set (RC_VERSION_FILE "${CMAKE_SHARED_LIBRARY_PREFIX}${_module_name}${CMAKE_SHARED_LIBRARY_SUFFIX}" )
+		if (WIN32)
+		  set (RC_VERSION_MAJOR ${FREERDP_VERSION_MAJOR})
+		  set (RC_VERSION_MINOR ${FREERDP_VERSION_MINOR})
+		  set (RC_VERSION_BUILD ${FREERDP_VERSION_REVISION})
+		  set (RC_VERSION_PATCH 0)
+		  set (RC_VERSION_FILE "${CMAKE_SHARED_LIBRARY_PREFIX}${_module_name}${CMAKE_SHARED_LIBRARY_SUFFIX}" )
 
-      configure_file(
-        ${CMAKE_SOURCE_DIR}/cmake/WindowsDLLVersion.rc.in
-        ${CMAKE_CURRENT_BINARY_DIR}/version.rc
-        @ONLY)
+		  configure_file(
+			${CMAKE_SOURCE_DIR}/cmake/WindowsDLLVersion.rc.in
+			${CMAKE_CURRENT_BINARY_DIR}/version.rc
+			@ONLY)
 
-      set ( ${_module_prefix}_SRCS ${${_module_prefix}_SRCS} ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
-    endif()
+		  set ( ${_module_prefix}_SRCS ${${_module_prefix}_SRCS} ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
+		endif()
 
 		add_library(${_module_name} ${${_module_prefix}_SRCS})
 	else()
@@ -184,6 +184,12 @@ macro(add_channel_client_library _module_prefix _module_name _channel_name _dyna
 		set(${_module_prefix}_CHANNEL ${_channel_name} PARENT_SCOPE)
 		set(${_module_prefix}_ENTRY ${_entry} PARENT_SCOPE)
 		add_library(${_module_name} STATIC ${${_module_prefix}_SRCS})
+		# This is necessary to fix http://public.kitware.com/Bug/view.php?id=11240 with VS2010 64 bit builds.
+		if( WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 )
+			set_target_properties(${_module_name} PROPERTIES STATIC_LIBRARY_FLAGS "/machine:x64")
+		endif()
+		
+		
 	endif()
 endmacro(add_channel_client_library)
 
@@ -215,6 +221,10 @@ macro(add_channel_client_subsystem_library _module_prefix _module_name _channel_
 		set(${_module_prefix}_NAME ${_module_name} PARENT_SCOPE)
 		set(${_module_prefix}_TYPE ${_type} PARENT_SCOPE)
 		add_library(${_module_name} STATIC ${${_module_prefix}_SRCS})
+		# This is necessary to fix http://public.kitware.com/Bug/view.php?id=11240 with VS2010 64 bit builds.
+		if( WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 )
+			set_target_properties(${_module_name} PROPERTIES STATIC_LIBRARY_FLAGS "/machine:x64")
+		endif()
 	endif()
 endmacro(add_channel_client_subsystem_library)
 
@@ -247,6 +257,10 @@ macro(add_channel_server_library _module_prefix _module_name _channel_name _dyna
 		set(${_module_prefix}_CHANNEL ${_channel_name} PARENT_SCOPE)
 		set(${_module_prefix}_ENTRY ${_entry} PARENT_SCOPE)
 		add_library(${_module_name} STATIC ${${_module_prefix}_SRCS})
+		# This is necessary to fix http://public.kitware.com/Bug/view.php?id=11240 with VS2010 64 bit builds.
+		if( WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 )
+			set_target_properties(${_module_name} PROPERTIES STATIC_LIBRARY_FLAGS "/machine:x64")
+		endif()
 	endif()
 endmacro(add_channel_server_library)
 
