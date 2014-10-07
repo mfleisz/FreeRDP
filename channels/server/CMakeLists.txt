@@ -30,7 +30,7 @@ endforeach()
 
 # On windows create dll version information.
 # Vendor, product and year are already set in top level CMakeLists.txt
-if (WIN32)
+if ((NOT STATIC_CHANNELS) AND WIN32)
   set (RC_VERSION_MAJOR ${FREERDP_VERSION_MAJOR})
   set (RC_VERSION_MINOR ${FREERDP_VERSION_MINOR})
   set (RC_VERSION_BUILD ${FREERDP_VERSION_REVISION})
