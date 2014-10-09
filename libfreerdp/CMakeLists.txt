@@ -226,7 +226,7 @@ if(TARGET_ARCH MATCHES "x64|x86")
 				COMMENT "Building ${ASM_OBJ_NAME}"
 				DEPENDS ${ASM_OBJ}
 				SOURCES ${ASM_SRC})
-			freerdp_dependency_add(${ASM_OBJ})
+			freerdp_dependency_add(${ASM_OBJ_NAME})
 			freerdp_library_add(${ASM_OBJ})
 		endforeach()
 	endif()
