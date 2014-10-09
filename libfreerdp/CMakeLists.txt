@@ -220,12 +220,12 @@ if(TARGET_ARCH MATCHES "x64|x86")
 				DEPENDS ${ASM_SRC}
 				VERBATIM
 				WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-				COMMENT "NASM compile step")
-			add_custom_target(${ASM_OBJ_NAME} ALL
+				COMMENT "NASM compile ${ASM_SRC_NATIVE}")
+			add_custom_target(${ASM_OBJ_NAME}
 				COMMENT "Building ${ASM_OBJ_NAME}"
 				DEPENDS ${ASM_OBJ}
 				SOURCES ${ASM_SRC})
-			freerdp_dependency_add(${ASM_OBJ_NAME})
+			freerdp_dependency_add(${ASM_OBJ})
 			freerdp_library_add(${ASM_OBJ})
 		endforeach()
 	endif()
