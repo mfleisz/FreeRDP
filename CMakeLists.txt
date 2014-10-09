@@ -77,12 +77,23 @@ if(ANDROID OR IOS)
 	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM BOTH)
 endif(ANDROID OR IOS)
 include(GetGitRevisionDescription)
-git_describe(GIT_REVISION --match "[0-9]*" --abbrev=4 --tags --always)
+get_git_head_revision(GIT_REF GIT_HASH)
+git_get_exact_tag(GIT_TAG --always --tags)
+
+if (${GIT_TAG} STREQUAL "n/a")
+  set(GIT_REVISION ${GIT_HASH})
+else()
+  set(GIT_REVISION ${GIT_TAG})
+endif()
+
 if(ANDROID OR IOS)
 	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY)
 endif(ANDROID OR IOS)
 
 message(STATUS "Git Revision ${GIT_REVISION}")
+message(STATUS "Git TAG      ${GIT_TAG}")
+message(STATUS "Git Ref      ${GIT_REF}")
+message(STATUS "Git HASH     ${GIT_HASH}")
 
 # Turn on solution folders (2.8.4+)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -239,6 +250,7 @@ if(WIN32)
   # Set product and vendor for dll and exe version information.
   set(RC_VERSION_VENDOR "FreeRDP")
   set(RC_VERSION_PRODUCT "FreeRDP")
+  set(RC_VERSION_DESCRIPTION "Git TAG ${GIT_TAG}\r\nGit HASH ${GIT_REVISION}")
   string(TIMESTAMP RC_VERSION_YEAR "%Y")
 
   if ($ENV{BUILD_NUMBER})
