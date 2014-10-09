@@ -250,7 +250,7 @@ if(WIN32)
   # Set product and vendor for dll and exe version information.
   set(RC_VERSION_VENDOR "FreeRDP")
   set(RC_VERSION_PRODUCT "FreeRDP")
-  set(RC_VERSION_DESCRIPTION "Git TAG ${GIT_TAG}\r\nGit HASH ${GIT_REVISION}")
+  set(RC_VERSION_DESCRIPTION "${GIT_REVISION}")
   string(TIMESTAMP RC_VERSION_YEAR "%Y")
 
   if ($ENV{BUILD_NUMBER})
