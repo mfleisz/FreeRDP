@@ -200,7 +200,6 @@ if(TARGET_ARCH MATCHES "x64|x86")
 		endif()
 		add_definitions("-DRFX_RLGR_OPTION=${WITH_RFX_RLGR_OPTION_INDEX}")
 		
-		set(CODEC_SRCS ${CODEC_SRCS} ${ASM_SRCS})
 		foreach(ASM_SRC ${ASM_SRCS})
 			string(REPLACE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ASM_OBJ ${ASM_SRC})
 			if (WIN32)
@@ -208,11 +207,12 @@ if(TARGET_ARCH MATCHES "x64|x86")
 			else()
 				string(REPLACE ".nasm" ".o" ASM_OBJ ${ASM_OBJ})
 			endif()
-			
+
 			GET_FILENAME_COMPONENT(ASM_OBJ_PATH ${ASM_OBJ} PATH)
 			GET_FILENAME_COMPONENT(ASM_OBJ_NAME ${ASM_OBJ} NAME)
 			FILE(TO_NATIVE_PATH ${ASM_OBJ} ASM_OBJ_NATIVE)
 			FILE(TO_NATIVE_PATH ${ASM_SRC} ASM_SRC_NATIVE)
+
 			add_custom_command(
 				OUTPUT ${ASM_OBJ}
 				COMMAND ${CMAKE_COMMAND} -E make_directory ${ASM_OBJ_PATH}
@@ -221,8 +221,10 @@ if(TARGET_ARCH MATCHES "x64|x86")
 				VERBATIM
 				WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 				COMMENT "NASM compile step")
-			add_custom_target(${ASM_OBJ_NAME}
-				DEPENDS ${ASM_OBJ})
+			add_custom_target(${ASM_OBJ_NAME} ALL
+				COMMENT "Building ${ASM_OBJ_NAME}"
+				DEPENDS ${ASM_OBJ}
+				SOURCES ${ASM_SRC})
 			freerdp_dependency_add(${ASM_OBJ_NAME})
 			freerdp_library_add(${ASM_OBJ})
 		endforeach()
