@@ -21,7 +21,7 @@ set(MODULE_PREFIX "FREERDP")
 # Create imported targets for Intel IPP libraries
 
 if(IPP_FOUND)
-    foreach(ipp_lib ${IPP_LIBRARIES})
+		foreach(ipp_lib ${IPP_LIBRARIES})
 		add_library("${ipp_lib}_imported" STATIC IMPORTED)
 		set_property(TARGET "${ipp_lib}_imported" PROPERTY IMPORTED_LOCATION "${IPP_LIBRARY_DIRS}/${ipp_lib}")
 		# This is necessary to fix http://public.kitware.com/Bug/view.php?id=11240 with VS2010 64 bit builds.
@@ -39,22 +39,22 @@ set(LIBFREERDP_INCLUDES "")
 set(LIBFREERDP_DEFINITIONS "")
 
 macro (freerdp_module_add)
-    file (RELATIVE_PATH _relPath "${LIBFREERDP_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
-    foreach (_src ${ARGN})
-        if (_relPath)
-            list (APPEND LIBFREERDP_SRCS "${_relPath}/${_src}")
-        else()
-            list (APPEND LIBFREERDP_SRCS "${_src}")
-        endif()
-    endforeach()
-    if (_relPath)
-        set (LIBFREERDP_SRCS ${LIBFREERDP_SRCS} PARENT_SCOPE)
-    endif()
+		file (RELATIVE_PATH _relPath "${LIBFREERDP_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
+		foreach (_src ${ARGN})
+				if (_relPath)
+						list (APPEND LIBFREERDP_SRCS "${_relPath}/${_src}")
+				else()
+						list (APPEND LIBFREERDP_SRCS "${_src}")
+				endif()
+		endforeach()
+		if (_relPath)
+				set (LIBFREERDP_SRCS ${LIBFREERDP_SRCS} PARENT_SCOPE)
+		endif()
 endmacro()
 
 macro (freerdp_include_directory_add)
-    file (RELATIVE_PATH _relPath "${LIBFREERDP_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
-    foreach (_inc ${ARGN})
+		file (RELATIVE_PATH _relPath "${LIBFREERDP_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
+		foreach (_inc ${ARGN})
 				if (IS_ABSOLUTE ${_inc})
 							list (APPEND LIBFREERDP_INCLUDES "${_inc}")
 				else()
@@ -64,31 +64,31 @@ macro (freerdp_include_directory_add)
 							list (APPEND LIBFREERDP_INCLUDES "${_inc}")
 					endif()
 				endif()
-    endforeach()
-    if (_relPath)
-        set (LIBFREERDP_INCLUDES ${LIBFREERDP_INCLUDES} PARENT_SCOPE)
-    endif()
+		endforeach()
+		if (_relPath)
+				set (LIBFREERDP_INCLUDES ${LIBFREERDP_INCLUDES} PARENT_SCOPE)
+		endif()
 endmacro()
 
 macro (freerdp_library_add)
-    foreach (_lib ${ARGN})
-            list (APPEND LIBFREERDP_LIBS "${_lib}")
-    endforeach()
-     set (LIBFREERDP_LIBS ${LIBFREERDP_LIBS} PARENT_SCOPE)
+		foreach (_lib ${ARGN})
+						list (APPEND LIBFREERDP_LIBS "${_lib}")
+		endforeach()
+		 set (LIBFREERDP_LIBS ${LIBFREERDP_LIBS} PARENT_SCOPE)
 endmacro()
 
 macro (freerdp_definition_add)
-    foreach (_define ${ARGN})
-            list (APPEND LIBFREERDP_DEFINITIONS "${_define}")
-    endforeach()
-     set (LIBFREERDP_DEFINITIONS ${LIBFREERDP_DEFINITIONS} PARENT_SCOPE)
+		foreach (_define ${ARGN})
+						list (APPEND LIBFREERDP_DEFINITIONS "${_define}")
+		endforeach()
+		 set (LIBFREERDP_DEFINITIONS ${LIBFREERDP_DEFINITIONS} PARENT_SCOPE)
 endmacro()
 
 macro (freerdp_dependency_add)
-    foreach (_dep ${ARGN})
-            list (APPEND LIBFREERDP_DEPS "${_dep}")
-    endforeach()
-     set (LIBFREERDP_DEPS ${LIBFREERDP_DEPS} PARENT_SCOPE)
+		foreach (_dep ${ARGN})
+						list (APPEND LIBFREERDP_DEPS "${_dep}")
+		endforeach()
+		 set (LIBFREERDP_DEPS ${LIBFREERDP_DEPS} PARENT_SCOPE)
 endmacro()
 
 set(${MODULE_PREFIX}_SUBMODULES
@@ -199,36 +199,42 @@ if(TARGET_ARCH MATCHES "x64|x86")
 			set(ASM_SRCS ${ASM_SRCS} ${CMAKE_CURRENT_SOURCE_DIR}/codec/rfx_rlgr_microsoft_encrlgr3_${TARGET_ARCH}.nasm)
 		endif()
 		add_definitions("-DRFX_RLGR_OPTION=${WITH_RFX_RLGR_OPTION_INDEX}")
-		
-		foreach(ASM_SRC ${ASM_SRCS})
-			string(REPLACE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ASM_OBJ ${ASM_SRC})
-			if (WIN32)
-				string(REPLACE ".nasm" ".obj" ASM_OBJ ${ASM_OBJ})
-			else()
-				string(REPLACE ".nasm" ".o" ASM_OBJ ${ASM_OBJ})
-			endif()
 
-			GET_FILENAME_COMPONENT(ASM_OBJ ${ASM_OBJ} ABSOLUTE)
-			GET_FILENAME_COMPONENT(ASM_OBJ_PATH ${ASM_OBJ} PATH)
-			GET_FILENAME_COMPONENT(ASM_OBJ_NAME ${ASM_OBJ} NAME)
-			FILE(TO_NATIVE_PATH ${ASM_OBJ} ASM_OBJ_NATIVE)
-			FILE(TO_NATIVE_PATH ${ASM_SRC} ASM_SRC_NATIVE)
+		# This path is reserved for Visual Studio, which do not execute NASM properly.
+		STRING(FIND ${CMAKE_GENERATOR} "Visual Studio" BUGFIX)
+		if (NOT ${BUGFIX} LESS 0)
+			foreach(ASM_SRC ${ASM_SRCS})
+				string(REPLACE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ASM_OBJ ${ASM_SRC})
+				if (WIN32)
+					string(REPLACE ".nasm" ".obj" ASM_OBJ ${ASM_OBJ})
+				else()
+					string(REPLACE ".nasm" ".o" ASM_OBJ ${ASM_OBJ})
+				endif()
 
-			add_custom_command(
-				OUTPUT ${ASM_OBJ}
-				COMMAND ${CMAKE_COMMAND} -E make_directory ${ASM_OBJ_PATH}
-				COMMAND ${CMAKE_ASM_NASM_COMPILER} -o ${ASM_OBJ_NATIVE} -f ${CMAKE_ASM_NASM_OBJECT_FORMAT} ${CMAKE_ASM_NASM_FLAGS} -- ${ASM_SRC_NATIVE}
-				DEPENDS ${ASM_SRC}
-				VERBATIM
-				WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-				COMMENT "NASM compile ${ASM_SRC_NATIVE}")
-			add_custom_target(${ASM_OBJ_NAME}
-				COMMENT "Building ${ASM_OBJ_NAME}"
-				DEPENDS ${ASM_OBJ}
-				SOURCES ${ASM_SRC})
-			freerdp_dependency_add(${ASM_OBJ_NAME})
-			freerdp_library_add(${ASM_OBJ})
-		endforeach()
+				GET_FILENAME_COMPONENT(ASM_OBJ ${ASM_OBJ} ABSOLUTE)
+				GET_FILENAME_COMPONENT(ASM_OBJ_PATH ${ASM_OBJ} PATH)
+				GET_FILENAME_COMPONENT(ASM_OBJ_NAME ${ASM_OBJ} NAME)
+				FILE(TO_NATIVE_PATH ${ASM_OBJ} ASM_OBJ_NATIVE)
+				FILE(TO_NATIVE_PATH ${ASM_SRC} ASM_SRC_NATIVE)
+
+				add_custom_command(
+					OUTPUT ${ASM_OBJ}
+					COMMAND ${CMAKE_COMMAND} -E make_directory ${ASM_OBJ_PATH}
+					COMMAND ${CMAKE_ASM_NASM_COMPILER} -o ${ASM_OBJ_NATIVE} -f ${CMAKE_ASM_NASM_OBJECT_FORMAT} ${CMAKE_ASM_NASM_FLAGS} -- ${ASM_SRC_NATIVE}
+					DEPENDS ${ASM_SRC}
+					VERBATIM
+					WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+					COMMENT "NASM compile ${ASM_SRC_NATIVE}")
+				add_custom_target(${ASM_OBJ_NAME}
+					COMMENT "Building ${ASM_OBJ_NAME}"
+					DEPENDS ${ASM_OBJ}
+					SOURCES ${ASM_SRC})
+				freerdp_dependency_add(${ASM_OBJ_NAME})
+				freerdp_library_add(${ASM_OBJ})
+			endforeach()
+		else()
+			set(CODEC_SRCS ${CODEC_SRCS} ${ASM_SRCS})
+		endif()
 	endif()
 endif()
 
@@ -308,7 +314,7 @@ if(WITH_SSE2)
 	endif()
 elseif(WITH_NEON)
 	if(CMAKE_COMPILER_IS_GNUCC)
-	    set(OPTIMIZATION "${OPTIMIZATION} -mfpu=neon -mfloat-abi=${ARM_FP_ABI}")
+			set(OPTIMIZATION "${OPTIMIZATION} -mfpu=neon -mfloat-abi=${ARM_FP_ABI}")
 	endif()
 	# TODO: Add MSVC equivalent
 endif()
@@ -329,7 +335,7 @@ freerdp_module_add(${PRIMITIVES_SRCS})
 
 if(IPP_FOUND)
 	freerdp_include_directory_add(${IPP_INCLUDE_DIRS})
-    foreach(ipp_lib ${IPP_LIBRARIES})
+		foreach(ipp_lib ${IPP_LIBRARIES})
 		freerdp_library_add("${ipp_lib}_imported")
 	endforeach()
 endif()
@@ -350,17 +356,17 @@ include_directories(${LIBFREERDP_INCLUDES})
 # On windows create dll version information.
 # Vendor, product and year are already set in top level CMakeLists.txt
 if (WIN32)
-  set (RC_VERSION_MAJOR ${FREERDP_VERSION_MAJOR})
-  set (RC_VERSION_MINOR ${FREERDP_VERSION_MINOR})
-  set (RC_VERSION_BUILD ${FREERDP_VERSION_REVISION})
-  set (RC_VERSION_FILE "${CMAKE_SHARED_LIBRARY_PREFIX}${MODULE_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX}" )
+	set (RC_VERSION_MAJOR ${FREERDP_VERSION_MAJOR})
+	set (RC_VERSION_MINOR ${FREERDP_VERSION_MINOR})
+	set (RC_VERSION_BUILD ${FREERDP_VERSION_REVISION})
+	set (RC_VERSION_FILE "${CMAKE_SHARED_LIBRARY_PREFIX}${MODULE_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX}" )
 
-  configure_file(
-    ${CMAKE_SOURCE_DIR}/cmake/WindowsDLLVersion.rc.in
-    ${CMAKE_CURRENT_BINARY_DIR}/version.rc
-    @ONLY)
+	configure_file(
+		${CMAKE_SOURCE_DIR}/cmake/WindowsDLLVersion.rc.in
+		${CMAKE_CURRENT_BINARY_DIR}/version.rc
+		@ONLY)
 
-  set (LIBFREERDP_SRCS ${LIBFREERDP_SRCS} ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
+	set (LIBFREERDP_SRCS ${LIBFREERDP_SRCS} ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
 endif()
 
 add_library(${MODULE_NAME} ${LIBFREERDP_SRCS})
