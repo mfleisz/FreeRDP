@@ -707,7 +707,7 @@ UINT FreeRDP_VirtualChannelEventPush(DWORD openHandle, wMessage* event)
 	return CHANNEL_RC_OK;
 }
 
-int freerdp_channels_client_load(rdpChannels* channels, rdpSettings* settings, void* entry, void* data)
+int freerdp_channels_client_load(rdpChannels* channels, rdpSettings* settings, PVIRTUALCHANNELENTRY entry, void* data)
 {
 	int status;
 	CHANNEL_ENTRY_POINTS_FREERDP EntryPoints;
