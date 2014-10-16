@@ -1124,7 +1124,7 @@ int freerdp_client_settings_command_line_status_print(rdpSettings* settings, int
 	{
 		arg = CommandLineFindArgumentA(args, "kbd-list");
 
-		if (arg->Flags & COMMAND_LINE_VALUE_PRESENT)
+		if (arg && arg->Flags & COMMAND_LINE_VALUE_PRESENT)
 		{
 			int i;
 			RDP_KEYBOARD_LAYOUT* layouts;
@@ -1152,7 +1152,7 @@ int freerdp_client_settings_command_line_status_print(rdpSettings* settings, int
 
 		arg = CommandLineFindArgumentA(args, "monitor-list");
 
-		if (arg->Flags & COMMAND_LINE_VALUE_PRESENT)
+		if (arg && arg->Flags & COMMAND_LINE_VALUE_PRESENT)
 		{
 			settings->ListMonitors = TRUE;
 		}
@@ -1912,21 +1912,21 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 
 	arg = CommandLineFindArgumentA(args, "port");
 
-	if (arg->Flags & COMMAND_LINE_ARGUMENT_PRESENT)
+	if (arg && arg->Flags & COMMAND_LINE_ARGUMENT_PRESENT)
 	{
 		settings->ServerPort = atoi(arg->Value);
 	}
 
 	arg = CommandLineFindArgumentA(args, "p");
 
-	if (arg->Flags & COMMAND_LINE_ARGUMENT_PRESENT)
+	if (arg && arg->Flags & COMMAND_LINE_ARGUMENT_PRESENT)
 	{
 		FillMemory(arg->Value, strlen(arg->Value), '*');
 	}
 
 	arg = CommandLineFindArgumentA(args, "gp");
 
-	if (arg->Flags & COMMAND_LINE_ARGUMENT_PRESENT)
+	if (arg && arg->Flags & COMMAND_LINE_ARGUMENT_PRESENT)
 	{
 		FillMemory(arg->Value, strlen(arg->Value), '*');
 	}
