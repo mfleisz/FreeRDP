@@ -219,7 +219,12 @@ endif()
 
 if(MSVC)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Gd")
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W3")
+  string(REGEX MATCH "/W[0-9]" WARN_FOUND ${CMAKE_C_FLAGS})
+  if ("${WARN_FOUND}" STREQUAL "")
+  	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W3")
+  else()
+    string(REGEX REPLACE "/W[0-9]" "/W3" CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
+  endif()
 
 	if(CMAKE_SIZEOF_VOID_P EQUAL 8)
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_AMD64_")
