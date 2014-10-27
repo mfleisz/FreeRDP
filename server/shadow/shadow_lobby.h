@@ -1,8 +1,7 @@
 /**
  * FreeRDP: A Remote Desktop Protocol Implementation
- * Windows RAIL
  *
- * Copyright 2012 Jason Champion <jchampion@zetacentauri.com>
+ * Copyright 2014 Marc-Andre Moreau <marcandre.moreau@gmail.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +16,24 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
+#ifndef FREERDP_SHADOW_SERVER_LOBBY_H
+#define FREERDP_SHADOW_SERVER_LOBBY_H
+
+#include <freerdp/server/shadow.h>
+
+#include <winpr/crt.h>
+#include <winpr/synch.h>
+
+#include <rdtk/rdtk.h>
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
-#include "wf_window.h"
+int shadow_client_init_lobby(rdpShadowClient* client);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* FREERDP_SHADOW_SERVER_LOBBY_H */

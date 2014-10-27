@@ -36,26 +36,27 @@
 #include <assert.h>
 #include <sys/types.h>
 
-#ifdef _MSC_VER
-#include <intrin.h>
-#endif
-
+#include <freerdp/log.h>
+#include <freerdp/event.h>
 #include <freerdp/freerdp.h>
 #include <freerdp/constants.h>
-#include <freerdp/utils/event.h>
 
+#include <freerdp/codec/region.h>
 #include <freerdp/client/cmdline.h>
 #include <freerdp/client/channels.h>
 #include <freerdp/channels/channels.h>
-#include <freerdp/event.h>
 
 #include "wf_gdi.h"
+#include "wf_rail.h"
+#include "wf_channels.h"
 #include "wf_graphics.h"
 #include "wf_cliprdr.h"
 
-#include "wf_interface.h"
+#include "wf_client.h"
 
 #include "resource.h"
+
+#define TAG CLIENT_TAG("windows")
 
 int wf_create_console(void)
 {
@@ -64,9 +65,7 @@ int wf_create_console(void)
 
 	freopen("CONOUT$", "w", stdout);
 	freopen("CONOUT$", "w", stderr);
-
-	DEBUG_WARN( "Debug console created.\n");
-
+	WLog_INFO(TAG,  "Debug console created.");
 	return 0;
 }
 
@@ -81,34 +80,50 @@ void wf_sw_end_paint(wfContext* wfc)
 {
 	int i;
 	rdpGdi* gdi;
-	INT32 x, y;
-	UINT32 w, h;
 	int ninvalid;
-	RECT update_rect;
+	RECT updateRect;
 	HGDI_RGN cinvalid;
+	REGION16 invalidRegion;
+	RECTANGLE_16 invalidRect;
+	const RECTANGLE_16* extents;
+	rdpContext* context = (rdpContext*) wfc;
 
-	gdi = ((rdpContext*) wfc)->gdi;
-
-	if (gdi->primary->hdc->hwnd->ninvalid < 1)
-		return;
+	gdi = context->gdi;
 
 	ninvalid = gdi->primary->hdc->hwnd->ninvalid;
 	cinvalid = gdi->primary->hdc->hwnd->cinvalid;
 
+	if (ninvalid < 1)
+		return;
+
+	region16_init(&invalidRegion);
+
 	for (i = 0; i < ninvalid; i++)
 	{
-		x = cinvalid[i].x;
-		y = cinvalid[i].y;
-		w = cinvalid[i].w;
-		h = cinvalid[i].h;
+		invalidRect.left = cinvalid[i].x;
+		invalidRect.top = cinvalid[i].y;
+		invalidRect.right = cinvalid[i].x + cinvalid[i].w;
+		invalidRect.bottom = cinvalid[i].y + cinvalid[i].h;
 
-		update_rect.left = x;
-		update_rect.top = y;
-		update_rect.right = x + w - 1;
-		update_rect.bottom = y + h - 1;
-
-		InvalidateRect(wfc->hwnd, &update_rect, FALSE);
+		region16_union_rect(&invalidRegion, &invalidRegion, &invalidRect);
 	}
+
+	if (!region16_is_empty(&invalidRegion))
+	{
+		extents = region16_extents(&invalidRegion);
+
+		updateRect.left = extents->left;
+		updateRect.top = extents->top;
+		updateRect.right = extents->right;
+		updateRect.bottom = extents->bottom;
+
+		InvalidateRect(wfc->hwnd, &updateRect, FALSE);
+
+		if (wfc->rail)
+			wf_rail_invalidate_region(wfc, &invalidRegion);
+	}
+
+	region16_uninit(&invalidRegion);
 }
 
 void wf_sw_desktop_resize(wfContext* wfc)
@@ -202,9 +217,7 @@ BOOL wf_pre_connect(freerdp* instance)
 		}
 
 		wfc->connectionRdpFile = freerdp_client_rdp_file_new();
-
-		DEBUG_WARN( "Using connection file: %s\n", settings->ConnectionFile);
-
+		WLog_INFO(TAG,  "Using connection file: %s", settings->ConnectionFile);
 		freerdp_client_parse_rdp_file(wfc->connectionRdpFile, settings->ConnectionFile);
 		freerdp_client_populate_settings_from_rdp_file(wfc->connectionRdpFile, settings);
 	}
@@ -237,9 +250,9 @@ BOOL wf_pre_connect(freerdp* instance)
 	settings->GlyphSupportLevel = GLYPH_SUPPORT_NONE;
 
 	wfc->fullscreen = settings->Fullscreen;
+
 	if (wfc->fullscreen)
 		wfc->fs_toggle = 1;
-	wfc->sw_gdi = settings->SoftwareGdi;
 
 	wfc->clrconv = (HCLRCONV) malloc(sizeof(CLRCONV));
 	ZeroMemory(wfc->clrconv, sizeof(CLRCONV));
@@ -292,11 +305,18 @@ BOOL wf_pre_connect(freerdp* instance)
 	if ((settings->DesktopWidth < 64) || (settings->DesktopHeight < 64) ||
 		(settings->DesktopWidth > 4096) || (settings->DesktopHeight > 4096))
 	{
-		DEBUG_WARN( "wf_pre_connect: invalid dimensions %d %d\n", settings->DesktopWidth, settings->DesktopHeight);
+		WLog_ERR(TAG, "invalid dimensions %d %d", settings->DesktopWidth, settings->DesktopHeight);
 		return 1;
 	}
 
 	freerdp_set_param_uint32(settings, FreeRDP_KeyboardLayout, (int) GetKeyboardLayout(0) & 0x0000FFFF);
+
+	PubSub_SubscribeChannelConnected(instance->context->pubSub,
+		(pChannelConnectedEventHandler) wf_OnChannelConnectedEventHandler);
+
+	PubSub_SubscribeChannelDisconnected(instance->context->pubSub,
+		(pChannelDisconnectedEventHandler) wf_OnChannelDisconnectedEventHandler);
+
 	freerdp_channels_pre_connect(instance->context->channels, instance);
 
 	return TRUE;
@@ -345,7 +365,7 @@ BOOL wf_post_connect(freerdp* instance)
 	wfc->width = settings->DesktopWidth;
 	wfc->height = settings->DesktopHeight;
 
-	if (wfc->sw_gdi)
+	if (settings->SoftwareGdi)
 	{
 		wfc->primary = wf_image_new(wfc, wfc->width, wfc->height, wfc->dstBpp, NULL);
 
@@ -403,7 +423,7 @@ BOOL wf_post_connect(freerdp* instance)
 		wfc->hwnd = CreateWindowEx((DWORD) NULL, wfc->wndClassName, lpWindowName, dwStyle,
 			0, 0, 0, 0, wfc->hWndParent, NULL, wfc->hInstance, NULL);
 
-		SetWindowLongPtr(wfc->hwnd, GWLP_USERDATA, (LONG_PTR) wfc);	   
+		SetWindowLongPtr(wfc->hwnd, GWLP_USERDATA, (LONG_PTR) wfc);
 	}
 
 	wf_resize_window(wfc);
@@ -421,7 +441,7 @@ BOOL wf_post_connect(freerdp* instance)
 	ShowWindow(wfc->hwnd, SW_SHOWNORMAL);
 	UpdateWindow(wfc->hwnd);
 
-	if (wfc->sw_gdi)
+	if (settings->SoftwareGdi)
 	{											
 		instance->update->BeginPaint = (pBeginPaint) wf_sw_begin_paint;
 		instance->update->EndPaint = (pEndPaint) wf_sw_end_paint;
@@ -435,19 +455,19 @@ BOOL wf_post_connect(freerdp* instance)
 	}
 
 	pointer_cache_register_callbacks(instance->update);
+	wf_register_pointer(context->graphics);
 
-	if (wfc->sw_gdi != TRUE)
+	if (!settings->SoftwareGdi)
 	{
 		brush_cache_register_callbacks(instance->update);
 		bitmap_cache_register_callbacks(instance->update);
 		offscreen_cache_register_callbacks(instance->update);
+		wf_register_graphics(context->graphics);
+		instance->update->BitmapUpdate = wf_gdi_bitmap_update;
 	}
 
-	wf_register_graphics(instance->context->graphics);
+	freerdp_channels_post_connect(context->channels, instance);
 
-	freerdp_channels_post_connect(instance->context->channels, instance);
-
-	wf_cliprdr_init(wfc, instance->context->channels);
 	if (wfc->fullscreen)
 		floatbar_window_create(wfc);
 
@@ -486,7 +506,7 @@ BOOL wf_authenticate(freerdp* instance, char** username, char** password, char**
 
 	if (status != NO_ERROR)
 	{
-		DEBUG_WARN( "CredUIPromptForCredentials unexpected status: 0x%08X\n", status);
+		WLog_ERR(TAG,  "CredUIPromptForCredentials unexpected status: 0x%08X", status);
 		return FALSE;
 	}
 
@@ -494,9 +514,7 @@ BOOL wf_authenticate(freerdp* instance, char** username, char** password, char**
 	ZeroMemory(Domain, sizeof(Domain));
 
 	status = CredUIParseUserNameA(UserName, User, sizeof(User), Domain, sizeof(Domain));
-
-	//DEBUG_WARN( "User: %s Domain: %s Password: %s\n", User, Domain, Password);
-
+	//WLog_ERR(TAG,  "User: %s Domain: %s Password: %s", User, Domain, Password);
 	*username = _strdup(User);
 
 	if (strlen(Domain) > 0)
@@ -517,15 +535,13 @@ BOOL wf_verify_certificate(freerdp* instance, char* subject, char* issuer, char*
 	TCHAR* read_buffer;
 	HANDLE input_handle;
 #endif
-
-	printf("Certificate details:\n");
-	printf("\tSubject: %s\n", subject);
-	printf("\tIssuer: %s\n", issuer);
-	printf("\tThumbprint: %s\n", fingerprint);
-	printf("The above X.509 certificate could not be verified, possibly because you do not have "
-		"the CA certificate in your certificate store, or the certificate has expired. "
-		"Please look at the documentation on how to create local certificate store for a private CA.\n");
-
+	WLog_INFO(TAG, "Certificate details:");
+	WLog_INFO(TAG, "\tSubject: %s", subject);
+	WLog_INFO(TAG, "\tIssuer: %s", issuer);
+	WLog_INFO(TAG, "\tThumbprint: %s", fingerprint);
+	WLog_INFO(TAG, "The above X.509 certificate could not be verified, possibly because you do not have "
+			  "the CA certificate in your certificate store, or the certificate has expired. "
+			  "Please look at the documentation on how to create local certificate store for a private CA.");
 	/* TODO: ask for user validation */
 #if 0
 	input_handle = GetStdHandle(STD_INPUT_HANDLE);
@@ -541,30 +557,6 @@ BOOL wf_verify_certificate(freerdp* instance, char* subject, char* issuer, char*
 int wf_receive_channel_data(freerdp* instance, UINT16 channelId, BYTE* data, int size, int flags, int total_size)
 {
 	return freerdp_channels_data(instance, channelId, data, size, flags, total_size);
-}
-
-void wf_process_channel_event(rdpChannels* channels, freerdp* instance)
-{
-	wfContext* wfc;
-	wMessage* event;
-
-	wfc = (wfContext*) instance->context;
-	event = freerdp_channels_pop_event(channels);
-
-	if (event)
-	{
-		switch (GetMessageClass(event->id))
-		{
-			case CliprdrChannel_Class:
-				wf_process_cliprdr_event(wfc, event);
-				break;
-
-			default:
-				break;
-		}
-
-		freerdp_event_free(event);
-	}
 }
 
 BOOL wf_get_fds(freerdp* instance, void** rfds, int* rcount, void** wfds, int* wcount)
@@ -589,7 +581,8 @@ static BOOL wf_auto_reconnect(freerdp* instance)
 		return FALSE;
 
 	/* A network disconnect was detected */
-	DEBUG_WARN( "Network disconnect!\n");
+	WLog_ERR(TAG,  "Network disconnect!");
+
 	if (!instance->settings->AutoReconnectionEnabled)
 	{
 		/* No auto-reconnect - just quit */
@@ -604,7 +597,8 @@ static BOOL wf_auto_reconnect(freerdp* instance)
 			return FALSE;
 
 		/* Attempt the next reconnect */
-		DEBUG_WARN( "Attempting reconnect (%u of %u)\n", num_retries, max_retries);
+		WLog_INFO(TAG,  "Attempting reconnect (%u of %u)", num_retries, max_retries);
+
 		if (freerdp_reconnect(instance))
 		{
 			return TRUE;
@@ -613,8 +607,7 @@ static BOOL wf_auto_reconnect(freerdp* instance)
 		Sleep(5000);
 	}
 
-	DEBUG_WARN( "Maximum reconnect retries exceeded\n");
-
+	WLog_ERR(TAG,  "Maximum reconnect retries exceeded");
 	return FALSE;
 }
 
@@ -657,7 +650,6 @@ void* wf_channels_thread(void* arg)
 	HANDLE event;
 	rdpChannels* channels;
 	freerdp* instance = (freerdp*) arg;
-	assert(NULL != instance);
 
 	channels = instance->context->channels;
 	event = freerdp_channels_get_event_handle(instance);
@@ -665,10 +657,9 @@ void* wf_channels_thread(void* arg)
 	while (WaitForSingleObject(event, INFINITE) == WAIT_OBJECT_0)
 	{
 		status = freerdp_channels_process_pending_messages(instance);
+
 		if (!status)
 			break;
-
-		wf_process_channel_event(channels, instance);
 	}
 
 	ExitThread(0);
@@ -736,17 +727,23 @@ DWORD WINAPI wf_client_thread(LPVOID lpParam)
 		rcount = 0;
 		wcount = 0;
 
+		if (freerdp_focus_required(instance))
+		{
+			wf_event_focus_in(wfc);
+			wf_event_focus_in(wfc);
+		}
+
 		if (!async_transport)
 		{
 			if (freerdp_get_fds(instance, rfds, &rcount, wfds, &wcount) != TRUE)
 			{
-				DEBUG_WARN( "Failed to get FreeRDP file descriptor\n");
+				WLog_ERR(TAG,  "Failed to get FreeRDP file descriptor");
 				break;
 			}
 		}
 		if (wf_get_fds(instance, rfds, &rcount, wfds, &wcount) != TRUE)
 		{
-			DEBUG_WARN( "Failed to get wfreerdp file descriptor\n");
+			WLog_ERR(TAG,  "Failed to get wfreerdp file descriptor");
 			break;
 		}
 
@@ -754,7 +751,7 @@ DWORD WINAPI wf_client_thread(LPVOID lpParam)
 		{
 			if (freerdp_channels_get_fds(channels, instance, rfds, &rcount, wfds, &wcount) != TRUE)
 			{
-				DEBUG_WARN( "Failed to get channel manager file descriptor\n");
+				WLog_ERR(TAG,  "Failed to get channel manager file descriptor");
 				break;
 			}
 		}
@@ -772,14 +769,14 @@ DWORD WINAPI wf_client_thread(LPVOID lpParam)
 		/* exit if nothing to do */
 		if (fds_count == 0)
 		{
-			DEBUG_WARN( "wfreerdp_run: fds_count is zero\n");
+			WLog_ERR(TAG,  "wfreerdp_run: fds_count is zero");
 			//break;
 		}
 
 		/* do the wait */
 		if (MsgWaitForMultipleObjects(fds_count, fds, FALSE, 1000, QS_ALLINPUT) == WAIT_FAILED)
 		{
-			DEBUG_WARN( "wfreerdp_run: WaitForMultipleObjects failed: 0x%04X\n", GetLastError());
+			WLog_ERR(TAG,  "wfreerdp_run: WaitForMultipleObjects failed: 0x%04X", GetLastError());
 			break;
 		}
 
@@ -790,7 +787,7 @@ DWORD WINAPI wf_client_thread(LPVOID lpParam)
 				if (wf_auto_reconnect(instance))
 					continue;
 
-				DEBUG_WARN( "Failed to check FreeRDP file descriptor\n");
+				WLog_ERR(TAG,  "Failed to check FreeRDP file descriptor");
 				break;
 			}
 		}
@@ -800,7 +797,7 @@ DWORD WINAPI wf_client_thread(LPVOID lpParam)
 		}
 		if (wf_check_fds(instance) != TRUE)
 		{
-			DEBUG_WARN( "Failed to check wfreerdp file descriptor\n");
+			WLog_ERR(TAG,  "Failed to check wfreerdp file descriptor");
 			break;
 		}
 
@@ -808,11 +805,9 @@ DWORD WINAPI wf_client_thread(LPVOID lpParam)
 		{
 			if (freerdp_channels_check_fds(channels, instance) != TRUE)
 			{
-				DEBUG_WARN( "Failed to check channel manager file descriptor\n");
+				WLog_ERR(TAG,  "Failed to check channel manager file descriptor");
 				break;
 			}
-
-			wf_process_channel_event(channels, instance);
 		}
 
 		quit_msg = FALSE;
@@ -879,9 +874,7 @@ DWORD WINAPI wf_client_thread(LPVOID lpParam)
 	}
 
 	freerdp_disconnect(instance);
-
-	printf("Main thread exited.\n");
-
+	WLog_DBG(TAG, "Main thread exited.");
 	ExitThread(0);
 	
 	return 0;
@@ -905,7 +898,7 @@ DWORD WINAPI wf_keyboard_thread(LPVOID lpParam)
 		{
 			if (status == -1)
 			{
-				DEBUG_WARN( "keyboard thread error getting message\n");
+				WLog_ERR(TAG,  "keyboard thread error getting message");
 				break;
 			}
 			else
@@ -919,11 +912,10 @@ DWORD WINAPI wf_keyboard_thread(LPVOID lpParam)
 	}
 	else
 	{
-		DEBUG_WARN( "failed to install keyboard hook\n");
+		WLog_ERR(TAG,  "failed to install keyboard hook");
 	}
 
-	printf("Keyboard thread exited.\n");
-
+	WLog_DBG(TAG, "Keyboard thread exited.");
 	ExitThread(0);
 	return (DWORD) NULL;
 }
@@ -947,8 +939,8 @@ int freerdp_client_focus_out(wfContext* wfc)
 
 int freerdp_client_set_window_size(wfContext* wfc, int width, int height)
 {
-	DEBUG_WARN( "freerdp_client_set_window_size %d, %d", width, height);
-	
+	WLog_DBG(TAG,  "freerdp_client_set_window_size %d, %d", width, height);
+
 	if ((width != wfc->client_width) || (height != wfc->client_height))
 	{
 		PostThreadMessage(wfc->mainThreadId, WM_SIZE, SIZE_RESTORED, ((UINT) height << 16) | (UINT) width);
@@ -971,8 +963,7 @@ int freerdp_client_load_settings_from_rdp_file(wfContext* wfc, char* filename)
 		// free old settings file
 		freerdp_client_rdp_file_free(wfc->connectionRdpFile);
 		wfc->connectionRdpFile = freerdp_client_rdp_file_new();
-
-		DEBUG_WARN( "Using connection file: %s\n", settings->ConnectionFile);
+		WLog_INFO(TAG,  "Using connection file: %s", settings->ConnectionFile);
 
 		if (!freerdp_client_parse_rdp_file(wfc->connectionRdpFile, settings->ConnectionFile))
 		{
@@ -1135,8 +1126,9 @@ int wfreerdp_client_new(freerdp* instance, rdpContext* context)
 	instance->ReceiveChannelData = wf_receive_channel_data;
 
 	wfc->instance = instance;
+	wfc->settings = instance->settings;
 	context->channels = freerdp_channels_new();
-	
+
 	return 0;
 }
 

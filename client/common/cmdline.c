@@ -32,11 +32,14 @@
 #include <freerdp/crypto/crypto.h>
 #include <freerdp/locale/keyboard.h>
 
-#include <freerdp/utils/debug.h>
+
 #include <freerdp/client/cmdline.h>
 #include <freerdp/version.h>
 
 #include "compatibility.h"
+
+#include <freerdp/log.h>
+#define TAG CLIENT_TAG("common.cmdline")
 
 COMMAND_LINE_ARGUMENT_A args[] =
 {
@@ -209,7 +212,7 @@ int freerdp_client_print_command_line_help(int argc, char** argv)
 
 			if (arg->Format)
 			{
-				length = (int) (strlen(arg->Name) + strlen(arg->Format) + 2);
+				length = (int)(strlen(arg->Name) + strlen(arg->Format) + 2);
 				str = (char*) malloc(length + 1);
 				sprintf_s(str, length + 1, "%s:%s", arg->Name, arg->Format);
 				printf("%-20s", str);
@@ -253,8 +256,8 @@ int freerdp_client_print_command_line_help(int argc, char** argv)
 
 	printf("Drive Redirection: /drive:home,/home/user\n");
 	printf("Smartcard Redirection: /smartcard:<device>\n");
-	printf("Printer Redirection: /printer:<device>,<driver>\n");
-	printf("Serial Port Redirection: /serial:<device>\n");
+	printf("Serial Port Redirection: /serial:<name>,<device>,[SerCx2|SerCx|Serial],[permissive]\n");
+	printf("Serial Port Redirection: /serial:COM1,/dev/ttyS0\n");
 	printf("Parallel Port Redirection: /parallel:<device>\n");
 	printf("Printer Redirection: /printer:<device>,<driver>\n");
 	printf("\n");
@@ -421,6 +424,9 @@ int freerdp_client_add_device_channel(rdpSettings* settings, int count, char** p
 
 		if (count > 3)
 			serial->Driver = _strdup(params[3]);
+
+		if (count > 4)
+			serial->Permissive = _strdup(params[4]);
 
 		freerdp_device_collection_add(settings, (RDPDR_DEVICE*) serial);
 
@@ -676,38 +682,19 @@ int freerdp_client_command_line_post_filter(void* context, COMMAND_LINE_ARGUMENT
 	}
 	CommandLineSwitchCase(arg, "multitouch")
 	{
-		char* p[1];
-		int count = 1;
-
 		settings->MultiTouchInput = TRUE;
-
-		p[0] = "rdpei";
-		freerdp_client_add_dynamic_channel(settings, count, p);
 	}
 	CommandLineSwitchCase(arg, "gestures")
 	{
-		printf("gestures\n");
 		settings->MultiTouchGestures = TRUE;
 	}
 	CommandLineSwitchCase(arg, "echo")
 	{
-		char* p[1];
-		int count;
-
-		count = 1;
-		p[0] = "echo";
-
-		freerdp_client_add_dynamic_channel(settings, count, p);
+		settings->SupportEchoChannel = TRUE;
 	}
 	CommandLineSwitchCase(arg, "disp")
 	{
-		char* p[1];
-		int count;
-
-		count = 1;
-		p[0] = "disp";
-
-		freerdp_client_add_dynamic_channel(settings, count, p);
+		settings->SupportDisplayControl = TRUE;
 	}
 	CommandLineSwitchCase(arg, "sound")
 	{
@@ -862,6 +849,7 @@ int freerdp_parse_hostname(char* hostname, char** host, int* port)
 int freerdp_set_connection_type(rdpSettings* settings, int type)
 {
 	settings->ConnectionType = type;
+
 	if (type == CONNECTION_TYPE_MODEM)
 	{
 		settings->DisableWallpaper = TRUE;
@@ -1087,6 +1075,9 @@ BOOL freerdp_client_detect_command_line(int argc, char** argv, DWORD* flags)
 	*flags |= COMMAND_LINE_SIGIL_DASH | COMMAND_LINE_SIGIL_DOUBLE_DASH;
 	*flags |= COMMAND_LINE_SIGIL_ENABLE_DISABLE;
 
+	if (posix_cli_status <= COMMAND_LINE_STATUS_PRINT)
+		return compatibility;
+
 	if (windows_cli_count >= posix_cli_count)
 	{
 		*flags = COMMAND_LINE_SEPARATOR_COLON;
@@ -1105,8 +1096,8 @@ BOOL freerdp_client_detect_command_line(int argc, char** argv, DWORD* flags)
 		}
 	}
 
-	//printf("windows: %d/%d posix: %d/%d compat: %d/%d\n", windows_cli_status, windows_cli_count,
-	//		posix_cli_status, posix_cli_count, old_cli_status, old_cli_count);
+	WLog_DBG(TAG, "windows: %d/%d posix: %d/%d compat: %d/%d", windows_cli_status, windows_cli_count,
+		posix_cli_status, posix_cli_count, old_cli_status, old_cli_count);
 
 	return compatibility;
 }
@@ -1182,7 +1173,7 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 
 	if (compatibility)
 	{
-		DEBUG_WARN( "WARNING: Using deprecated command-line interface!\n");
+		WLog_WARN(TAG,  "Using deprecated command-line interface!");
 		return freerdp_client_parse_old_command_line_arguments(argc, argv, settings);
 	}
 	else
@@ -1209,19 +1200,39 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 
 		CommandLineSwitchCase(arg, "v")
 		{
-			p = strchr(arg->Value, ':');
-
-			if (p)
+			p = strchr(arg->Value, '[');
+			/* ipv4 */
+			if (!p)
 			{
-				length = (int) (p - arg->Value);
-				settings->ServerPort = atoi(&p[1]);
-				settings->ServerHostname = (char*) malloc(length + 1);
-				strncpy(settings->ServerHostname, arg->Value, length);
-				settings->ServerHostname[length] = '\0';
+				p = strchr(arg->Value, ':');
+				if (p)
+				{
+					length = (int) (p - arg->Value);
+					settings->ServerPort = atoi(&p[1]);
+					settings->ServerHostname = (char*) malloc(length + 1);
+					strncpy(settings->ServerHostname, arg->Value, length);
+					settings->ServerHostname[length] = '\0';
+				}
+				else
+				{
+					settings->ServerHostname = _strdup(arg->Value);
+				}
 			}
-			else
+			else /* ipv6 */
 			{
-				settings->ServerHostname = _strdup(arg->Value);
+				char *p2 = strchr(arg->Value, ']');
+				/* not a valid [] ipv6 addr found */
+				if (!p2)
+					continue;
+
+				length = p2 - p;
+				settings->ServerHostname = (char*) malloc(length);
+				strncpy(settings->ServerHostname, p+1, length-1);
+				if (*(p2 + 1) == ':')
+				{
+					settings->ServerPort = atoi(&p2[2]);
+				}
+				printf("hostname %s port %d\n", settings->ServerHostname, settings->ServerPort);
 			}
 		}
 		CommandLineSwitchCase(arg, "spn-class")
@@ -1374,7 +1385,7 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 
 				if (!id)
 				{
-					DEBUG_WARN( "Could not identify keyboard layout: %s\n", arg->Value);
+					WLog_ERR(TAG,  "Could not identify keyboard layout: %s", arg->Value);
 				}
 			}
 
@@ -1586,8 +1597,12 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 					type = CONNECTION_TYPE_WAN;
 				else if (_stricmp(arg->Value, "lan") == 0)
 					type = CONNECTION_TYPE_LAN;
-				else if (_stricmp(arg->Value, "auto") == 0)
+				else if ((_stricmp(arg->Value, "autodetect") == 0) ||
+						(_stricmp(arg->Value, "auto") == 0) ||
+						(_stricmp(arg->Value, "detect") == 0))
+				{
 					type = CONNECTION_TYPE_AUTODETECT;
+				}
 			}
 
 			freerdp_set_connection_type(settings, type);
@@ -1733,7 +1748,7 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 			}
 			else
 			{
-				DEBUG_WARN( "unknown protocol security: %s\n", arg->Value);
+				WLog_ERR(TAG,  "unknown protocol security: %s", arg->Value);
 			}
 		}
 		CommandLineSwitchCase(arg, "sec-rdp")
@@ -1879,8 +1894,7 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 			}
 			else
 			{
-				DEBUG_WARN( "reconnect-cookie:  invalid base64 '%s'\n",
-					arg->Value);
+				WLog_ERR(TAG,  "reconnect-cookie:  invalid base64 '%s'", arg->Value);
 			}
 		}
 		CommandLineSwitchCase(arg, "print-reconnect-cookie")
@@ -1944,7 +1958,7 @@ int freerdp_client_load_static_channel_addin(rdpChannels* channels, rdpSettings*
 	{
 		if (freerdp_channels_client_load(channels, settings, entry, data) == 0)
 		{
-			DEBUG_WARN( "loading channel %s\n", name);
+			WLog_INFO(TAG,  "loading channel %s", name);
 			return 0;
 		}
 	}
@@ -2080,6 +2094,17 @@ int freerdp_client_load_addins(rdpChannels* channels, rdpSettings* settings)
 		freerdp_client_load_static_channel_addin(channels, settings, "rail", settings);
 	}
 
+	if (settings->MultiTouchInput)
+	{
+		char* p[1];
+		int count;
+
+		count = 1;
+		p[0] = "rdpei";
+
+		freerdp_client_add_dynamic_channel(settings, count, p);
+	}
+
 	if (settings->SupportGraphicsPipeline)
 	{
 		char* p[1];
@@ -2087,6 +2112,28 @@ int freerdp_client_load_addins(rdpChannels* channels, rdpSettings* settings)
 
 		count = 1;
 		p[0] = "rdpgfx";
+
+		freerdp_client_add_dynamic_channel(settings, count, p);
+	}
+
+	if (settings->SupportEchoChannel)
+	{
+		char* p[1];
+		int count;
+
+		count = 1;
+		p[0] = "echo";
+
+		freerdp_client_add_dynamic_channel(settings, count, p);
+	}
+
+	if (settings->SupportDisplayControl)
+	{
+		char* p[1];
+		int count;
+
+		count = 1;
+		p[0] = "disp";
 
 		freerdp_client_add_dynamic_channel(settings, count, p);
 	}
