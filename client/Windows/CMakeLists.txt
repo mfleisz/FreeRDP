@@ -19,26 +19,20 @@ set(MODULE_NAME "wfreerdp-client")
 set(MODULE_PREFIX "FREERDP_CLIENT_WINDOWS_CONTROL")
 
 set(${MODULE_PREFIX}_SRCS
-	wf_cliprdr_DataObject.c
-	wf_cliprdr_DataObject.h
-	wf_cliprdr_EnumFORMATETC.c
-	wf_cliprdr_EnumFORMATETC.h
-	wf_cliprdr_Stream.c
-	wf_cliprdr_Stream.h
 	wf_gdi.c
 	wf_gdi.h
 	wf_event.c
 	wf_event.h
+	wf_channels.c
+	wf_channels.h
 	wf_graphics.c
 	wf_graphics.h
 	wf_cliprdr.c
 	wf_cliprdr.h
-	wf_window.c
-	wf_window.h
 	wf_rail.c
 	wf_rail.h
-	wf_interface.c
-	wf_interface.h
+	wf_client.c
+	wf_client.h
 	wf_floatbar.c
 	wf_floatbar.h
 	wfreerdp.rc

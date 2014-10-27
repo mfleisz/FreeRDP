@@ -27,12 +27,14 @@
 #include "message.h"
 #include "transport.h"
 
+#include <freerdp/log.h>
 #include <freerdp/freerdp.h>
 
 #include <winpr/crt.h>
 #include <winpr/stream.h>
 #include <winpr/collections.h>
 
+#define TAG FREERDP_TAG("core.message")
 #define WITH_STREAM_POOL	1
 
 /* Update */
@@ -123,6 +125,12 @@ static void update_message_PlaySound(rdpContext* context, PLAY_SOUND_UPDATE* pla
 
 	MessageQueue_Post(context->update->queue, (void*) context,
 			MakeMessageId(Update, PlaySound), (void*) wParam, NULL);
+}
+
+static void update_message_SetKeyboardIndicators(rdpContext* context, UINT16 led_flags)
+{
+	MessageQueue_Post(context->update->queue, (void*) context,
+			MakeMessageId(Update, SetKeyboardIndicators), (void*)(size_t)led_flags, NULL);
 }
 
 static void update_message_RefreshRect(rdpContext* context, BYTE count, RECTANGLE_16* areas)
@@ -762,7 +770,7 @@ static void update_message_WindowIcon(rdpContext* context, WINDOW_ORDER_INFO* or
 	lParam = (WINDOW_ICON_ORDER*) malloc(sizeof(WINDOW_ICON_ORDER));
 	CopyMemory(lParam, windowIcon, sizeof(WINDOW_ICON_ORDER));
 
-	DEBUG_WARN( "update_message_WindowIcon\n");
+	WLog_VRB(TAG,  "update_message_WindowIcon");
 
 	if (windowIcon->iconInfo->cbBitsColor > 0)
 	{
@@ -1059,6 +1067,7 @@ static int update_message_free_update_class(wMessage* msg, int type)
 			break;
 
 		case Update_SurfaceFrameAcknowledge:
+		case Update_SetKeyboardIndicators:
 			break;
 
 		default:
@@ -1132,6 +1141,10 @@ static int update_message_process_update_class(rdpUpdateProxy* proxy, wMessage* 
 
 		case Update_SurfaceFrameAcknowledge:
 			IFCALL(proxy->SurfaceFrameAcknowledge, msg->context, (UINT32) (size_t) msg->wParam);
+			break;
+
+		case Update_SetKeyboardIndicators:
+			IFCALL(proxy->SetKeyboardIndicators, msg->context, (UINT16) (size_t) msg->wParam);
 			break;
 
 		default:
@@ -1871,7 +1884,7 @@ static int update_message_free_class(wMessage*msg, int msgClass, int msgType)
 	}
 
 	if (status < 0)
-		DEBUG_WARN( "Unknown message: class: %d type: %d\n", msgClass, msgType);
+		WLog_ERR(TAG,  "Unknown message: class: %d type: %d", msgClass, msgType);
 
 	return status;
 }
@@ -1912,7 +1925,7 @@ static int update_message_process_class(rdpUpdateProxy* proxy, wMessage* msg, in
 	}
 
 	if (status < 0)
-		DEBUG_WARN( "Unknown message: class: %d type: %d\n", msgClass, msgType);
+		WLog_ERR(TAG,  "Unknown message: class: %d type: %d", msgClass, msgType);
 
 	return status;
 }
@@ -2004,6 +2017,7 @@ void update_message_register_interface(rdpUpdateProxy* message, rdpUpdate* updat
 	message->BitmapUpdate = update->BitmapUpdate;
 	message->Palette = update->Palette;
 	message->PlaySound = update->PlaySound;
+	message->SetKeyboardIndicators = update->SetKeyboardIndicators;
 	message->RefreshRect = update->RefreshRect;
 	message->SuppressOutput = update->SuppressOutput;
 	message->SurfaceCommand = update->SurfaceCommand;
@@ -2019,6 +2033,7 @@ void update_message_register_interface(rdpUpdateProxy* message, rdpUpdate* updat
 	update->BitmapUpdate = update_message_BitmapUpdate;
 	update->Palette = update_message_Palette;
 	update->PlaySound = update_message_PlaySound;
+	update->SetKeyboardIndicators = update_message_SetKeyboardIndicators;
 	update->RefreshRect = update_message_RefreshRect;
 	update->SuppressOutput = update_message_SuppressOutput;
 	update->SurfaceCommand = update_message_SurfaceCommand;
@@ -2166,7 +2181,7 @@ static void *update_message_proxy_thread(void *arg)
 
 	if (!update || !update->queue)
 	{
-		DEBUG_WARN("update=%p, update->queue=%p", update, update ? update->queue : NULL);
+		WLog_ERR(TAG, "update=%p, update->queue=%p", update, update ? update->queue : NULL);
 		ExitThread(-1);
 		return NULL;
 	}
@@ -2348,7 +2363,7 @@ static int input_message_free_class(wMessage* msg, int msgClass, int msgType)
 	}
 
 	if (status < 0)
-		DEBUG_WARN( "Unknown event: class: %d type: %d\n", msgClass, msgType);
+		WLog_ERR(TAG,  "Unknown event: class: %d type: %d", msgClass, msgType);
 
 	return status;
 }
@@ -2369,7 +2384,7 @@ static int input_message_process_class(rdpInputProxy* proxy, wMessage* msg, int 
 	}
 
 	if (status < 0)
-		DEBUG_WARN( "Unknown event: class: %d type: %d\n", msgClass, msgType);
+		WLog_ERR(TAG,  "Unknown event: class: %d type: %d", msgClass, msgType);
 
 	return status;
 }

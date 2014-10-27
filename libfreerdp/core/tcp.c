@@ -40,6 +40,8 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <net/if.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
 
 #ifdef HAVE_POLL_H
 #include <poll.h>
@@ -65,12 +67,14 @@
 
 #endif
 
-#include <freerdp/utils/debug.h>
+#include <freerdp/log.h>
 #include <freerdp/utils/tcp.h>
 #include <freerdp/utils/uds.h>
 #include <winpr/stream.h>
 
 #include "tcp.h"
+
+#define TAG FREERDP_TAG("core")
 
 /* Simple Socket BIO */
 
@@ -277,7 +281,7 @@ static int transport_bio_buffered_write(BIO* bio, const char* buf, int num)
 	 */
 	if (buf && num && !ringbuffer_write(&tcp->xmitBuffer, (const BYTE*) buf, num))
 	{
-		DEBUG_WARN( "%s: an error occured when writing(toWrite=%d)\n", __FUNCTION__, num);
+		WLog_ERR(TAG,  "an error occured when writing(toWrite=%d)", num);
 		return -1;
 	}
 
@@ -476,14 +480,13 @@ void tcp_get_mac_address(rdpTcp* tcp)
 
 	if (ioctl(tcp->sockfd, SIOCGIFHWADDR, &if_req) != 0)
 	{
-		DEBUG_WARN( "failed to obtain MAC address\n");
+		WLog_ERR(TAG,  "failed to obtain MAC address");
 		return;
 	}
 
 	memmove((void*) mac, (void*) &if_req.ifr_ifru.ifru_hwaddr.sa_data[0], 6);
 #endif
-
-	/* DEBUG_WARN( "MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+	/* WLog_ERR(TAG,  "MAC: %02X:%02X:%02X:%02X:%02X:%02X",
 		mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]); */
 }
 
@@ -522,6 +525,7 @@ BOOL tcp_connect(rdpTcp* tcp, const char* hostname, int port, int timeout)
 		struct timeval tv;
 #endif
 
+#ifdef NO_IPV6
 		tcp->socketBio = BIO_new(BIO_s_connect());
 
 		if (!tcp->socketBio)
@@ -541,6 +545,58 @@ BOOL tcp_connect(rdpTcp* tcp, const char* hostname, int port, int timeout)
 
 		if (tcp->sockfd < 0)
 			return FALSE;
+#else /* NO_IPV6 */
+		struct addrinfo hints = {0};
+		struct addrinfo *result;
+		struct addrinfo *tmp;
+		char port_str[11];
+
+		//ZeroMemory(&hints, sizeof(struct addrinfo));
+		hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
+		hints.ai_socktype = SOCK_STREAM;
+		/*
+		 * FIXME: the following is a nasty workaround. Find a cleaner way:
+		 * Either set port manually afterwards or get it passed as string?
+		 */
+		sprintf_s(port_str, 11, "%u", port);
+
+		status = getaddrinfo(hostname, port_str, &hints, &result);
+		if (status) {
+			fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
+			return FALSE;
+		}
+
+		/* For now prefer IPv4 over IPv6. */
+		tmp = result;
+		if (tmp->ai_family == AF_INET6 && tmp->ai_next != 0)
+		{
+			while ((tmp = tmp->ai_next))
+			{
+				if (tmp->ai_family == AF_INET)
+					break;
+			}
+			if (!tmp)
+				tmp = result;
+		}
+		tcp->sockfd = socket(tmp->ai_family, tmp->ai_socktype, tmp->ai_protocol);
+
+		if (tcp->sockfd  < 0) {
+			freeaddrinfo(result);
+			return FALSE;
+		}
+
+		if (connect(tcp->sockfd, tmp->ai_addr, tmp->ai_addrlen) < 0) {
+			fprintf(stderr, "connect: %s\n", strerror(errno));
+			freeaddrinfo(result);
+			return FALSE;
+		}
+		freeaddrinfo(result);
+		tcp->socketBio = BIO_new_socket(tcp->sockfd, BIO_NOCLOSE);
+
+		/* TODO: make sure the handshake is done by querying the bio */
+		//		if (BIO_should_retry(tcp->socketBio))
+		//          return FALSE;
+#endif /* NO_IPV6 */
 
 		if (status <= 0)
 		{
@@ -590,7 +646,7 @@ BOOL tcp_connect(rdpTcp* tcp, const char* hostname, int port, int timeout)
 	if (!tcp->ipcSocket)
 	{
 		if (setsockopt(tcp->sockfd, IPPROTO_TCP, TCP_NODELAY, (void*) &option_value, option_len) < 0)
-			fprintf(stderr, "%s: unable to set TCP_NODELAY\n", __FUNCTION__);
+			WLog_ERR(TAG,  "unable to set TCP_NODELAY");
 	}
 
 	/* receive buffer must be a least 32 K */
@@ -603,7 +659,7 @@ BOOL tcp_connect(rdpTcp* tcp, const char* hostname, int port, int timeout)
 
 			if (setsockopt(tcp->sockfd, SOL_SOCKET, SO_RCVBUF, (void*) &option_value, option_len) < 0)
 			{
-				DEBUG_WARN( "%s: unable to set receive buffer len\n", __FUNCTION__);
+				WLog_ERR(TAG,  "unable to set receive buffer len");
 				return FALSE;
 			}
 		}
@@ -643,7 +699,7 @@ BOOL tcp_set_blocking_mode(rdpTcp* tcp, BOOL blocking)
 
 	if (flags == -1)
 	{
-		DEBUG_WARN( "%s: fcntl failed, %s.\n", __FUNCTION__, strerror(errno));
+		WLog_ERR(TAG,  "fcntl failed, %s.", strerror(errno));
 		return FALSE;
 	}
 
@@ -693,7 +749,7 @@ BOOL tcp_set_keep_alive_mode(rdpTcp* tcp)
 
 	if (setsockopt(tcp->sockfd, SOL_SOCKET, SO_KEEPALIVE, (void*) &option_value, option_len) < 0)
 	{
-		DEBUG_WARN("setsockopt() SOL_SOCKET, SO_KEEPALIVE:");
+		WLog_ERR(TAG, "setsockopt() SOL_SOCKET, SO_KEEPALIVE:");
 		return FALSE;
 	}
 
@@ -703,7 +759,7 @@ BOOL tcp_set_keep_alive_mode(rdpTcp* tcp)
 
 	if (setsockopt(tcp->sockfd, IPPROTO_TCP, TCP_KEEPIDLE, (void*) &option_value, option_len) < 0)
 	{
-		DEBUG_WARN("setsockopt() IPPROTO_TCP, TCP_KEEPIDLE:");
+		WLog_ERR(TAG, "setsockopt() IPPROTO_TCP, TCP_KEEPIDLE:");
 		return FALSE;
 	}
 #endif
@@ -714,7 +770,7 @@ BOOL tcp_set_keep_alive_mode(rdpTcp* tcp)
 
 	if (setsockopt(tcp->sockfd, SOL_TCP, TCP_KEEPCNT, (void *) &option_value, option_len) < 0)
 	{
-		DEBUG_WARN("setsockopt() SOL_TCP, TCP_KEEPCNT:");
+		WLog_ERR(TAG, "setsockopt() SOL_TCP, TCP_KEEPCNT:");
 		return FALSE;
 	}
 #endif
@@ -725,7 +781,7 @@ BOOL tcp_set_keep_alive_mode(rdpTcp* tcp)
 
 	if (setsockopt(tcp->sockfd, SOL_TCP, TCP_KEEPINTVL, (void *) &option_value, option_len) < 0)
 	{
-		DEBUG_WARN("setsockopt() SOL_TCP, TCP_KEEPINTVL:");
+		WLog_ERR(TAG, "setsockopt() SOL_TCP, TCP_KEEPINTVL:");
 		return FALSE;
 	}
 #endif
@@ -736,7 +792,7 @@ BOOL tcp_set_keep_alive_mode(rdpTcp* tcp)
 	option_len = sizeof(option_value);
 	if (setsockopt(tcp->sockfd, SOL_SOCKET, SO_NOSIGPIPE, (void *) &option_value, option_len) < 0)
 	{
-		DEBUG_WARN("setsockopt() SOL_SOCKET, SO_NOSIGPIPE:");
+		WLog_ERR(TAG, "setsockopt() SOL_SOCKET, SO_NOSIGPIPE:");
 	}
 #endif
 	return TRUE;
