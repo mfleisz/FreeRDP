@@ -54,7 +54,7 @@ endif()
 if (WITH_LIBRARY_VERSIONING)
   set_target_properties(${MODULE_NAME} PROPERTIES VERSION ${FREERDP_VERSION} SOVERSION ${FREERDP_API_VERSION})
 endif()
-set_target_properties(${MODULE_NAME} PROPERTIES PREFIX "lib")
+
 
 set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} winpr freerdp)
 
