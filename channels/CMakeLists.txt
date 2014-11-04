@@ -166,6 +166,7 @@ macro(add_channel_client_library _module_prefix _module_name _channel_name _dyna
       set (RC_VERSION_MAJOR ${FREERDP_VERSION_MAJOR})
       set (RC_VERSION_MINOR ${FREERDP_VERSION_MINOR})
       set (RC_VERSION_BUILD ${FREERDP_VERSION_REVISION})
+      set (RC_VERSION_PATCH 0)
       set (RC_VERSION_FILE "${CMAKE_SHARED_LIBRARY_PREFIX}${_module_name}${CMAKE_SHARED_LIBRARY_SUFFIX}" )
 
       configure_file(
@@ -203,6 +204,7 @@ macro(add_channel_client_subsystem_library _module_prefix _module_name _channel_
       set (RC_VERSION_MAJOR ${FREERDP_VERSION_MAJOR})
       set (RC_VERSION_MINOR ${FREERDP_VERSION_MINOR})
       set (RC_VERSION_BUILD ${FREERDP_VERSION_REVISION})
+      set (RC_VERSION_PATCH 0)
       set (RC_VERSION_FILE "${CMAKE_SHARED_LIBRARY_PREFIX}${_module_name}${CMAKE_SHARED_LIBRARY_SUFFIX}" )
 
       configure_file(

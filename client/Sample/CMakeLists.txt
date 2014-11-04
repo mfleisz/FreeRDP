@@ -34,8 +34,9 @@ if (WIN32)
     ${CMAKE_CURRENT_BINARY_DIR}/version.rc
     @ONLY)
 
-  set ( ${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS} ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
+  set (WINPR_SRCS ${WINPR_SRCS} ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
 endif()
+
 
 add_executable(${MODULE_NAME} ${${MODULE_PREFIX}_SRCS})
 
