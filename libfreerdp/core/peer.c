@@ -379,6 +379,11 @@ static int peer_recv_tpkt_pdu(freerdp_peer* client, wStream* s)
 					return -1;
 				break;
 
+			case PDU_TYPE_FLOW_RESPONSE:
+			case PDU_TYPE_FLOW_STOP:
+			case PDU_TYPE_FLOW_TEST:
+				break;
+
 			default:
 				WLog_ERR(TAG,  "Client sent pduType %d", pduType);
 				return -1;
@@ -435,6 +440,7 @@ static int peer_recv_callback(rdpTransport* transport, wStream* s, void* extra)
 {
 	freerdp_peer* client = (freerdp_peer*) extra;
 	rdpRdp* rdp = client->context->rdp;
+	DWORD t;
 
 	switch (rdp->state)
 	{
@@ -493,6 +499,28 @@ static int peer_recv_callback(rdpTransport* transport, wStream* s, void* extra)
 			if (!rdp_recv_client_info(rdp, s))
 				return -1;
 
+			if (rdp->settings->NetworkAutoDetect && !rdp->settings->LocalConnection)
+				rdp_server_transition_to_state(rdp, CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT);
+			else
+				rdp_server_transition_to_state(rdp, CONNECTION_STATE_LICENSING);
+			return peer_recv_callback(transport, NULL, extra);
+
+			break;
+
+		case CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT:
+
+			if (!autodetect_send_connecttime_bandwidth_measure_start(client->context, 0))
+				return -1;
+			t = GetTickCount();
+			for (;;)
+			{
+				if (!autodetect_send_bandwidth_measure_payload(client->context, 8192, 0))
+					return -1;
+				if (GetTickCount() >= t + 1000)
+					break;
+			}
+			if (!autodetect_send_connecttime_bandwidth_measure_stop(client->context, 8192, 0))
+				return -1;
 			rdp_server_transition_to_state(rdp, CONNECTION_STATE_LICENSING);
 			return peer_recv_callback(transport, NULL, extra);
 
