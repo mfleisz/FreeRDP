@@ -3,6 +3,7 @@
  * Handle Management
  *
  * Copyright 2012 Marc-Andre Moreau <marcandre.moreau@gmail.com>
+ * Copyright 2014 DI (FH) Martin Haimberger <martin.haimberger@thincast.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -127,27 +128,7 @@ BOOL CloseHandle(HANDLE hObject)
 
 	LeaveCriticalSection(&_HandleCloseCbsLock);
 
-	if (Type == HANDLE_TYPE_THREAD)
-	{
-		WINPR_THREAD* thread;
-		thread = (WINPR_THREAD*) Object;
-
-		if (thread->started)
-		{
-			pthread_detach(thread->thread);
-		}
-
-		free(thread);
-		return TRUE;
-	}
-	else if (Type == HANDLE_TYPE_PROCESS)
-	{
-		WINPR_PROCESS* process;
-		process = (WINPR_PROCESS*) Object;
-		free(process);
-		return TRUE;
-	}
-	else if (Type == HANDLE_TYPE_MUTEX)
+	if (Type == HANDLE_TYPE_MUTEX)
 	{
 		WINPR_MUTEX* mutex;
 		mutex = (WINPR_MUTEX*) Object;

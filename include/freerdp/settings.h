@@ -599,6 +599,9 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_RemoteAssistancePassStub			1026
 #define FreeRDP_RemoteAssistancePassword			1027
 #define FreeRDP_RemoteAssistanceRCTicket			1028
+#define FreeRDP_EncomspVirtualChannel				1029
+#define FreeRDP_RemdeskVirtualChannel				1030
+#define FreeRDP_LyncRdpMode					1031
 #define FreeRDP_TlsSecurity					1088
 #define FreeRDP_NlaSecurity					1089
 #define FreeRDP_RdpSecurity					1090
@@ -661,7 +664,8 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_SmartSizing					1551
 #define FreeRDP_XPan						1552
 #define FreeRDP_YPan						1553
-#define FreeRDP_ScalingFactor					1554
+#define FreeRDP_SmartSizingWidth				1554
+#define FreeRDP_SmartSizingHeight				1555
 #define FreeRDP_SoftwareGdi					1601
 #define FreeRDP_LocalConnection					1602
 #define FreeRDP_AuthenticationOnly				1603
@@ -971,7 +975,10 @@ struct rdp_settings
 	ALIGN64 char* RemoteAssistancePassStub; /* 1026 */
 	ALIGN64 char* RemoteAssistancePassword; /* 1027 */
 	ALIGN64 char* RemoteAssistanceRCTicket; /* 1028 */
-	UINT64 padding1088[1088 - 1029]; /* 1029 */
+	ALIGN64 BOOL EncomspVirtualChannel; /* 1029 */
+	ALIGN64 BOOL RemdeskVirtualChannel; /* 1030 */
+	ALIGN64 BOOL LyncRdpMode; /* 1031 */
+	UINT64 padding1088[1088 - 1032]; /* 1032 */
 
 	/**
 	 * X.224 Connection Request/Confirm
@@ -1068,8 +1075,9 @@ struct rdp_settings
 	ALIGN64 BOOL SmartSizing; /* 1551 */
 	ALIGN64 int XPan; /* 1552 */
 	ALIGN64 int YPan; /* 1553 */
-	ALIGN64 double ScalingFactor; /* 1554 */
-	UINT64 padding1601[1601 - 1555]; /* 1555 */
+	ALIGN64 UINT32 SmartSizingWidth; /* 1554 */
+	ALIGN64 UINT32 SmartSizingHeight; /* 1555 */
+	UINT64 padding1601[1601 - 1556]; /* 1556 */
 
 	/* Miscellaneous */
 	ALIGN64 BOOL SoftwareGdi; /* 1601 */
@@ -1453,9 +1461,6 @@ FREERDP_API int freerdp_set_param_uint64(rdpSettings* settings, int id, UINT64 p
 
 FREERDP_API char* freerdp_get_param_string(rdpSettings* settings, int id);
 FREERDP_API int freerdp_set_param_string(rdpSettings* settings, int id, const char* param);
-
-FREERDP_API double freerdp_get_param_double(rdpSettings* settings, int id);
-FREERDP_API int freerdp_set_param_double(rdpSettings* settings, int id, double param);
 
 #ifdef __cplusplus
 }

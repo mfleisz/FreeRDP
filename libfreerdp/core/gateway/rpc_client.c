@@ -21,11 +21,6 @@
 #include "config.h"
 #endif
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include <freerdp/utils/tcp.h>
 #include <freerdp/log.h>
 
 #include <winpr/crt.h>
@@ -359,7 +354,10 @@ int rpc_send_enqueue_pdu(rdpRpc* rpc, BYTE* buffer, UINT32 length)
 	pdu = (RPC_PDU*) malloc(sizeof(RPC_PDU));
 
 	if (!pdu)
+	{
+		free(buffer);
 		return -1;
+	}
 
 	pdu->s = Stream_New(buffer, length);
 

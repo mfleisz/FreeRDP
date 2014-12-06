@@ -105,7 +105,7 @@ static BOOL freerdp_listener_open(freerdp_listener* instance, const char* bind_a
 	if (status != 0)
 	{
 #ifdef _WIN32
-		WLog_ERR(_T("getaddrinfo error: %s"), gai_strerror(status));
+		WLog_ERR("getaddrinfo error: %s", gai_strerrorA(status));
 #else
 		WLog_ERR(TAG, "getaddrinfo");
 #endif
@@ -131,9 +131,6 @@ static BOOL freerdp_listener_open(freerdp_listener* instance, const char* bind_a
 			sin_addr = &(((struct sockaddr_in6*) ai->ai_addr)->sin6_addr);
 
 		inet_ntop(ai->ai_family, sin_addr, addr, sizeof(addr));
-
-		if (strcmp(addr, "::") == 0)
-			continue;
 
 		option_value = 1;
 
@@ -370,7 +367,10 @@ freerdp_listener* freerdp_listener_new(void)
 	listener = (rdpListener*) calloc(1, sizeof(rdpListener));
 
 	if (!listener)
+	{
+		free (instance);
 		return NULL;
+	}
 
 	listener->instance = instance;
 

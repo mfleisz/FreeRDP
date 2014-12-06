@@ -23,8 +23,10 @@
 #include "config.h"
 #endif
 
-#include <winpr/environment.h>
+#include <winpr/crt.h>
 #include <winpr/error.h>
+
+#include <winpr/environment.h>
 
 #ifndef _WIN32
 
@@ -326,7 +328,7 @@ LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 		if (mergeStringLength == mergeArraySize)
 		{
 			mergeArraySize += 128;
-			mergeStrings = (LPCSTR*) realloc(mergeStrings, mergeArraySize * sizeof(char*));
+			mergeStrings = (const char**) realloc((void*) mergeStrings, mergeArraySize * sizeof(char*));
 
 			if (!mergeStrings)
 				return NULL;
@@ -343,28 +345,37 @@ LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 	lpszEnvironmentBlock = (LPCH) malloc(cchEnvironmentBlock * sizeof(CHAR));
 
 	if (!lpszEnvironmentBlock)
+	{
+		free (mergeStrings);
 		return NULL;
+	}
 
 	envp  = original;
 
 	while ((original != NULL) && (*envp && *(envp+1)))
 	{
+		ULONG old_offset = offset;
 		length = strlen(envp);
 
 		while ((offset + length + 8) > cchEnvironmentBlock)
 		{
+			LPCH tmp;
 			cchEnvironmentBlock *= 2;
-			lpszEnvironmentBlock = (LPCH) realloc(lpszEnvironmentBlock, cchEnvironmentBlock * sizeof(CHAR));
+			tmp = (LPCH) realloc(lpszEnvironmentBlock, cchEnvironmentBlock * sizeof(CHAR));
 
-			if (!lpszEnvironmentBlock)
+			if (!tmp)
+			{
+				free (lpszEnvironmentBlock);
+				free (mergeStrings);
 				return NULL;
+			}
+			lpszEnvironmentBlock = tmp;
 		}
 
 		p = &(lpszEnvironmentBlock[offset]);
 
 		// check if this value is in the mergeStrings
 		foundMerge = 0;
-
 		for (run = 0; run < mergeStringLength; run ++)
 		{
 			if (!mergeStrings[run])
@@ -388,11 +399,19 @@ LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 				{
 					while ((offset + mergeLength + 8) > cchEnvironmentBlock)
 					{
+						LPCH tmp;
 						cchEnvironmentBlock *= 2;
-						lpszEnvironmentBlock = (LPCH) realloc(lpszEnvironmentBlock, cchEnvironmentBlock * sizeof(CHAR));
+						tmp = (LPCH) realloc(lpszEnvironmentBlock, cchEnvironmentBlock * sizeof(CHAR));
 
-						if (!lpszEnvironmentBlock)
+						if (!tmp)
+						{
+							if (lpszEnvironmentBlock)
+								free(lpszEnvironmentBlock);
+							free (mergeStrings);
 							return NULL;
+						}
+						lpszEnvironmentBlock = tmp;
+						p = &(lpszEnvironmentBlock[old_offset]);
 					}
 
 					foundMerge = 1;
@@ -424,11 +443,19 @@ LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 
 		while ((offset + mergeLength + 8) > cchEnvironmentBlock)
 		{
+			LPCH tmp;
 			cchEnvironmentBlock *= 2;
-			lpszEnvironmentBlock = (LPCH) realloc(lpszEnvironmentBlock, cchEnvironmentBlock * sizeof(CHAR));
+			tmp = (LPCH) realloc(lpszEnvironmentBlock, cchEnvironmentBlock * sizeof(CHAR));
 
-			if (!lpszEnvironmentBlock)
+			if (!tmp)
+			{
+				if (lpszEnvironmentBlock)
+					free(lpszEnvironmentBlock);
+				free (mergeStrings);
 				return NULL;
+			}
+
+			lpszEnvironmentBlock = tmp;
 		}
 
 		p = &(lpszEnvironmentBlock[offset]);
@@ -441,7 +468,7 @@ LPCH MergeEnvironmentStrings(PCSTR original, PCSTR merge)
 
 	lpszEnvironmentBlock[offset] = '\0';
 
-	free(mergeStrings);
+	free((void*) mergeStrings);
 
 	return lpszEnvironmentBlock;
 }

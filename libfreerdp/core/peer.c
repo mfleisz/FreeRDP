@@ -22,12 +22,12 @@
 #endif
 
 #include <winpr/crt.h>
+#include <winpr/winsock.h>
 
 #include "info.h"
 #include "certificate.h"
 
 #include <freerdp/log.h>
-#include <freerdp/utils/tcp.h>
 
 #include "peer.h"
 
@@ -123,12 +123,15 @@ static int freerdp_peer_virtual_channel_write(freerdp_peer* client, HANDLE hChan
 	UINT32 chunkSize;
 	UINT32 maxChunkSize;
 	UINT32 totalLength;
+	rdpPeerChannel* peerChannel;
+	rdpMcsChannel* mcsChannel;
 	rdpRdp* rdp = client->context->rdp;
-	rdpPeerChannel* peerChannel = (rdpPeerChannel*) hChannel;
-	rdpMcsChannel* mcsChannel = peerChannel->mcsChannel;
 
 	if (!hChannel)
 		return -1;
+
+	peerChannel = (rdpPeerChannel*) hChannel;
+	mcsChannel = peerChannel->mcsChannel;
 
 	if (peerChannel->channelFlags & WTS_CHANNEL_OPTION_DYNAMIC)
 		return -1; /* not yet supported */
@@ -671,11 +674,19 @@ void freerdp_peer_context_free(freerdp_peer* client)
 
 freerdp_peer* freerdp_peer_new(int sockfd)
 {
+	UINT32 option_value;
+	socklen_t option_len;
 	freerdp_peer* client;
 
 	client = (freerdp_peer*) calloc(1, sizeof(freerdp_peer));
 
-	freerdp_tcp_set_no_delay(sockfd, TRUE);
+	if (!client)
+		return NULL;
+
+	option_value = TRUE;
+	option_len = sizeof(option_value);
+
+	setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (void*) &option_value, option_len);
 
 	if (client)
 	{

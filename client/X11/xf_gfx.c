@@ -84,8 +84,20 @@ int xf_OutputUpdate(xfContext* xfc)
 				surface->width, surface->height, surface->data, surface->format, surface->scanline, 0, 0, NULL);
 		}
 
-		XPutImage(xfc->display, xfc->drawable, xfc->gc, surface->image,
+#ifdef WITH_XRENDER
+		if (xfc->settings->SmartSizing || xfc->settings->MultiTouchGestures)
+		{
+			XPutImage(xfc->display, xfc->primary, xfc->gc, surface->image,
 				extents->left, extents->top, extents->left, extents->top, width, height);
+
+			xf_draw_screen(xfc, extents->left, extents->top, width, height);
+		}
+		else
+#endif
+		{
+			XPutImage(xfc->display, xfc->drawable, xfc->gc, surface->image,
+				extents->left, extents->top, extents->left, extents->top, width, height);
+		}
 	}
 
 	region16_clear(&(xfc->invalidRegion));
@@ -555,7 +567,10 @@ int xf_CreateSurface(RdpgfxClientContext* context, RDPGFX_CREATE_SURFACE_PDU* cr
 	surface->data = (BYTE*) _aligned_malloc(size, 16);
 
 	if (!surface->data)
+	{
+		free (surface);
 		return -1;
+	}
 
 	ZeroMemory(surface->data, size);
 
@@ -574,7 +589,11 @@ int xf_CreateSurface(RdpgfxClientContext* context, RDPGFX_CREATE_SURFACE_PDU* cr
 		surface->stage = (BYTE*) _aligned_malloc(size, 16);
 
 		if (!surface->stage)
+		{
+			free (surface->data);
+			free (surface);
 			return -1;
+		}
 
 		ZeroMemory(surface->stage, size);
 
@@ -749,7 +768,10 @@ int xf_SurfaceToCache(RdpgfxClientContext* context, RDPGFX_SURFACE_TO_CACHE_PDU*
 	cacheEntry->data = (BYTE*) _aligned_malloc(size, 16);
 
 	if (!cacheEntry->data)
+	{
+		free (cacheEntry);
 		return -1;
+	}
 
 	ZeroMemory(cacheEntry->data, size);
 
