@@ -621,7 +621,7 @@ UINT VCAPITYPE FreeRDP_VirtualChannelWrite(DWORD openHandle, LPVOID pData, ULONG
 	return CHANNEL_RC_OK;
 }
 
-int freerdp_channels_client_load(rdpChannels* channels, rdpSettings* settings, void* entry, void* data)
+int freerdp_channels_client_load(rdpChannels* channels, rdpSettings* settings, PVIRTUALCHANNELENTRY entry, void* data)
 {
 	int status;
 	CHANNEL_ENTRY_POINTS_FREERDP EntryPoints;
@@ -634,7 +634,7 @@ int freerdp_channels_client_load(rdpChannels* channels, rdpSettings* settings, v
 	}
 
 	pChannelClientData = &channels->clientDataList[channels->clientDataCount];
-	pChannelClientData->entry = (PVIRTUALCHANNELENTRY) entry;
+	pChannelClientData->entry = entry;
 
 	ZeroMemory(&EntryPoints, sizeof(CHANNEL_ENTRY_POINTS_FREERDP));
 
