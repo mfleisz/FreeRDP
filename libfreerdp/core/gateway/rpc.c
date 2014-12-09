@@ -357,7 +357,7 @@ int rpc_in_write(rdpRpc* rpc, const BYTE* data, int length)
 
 int rpc_write(rdpRpc* rpc, BYTE* data, int length, UINT16 opnum)
 {
-	BYTE* buffer;
+	BYTE* buffer = NULL;
 	UINT32 offset;
 	rdpNtlm* ntlm;
 	UINT32 stub_data_pad;
@@ -365,7 +365,7 @@ int rpc_write(rdpRpc* rpc, BYTE* data, int length, UINT16 opnum)
 	SecBufferDesc Message;
 	RpcClientCall* clientCall;
 	SECURITY_STATUS encrypt_status;
-	rpcconn_request_hdr_t* request_pdu;
+	rpcconn_request_hdr_t* request_pdu = NULL;
 	ntlm = rpc->ntlm;
 
 	if (!ntlm || !ntlm->table)
@@ -379,6 +379,7 @@ int rpc_write(rdpRpc* rpc, BYTE* data, int length, UINT16 opnum)
 		WLog_ERR(TAG, "QueryContextAttributes SECPKG_ATTR_SIZES failure");
 		return -1;
 	}
+	ZeroMemory(&Buffers, sizeof(Buffers));
 
 	request_pdu = (rpcconn_request_hdr_t*) calloc(1, sizeof(rpcconn_request_hdr_t));
 
@@ -437,7 +438,9 @@ int rpc_write(rdpRpc* rpc, BYTE* data, int length, UINT16 opnum)
 	Buffers[1].pvBuffer = calloc(1, Buffers[1].cbBuffer);
 
 	if (!Buffers[1].pvBuffer)
-		return -1;
+	{
+		goto out_free_pdu;
+	}
 
 	Message.cBuffers = 2;
 	Message.ulVersion = SECBUFFER_VERSION;
@@ -447,8 +450,7 @@ int rpc_write(rdpRpc* rpc, BYTE* data, int length, UINT16 opnum)
 	if (encrypt_status != SEC_E_OK)
 	{
 		WLog_ERR(TAG,  "EncryptMessage status: 0x%08X", encrypt_status);
-		free(request_pdu);
-		return -1;
+		goto out_free_pdu;
 	}
 
 	CopyMemory(&buffer[offset], Buffers[1].pvBuffer, Buffers[1].cbBuffer);
@@ -460,9 +462,12 @@ int rpc_write(rdpRpc* rpc, BYTE* data, int length, UINT16 opnum)
 
 	free(request_pdu);
 	return length;
+
 out_free_clientCall:
 	rpc_client_call_free(clientCall);
 out_free_pdu:
+	free (buffer);
+	free (Buffers[1].pvBuffer);
 	free(request_pdu);
 	return -1;
 }

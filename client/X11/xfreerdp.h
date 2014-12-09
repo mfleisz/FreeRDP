@@ -106,6 +106,7 @@ struct xf_context
 	BOOL unobscured;
 	BOOL debug;
 	xfWindow* window;
+	xfAppWindow* appWindow;
 	xfPointer* pointer;
 	xfWorkArea workArea;
 	int current_desktop;
@@ -131,15 +132,14 @@ struct xf_context
 	UINT16 frame_x2;
 	UINT16 frame_y2;
 
-	int originalWidth;
-	int originalHeight;
-	int currentWidth;
-	int currentHeight;
 	int XInputOpcode;
-	BOOL enableScaling;
 
+#ifdef WITH_XRENDER
+	int scaledWidth;
+	int scaledHeight;
 	int offset_x;
 	int offset_y;
+#endif
 
 	BOOL focused;
 	BOOL use_xinput;
@@ -158,6 +158,7 @@ struct xf_context
 	BOOL complex_regions;
 	VIRTUAL_SCREEN vscreen;
 	void* xv_context;
+	TsmfClientContext* tsmf;
 	xfClipboard* clipboard;
 	CliprdrClientContext* cliprdr;
 
@@ -190,7 +191,11 @@ struct xf_context
 	RdpgfxClientContext* gfx;
 	EncomspClientContext* encomsp;
 
+	RailClientContext* rail;
+	wHashTable* railWindows;
+
 	BOOL xkbAvailable;
+	BOOL xrenderAvailable;
 };
 
 void xf_create_window(xfContext* xfc);
@@ -245,10 +250,8 @@ enum XF_EXIT_CODE
 void xf_lock_x11(xfContext* xfc, BOOL display);
 void xf_unlock_x11(xfContext* xfc, BOOL display);
 
-void xf_draw_screen_scaled(xfContext* xfc, int x, int y, int w, int h, BOOL scale);
-void xf_transform_window(xfContext* xfc);
-
-unsigned long xf_gdi_get_color(xfContext* xfc, GDI_COLOR color);
+BOOL xf_picture_transform_required(xfContext* xfc);
+void xf_draw_screen(xfContext* xfc, int x, int y, int w, int h);
 
 FREERDP_API DWORD xf_exit_code_from_disconnect_reason(DWORD reason);
 

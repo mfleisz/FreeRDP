@@ -321,10 +321,13 @@ int WLog_ParseFilter(wLogFilter* filter, LPCSTR name)
 	count = 1;
 	p = (char*) name;
 
-	while ((p = strchr(p, '.')) != NULL)
+	if (p)
 	{
-		count++;
-		p++;
+		while ((p = strchr(p, '.')) != NULL)
+		{
+			count++;
+			p++;
+		}
 	}
 
 	names = _strdup(name);
@@ -508,7 +511,10 @@ wLog* WLog_New(LPCSTR name, wLog* rootLogger)
 		log->Name = _strdup(name);
 
 		if (!log->Name)
+		{
+			free (log);
 			return NULL;
+		}
 
 		WLog_ParseName(log, name);
 		log->Parent = rootLogger;
@@ -517,7 +523,11 @@ wLog* WLog_New(LPCSTR name, wLog* rootLogger)
 		log->Children = (wLog**) calloc(log->ChildrenSize, sizeof(wLog*));
 
 		if (!log->Children)
+		{
+			free (log->Name);
+			free (log);
 			return NULL;
+		}
 
 		log->Appender = NULL;
 
@@ -614,9 +624,31 @@ int WLog_AddChild(wLog* parent, wLog* child)
 {
 	if (parent->ChildrenCount >= parent->ChildrenSize)
 	{
+		wLog **tmp;
 		parent->ChildrenSize *= 2;
-		parent->Children = (wLog**) realloc(parent->Children, sizeof(wLog*) * parent->ChildrenSize);
+		if (!parent->ChildrenSize)
+		{
+			if (parent->Children)
+				free (parent->Children);
+			parent->Children = NULL;
+			
+		}
+		else
+		{
+			tmp = (wLog**) realloc(parent->Children, sizeof(wLog*) * parent->ChildrenSize);
+			if (!tmp)
+			{
+				if (parent->Children)
+					free (parent->Children);
+				parent->Children = NULL;
+				return -1;
+			}
+			parent->Children = tmp;
+		}
 	}
+
+	if (!parent->Children)
+		return -1;
 
 	parent->Children[parent->ChildrenCount++] = child;
 	child->Parent = parent;

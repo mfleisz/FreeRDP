@@ -296,6 +296,7 @@ static void xf_cliprdr_process_requested_data(xfClipboard* clipboard, BOOL hasDa
 	{
 		case CF_TEXT:
 		case CF_UNICODETEXT:
+			size = strlen((char*) data) + 1;
 			formatId = ClipboardGetFormatId(clipboard->system, "UTF8_STRING");
 			break;
 
@@ -304,6 +305,7 @@ static void xf_cliprdr_process_requested_data(xfClipboard* clipboard, BOOL hasDa
 			break;
 
 		case CB_FORMAT_HTML:
+			size = strlen((char*) data) + 1;
 			formatId = ClipboardGetFormatId(clipboard->system, "text/html");
 			break;
 	}
@@ -317,6 +319,9 @@ static void xf_cliprdr_process_requested_data(xfClipboard* clipboard, BOOL hasDa
 	CopyMemory(pSrcData, data, SrcSize);
 
 	bSuccess = ClipboardSetData(clipboard->system, formatId, (void*) pSrcData, SrcSize);
+
+	if (!bSuccess)
+		free(pSrcData);
 
 	pFormatIds = NULL;
 	count = ClipboardGetFormatIds(clipboard->system, &pFormatIds);
@@ -365,6 +370,7 @@ static void xf_cliprdr_process_requested_data(xfClipboard* clipboard, BOOL hasDa
 	}
 
 	xf_cliprdr_send_data_response(clipboard, pDstData, (int) DstSize);
+	free(pDstData);
 }
 
 static BOOL xf_cliprdr_get_requested_data(xfClipboard* clipboard, Atom target)
@@ -396,6 +402,7 @@ static BOOL xf_cliprdr_get_requested_data(xfClipboard* clipboard, Atom target)
 		XFree(data);
 		data = NULL;
 	}
+
 	if (bytes_left <= 0 && !clipboard->incr_starts)
 	{
 
@@ -768,7 +775,7 @@ int xf_cliprdr_send_client_format_list(xfClipboard* clipboard)
 
 	free(formats);
 
-	if (clipboard->owner != xfc->drawable)
+	if (clipboard->owner && clipboard->owner != xfc->drawable)
 	{
 		/* Request the owner for TARGETS, and wait for SelectionNotify event */
 		XConvertSelection(xfc->display, clipboard->clipboard_atom,
@@ -993,6 +1000,9 @@ static int xf_cliprdr_server_format_data_response(CliprdrClientContext* context,
 
 	bSuccess = ClipboardSetData(clipboard->system, formatId, (void*) pSrcData, SrcSize);
 
+	if (!bSuccess)
+		free (pSrcData);
+
 	if (bSuccess && altFormatId)
 	{
 		DstSize = 0;
@@ -1136,6 +1146,12 @@ void xf_clipboard_free(xfClipboard* clipboard)
 
 		free(clipboard->serverFormats);
 		clipboard->serverFormats = NULL;
+	}
+
+	if (clipboard->numClientFormats)
+	{
+		for (i = 0; i < clipboard->numClientFormats; i++)
+			free(clipboard->clientFormats[i].formatName);
 	}
 
 	ClipboardDestroy(clipboard->system);

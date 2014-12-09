@@ -526,6 +526,12 @@ void update_reset_state(rdpUpdate* update)
 	rdpPrimaryUpdate* primary = update->primary;
 	rdpAltSecUpdate* altsec = update->altsec;
 
+	if (primary->fast_glyph.glyphData.aj)
+	{
+		free(primary->fast_glyph.glyphData.aj);
+		primary->fast_glyph.glyphData.aj = NULL;
+	}
+
 	ZeroMemory(&primary->order_info, sizeof(ORDER_INFO));
 	ZeroMemory(&primary->dstblt, sizeof(DSTBLT_ORDER));
 	ZeroMemory(&primary->patblt, sizeof(PATBLT_ORDER));
@@ -829,7 +835,8 @@ static void update_send_refresh_rect(rdpContext* context, BYTE count, RECTANGLE_
 static void update_write_suppress_output(wStream* s, BYTE allow, RECTANGLE_16* area)
 {
 	Stream_Write_UINT8(s, allow); /* allowDisplayUpdates (1 byte) */
-	Stream_Seek(s, 3); /* pad3Octets (3 bytes) */
+	/* Use zeros for padding (like mstsc) for compatibility with legacy servers */
+	Stream_Zero(s, 3); /* pad3Octets (3 bytes) */
 
 	if (allow > 0)
 	{
@@ -1506,9 +1513,25 @@ static void update_send_pointer_system(rdpContext* context, POINTER_SYSTEM_UPDAT
 	Stream_Release(s);
 }
 
+static void update_send_pointer_position(rdpContext* context, POINTER_POSITION_UPDATE* pointerPosition)
+{
+	wStream* s;
+	rdpRdp* rdp = context->rdp;
+
+	s = fastpath_update_pdu_init(rdp->fastpath);
+
+	Stream_EnsureRemainingCapacity(s, 16);
+
+	Stream_Write_UINT16(s, pointerPosition->xPos); /* xPos (2 bytes) */
+	Stream_Write_UINT16(s, pointerPosition->yPos); /* yPos (2 bytes) */
+
+	fastpath_send_update_pdu(rdp->fastpath, FASTPATH_UPDATETYPE_PTR_POSITION, s, FALSE);
+	Stream_Release(s);
+}
+
 static void update_write_pointer_color(wStream* s, POINTER_COLOR_UPDATE* pointer_color)
 {
-	Stream_EnsureRemainingCapacity(s, 15 + (int) pointer_color->lengthAndMask + (int) pointer_color->lengthXorMask);
+	Stream_EnsureRemainingCapacity(s, 32 + (int) pointer_color->lengthAndMask + (int) pointer_color->lengthXorMask);
 
 	Stream_Write_UINT16(s, pointer_color->cacheIndex);
 	Stream_Write_UINT16(s, pointer_color->xPos);
@@ -1544,9 +1567,14 @@ static void update_send_pointer_new(rdpContext* context, POINTER_NEW_UPDATE* poi
 	rdpRdp* rdp = context->rdp;
 
 	s = fastpath_update_pdu_init(rdp->fastpath);
+
+	Stream_EnsureRemainingCapacity(s, 16);
+
 	Stream_Write_UINT16(s, pointer_new->xorBpp); /* xorBpp (2 bytes) */
         update_write_pointer_color(s, &pointer_new->colorPtrAttr);
+
 	fastpath_send_update_pdu(rdp->fastpath, FASTPATH_UPDATETYPE_POINTER, s, FALSE);
+
 	Stream_Release(s);
 }
 
@@ -1614,14 +1642,14 @@ BOOL update_read_suppress_output(rdpUpdate* update, wStream* s)
 
 static void update_send_set_keyboard_indicators(rdpContext* context, UINT16 led_flags)
 {
- wStream* s;
- rdpRdp* rdp = context->rdp;
+	wStream* s;
+	rdpRdp* rdp = context->rdp;
 
- s = rdp_data_pdu_init(rdp);
- Stream_Write_UINT16(s, 0); /* unitId should be 0 according to MS-RDPBCGR 2.2.8.2.1.1 */
- Stream_Write_UINT16(s, led_flags); /* ledFlags (2 bytes) */
- rdp_send_data_pdu(rdp, s, DATA_PDU_TYPE_SET_KEYBOARD_INDICATORS, rdp->mcs->userId);
- Stream_Release(s);
+	s = rdp_data_pdu_init(rdp);
+	Stream_Write_UINT16(s, 0); /* unitId should be 0 according to MS-RDPBCGR 2.2.8.2.1.1 */
+	Stream_Write_UINT16(s, led_flags); /* ledFlags (2 bytes) */
+	rdp_send_data_pdu(rdp, s, DATA_PDU_TYPE_SET_KEYBOARD_INDICATORS, rdp->mcs->userId);
+	Stream_Release(s);
 }
 
 void update_register_server_callbacks(rdpUpdate* update)
@@ -1655,6 +1683,7 @@ void update_register_server_callbacks(rdpUpdate* update)
 	update->altsec->CreateOffscreenBitmap = update_send_create_offscreen_bitmap_order;
 	update->altsec->SwitchSurface = update_send_switch_surface_order;
 	update->pointer->PointerSystem = update_send_pointer_system;
+	update->pointer->PointerPosition = update_send_pointer_position;
 	update->pointer->PointerColor = update_send_pointer_color;
 	update->pointer->PointerNew = update_send_pointer_new;
 	update->pointer->PointerCached = update_send_pointer_cached;
@@ -1684,35 +1713,27 @@ rdpUpdate* update_new(rdpRdp* rdp)
 	const wObject cb = { NULL, NULL, NULL,  update_free_queued_message, NULL };
 	rdpUpdate* update;
 
-	update = (rdpUpdate*) malloc(sizeof(rdpUpdate));
+	update = (rdpUpdate*) calloc(1, sizeof(rdpUpdate));
 
 	if (update)
 	{
 		OFFSCREEN_DELETE_LIST* deleteList;
 
-		ZeroMemory(update, sizeof(rdpUpdate));
-
 		WLog_Init();
 		update->log = WLog_Get("com.freerdp.core.update");
 
 		update->bitmap_update.count = 64;
-		update->bitmap_update.rectangles = (BITMAP_DATA*) malloc(sizeof(BITMAP_DATA) * update->bitmap_update.count);
-		ZeroMemory(update->bitmap_update.rectangles, sizeof(BITMAP_DATA) * update->bitmap_update.count);
+		update->bitmap_update.rectangles = (BITMAP_DATA*) calloc(update->bitmap_update.count, sizeof(BITMAP_DATA));
 
-		update->pointer = (rdpPointerUpdate*) malloc(sizeof(rdpPointerUpdate));
-		ZeroMemory(update->pointer, sizeof(rdpPointerUpdate));
+		update->pointer = (rdpPointerUpdate*) calloc(1, sizeof(rdpPointerUpdate));
 
-		update->primary = (rdpPrimaryUpdate*) malloc(sizeof(rdpPrimaryUpdate));
-		ZeroMemory(update->primary, sizeof(rdpPrimaryUpdate));
+		update->primary = (rdpPrimaryUpdate*) calloc(1, sizeof(rdpPrimaryUpdate));
 
-		update->secondary = (rdpSecondaryUpdate*) malloc(sizeof(rdpSecondaryUpdate));
-		ZeroMemory(update->secondary, sizeof(rdpSecondaryUpdate));
+		update->secondary = (rdpSecondaryUpdate*) calloc(1, sizeof(rdpSecondaryUpdate));
 
-		update->altsec = (rdpAltSecUpdate*) malloc(sizeof(rdpAltSecUpdate));
-		ZeroMemory(update->altsec, sizeof(rdpAltSecUpdate));
+		update->altsec = (rdpAltSecUpdate*) calloc(1, sizeof(rdpAltSecUpdate));
 
-		update->window = (rdpWindowUpdate*) malloc(sizeof(rdpWindowUpdate));
-		ZeroMemory(update->window, sizeof(rdpWindowUpdate));
+		update->window = (rdpWindowUpdate*) calloc(1, sizeof(rdpWindowUpdate));
 
 		deleteList = &(update->altsec->create_offscreen_bitmap.deleteList);
 		deleteList->sIndices = 64;
