@@ -656,6 +656,14 @@ void xf_unlock_x11(xfContext* xfc, BOOL display)
 	}
 }
 
+static void xf_calculate_color_shifts(UINT32 mask, UINT8* rsh, UINT8* lsh)
+{
+    for (*lsh = 0; !(mask & 1); mask >>= 1)
+        (*lsh)++;
+    for (*rsh = 8; mask; mask >>= 1)
+        (*rsh)--;
+}
+
 BOOL xf_get_pixmap_info(xfContext* xfc)
 {
 	int i;
@@ -720,7 +728,7 @@ BOOL xf_get_pixmap_info(xfContext* xfc)
 		}
 	}
 
-	if (vi)
+	if (xfc->visual)
 	{
 		/*
 		 * Detect if the server visual has an inverted colormap
@@ -730,6 +738,11 @@ BOOL xf_get_pixmap_info(xfContext* xfc)
 		{
 			xfc->invert = TRUE;
 		}
+
+		/* calculate color shifts required for rdp order color conversion */
+		xf_calculate_color_shifts(vi->red_mask, &xfc->red_shift_r, &xfc->red_shift_l);
+		xf_calculate_color_shifts(vi->green_mask, &xfc->green_shift_r, &xfc->green_shift_l);
+		xf_calculate_color_shifts(vi->blue_mask, &xfc->blue_shift_r, &xfc->blue_shift_l);
 	}
 
 	XFree(vis);
@@ -913,18 +926,22 @@ BOOL xf_pre_connect(freerdp* instance)
 	freerdp_client_load_addins(channels, instance->settings);
 	freerdp_channels_pre_connect(channels, instance);
 
+	if (!settings->Username)
+	{
+		char *login_name = getlogin();
+		if (login_name)
+		{
+			settings->Username = _strdup(login_name);
+			WLog_INFO(TAG, "No user name set. - Using login name: %s", settings->Username);
+		}
+	}
+
 	if (settings->AuthenticationOnly)
 	{
-		/* Check --authonly has a username and password. */
-		if (!settings->Username)
-		{
-			WLog_INFO(TAG, "--authonly, but no -u username. Please provide one.");
-			return FALSE;
-		}
-
+		/* Check +auth-only has a username and password. */
 		if (!settings->Password)
 		{
-			WLog_INFO(TAG, "--authonly, but no -p password. Please provide one.");
+			WLog_INFO(TAG, "auth-only, but no password set. Please provide one.");
 			return FALSE;
 		}
 
@@ -1272,9 +1289,11 @@ void xf_window_free(xfContext* xfc)
 void* xf_input_thread(void *arg)
 {
 	xfContext* xfc;
-	HANDLE event;
+	DWORD status;
+	HANDLE event[2];
 	XEvent xevent;
 	wMessageQueue *queue;
+	wMessage msg;
 	int pending_status = 1;
 	int process_status = 1;
 	freerdp *instance = (freerdp*) arg;
@@ -1282,34 +1301,51 @@ void* xf_input_thread(void *arg)
 	xfc = (xfContext *) instance->context;
 	assert(NULL != xfc);
 	queue = freerdp_get_message_queue(instance, FREERDP_INPUT_MESSAGE_QUEUE);
-	event = CreateFileDescriptorEvent(NULL, FALSE, FALSE, xfc->xfds);
+	event[0] = MessageQueue_Event(queue);
+	event[1] = CreateFileDescriptorEvent(NULL, FALSE, FALSE, xfc->xfds);
 
-	while (WaitForSingleObject(event, INFINITE) == WAIT_OBJECT_0)
+	while(1)
 	{
-		do
-		{
-			xf_lock_x11(xfc, FALSE);
-			pending_status = XPending(xfc->display);
-			xf_unlock_x11(xfc, FALSE);
+		status = WaitForMultipleObjects(2, event, FALSE, INFINITE);
 
-			if (pending_status)
+		if(status == WAIT_OBJECT_0 + 1)
+		{
+			do
 			{
 				xf_lock_x11(xfc, FALSE);
-
-				ZeroMemory(&xevent, sizeof(xevent));
-				XNextEvent(xfc->display, &xevent);
-
-				process_status = xf_event_process(instance, &xevent);
-
+				pending_status = XPending(xfc->display);
 				xf_unlock_x11(xfc, FALSE);
 
-				if (!process_status)
+				if (pending_status)
+				{
+					xf_lock_x11(xfc, FALSE);
+
+					ZeroMemory(&xevent, sizeof(xevent));
+					XNextEvent(xfc->display, &xevent);
+
+					process_status = xf_event_process(instance, &xevent);
+
+					xf_unlock_x11(xfc, FALSE);
+
+					if (!process_status)
+						break;
+				}
+			}
+			while (pending_status);
+
+			if (!process_status)
+				break;
+
+		}
+		else if(status == WAIT_OBJECT_0)
+		{
+			if(MessageQueue_Peek(queue, &msg, FALSE))
+			{
+				if(msg.id == WMQ_QUIT)
 					break;
 			}
 		}
-		while (pending_status);
-
-		if (!process_status)
+		else
 			break;
 	}
 
