@@ -325,8 +325,6 @@ static int dvcman_close_channel_iface(IWTSVirtualChannel* pChannel)
 
 	WLog_DBG(TAG, "id=%d", channel->channel_id);
 
-	ArrayList_Remove(dvcman->channels, channel);
-
 	return 1;
 }
 
@@ -429,6 +427,8 @@ int dvcman_close_channel(IWTSVirtualChannelManager* pChannelMgr, UINT32 ChannelI
 		if (ichannel->Close)
 			ichannel->Close(ichannel);
 	}
+
+	ArrayList_Remove(dvcman->channels, channel);
 
 	return 0;
 }
