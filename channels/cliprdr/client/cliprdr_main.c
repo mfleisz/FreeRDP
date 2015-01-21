@@ -102,7 +102,8 @@ void cliprdr_packet_send(cliprdrPlugin* cliprdr, wStream* s)
 	if (status != CHANNEL_RC_OK)
 	{
 		Stream_Free(s, TRUE);
-		WLog_ERR(TAG,  "cliprdr_packet_send: VirtualChannelWrite failed %d", status);
+		WLog_ERR(TAG,  "VirtualChannelWrite failed with %s [%08X]",
+				 WTSErrorToString(status), status);
 	}
 }
 
@@ -715,8 +716,8 @@ int cliprdr_client_file_contents_response(CliprdrClientContext* context, CLIPRDR
 
 /****************************************************************************************/
 
-static wListDictionary* g_InitHandles;
-static wListDictionary* g_OpenHandles;
+static wListDictionary* g_InitHandles = NULL;
+static wListDictionary* g_OpenHandles = NULL;
 
 void cliprdr_add_init_handle_data(void* pInitHandle, void* pUserData)
 {
@@ -736,6 +737,11 @@ void* cliprdr_get_init_handle_data(void* pInitHandle)
 void cliprdr_remove_init_handle_data(void* pInitHandle)
 {
 	ListDictionary_Remove(g_InitHandles, pInitHandle);
+	if (ListDictionary_Count(g_InitHandles) < 1)
+	{
+		ListDictionary_Free(g_InitHandles);
+		g_InitHandles = NULL;
+	}
 }
 
 void cliprdr_add_open_handle_data(DWORD openHandle, void* pUserData)
@@ -760,6 +766,12 @@ void cliprdr_remove_open_handle_data(DWORD openHandle)
 {
 	void* pOpenHandle = (void*) (size_t) openHandle;
 	ListDictionary_Remove(g_OpenHandles, pOpenHandle);
+
+	if (ListDictionary_Count(g_OpenHandles) < 1)
+	{
+		ListDictionary_Free(g_OpenHandles);
+		g_OpenHandles = NULL;
+	}
 }
 
 static void cliprdr_virtual_channel_event_data_received(cliprdrPlugin* cliprdr,
@@ -795,7 +807,7 @@ static void cliprdr_virtual_channel_event_data_received(cliprdrPlugin* cliprdr,
 		Stream_SealLength(data_in);
 		Stream_SetPosition(data_in, 0);
 
-		MessageQueue_Post(cliprdr->MsgPipe->In, NULL, 0, (void*) data_in, NULL);
+		MessageQueue_Post(cliprdr->queue, NULL, 0, (void*) data_in, NULL);
 	}
 }
 
@@ -835,10 +847,10 @@ static void* cliprdr_virtual_channel_client_thread(void* arg)
 
 	while (1)
 	{
-		if (!MessageQueue_Wait(cliprdr->MsgPipe->In))
+		if (!MessageQueue_Wait(cliprdr->queue))
 			break;
 
-		if (MessageQueue_Peek(cliprdr->MsgPipe->In, &message, TRUE))
+		if (MessageQueue_Peek(cliprdr->queue, &message, TRUE))
 		{
 			if (message.id == WMQ_QUIT)
 				break;
@@ -866,25 +878,33 @@ static void cliprdr_virtual_channel_event_connected(cliprdrPlugin* cliprdr, LPVO
 
 	if (status != CHANNEL_RC_OK)
 	{
-		WLog_ERR(TAG,  "cliprdr_virtual_channel_event_connected: open failed: status: %d", status);
+		WLog_ERR(TAG,  "pVirtualChannelOpen failed with %s [%08X]",
+				 WTSErrorToString(status), status);
 		return;
 	}
 
-	cliprdr->MsgPipe = MessagePipe_New();
+	cliprdr->queue = MessageQueue_New(NULL);
 
 	cliprdr->thread = CreateThread(NULL, 0,
 			(LPTHREAD_START_ROUTINE) cliprdr_virtual_channel_client_thread, (void*) cliprdr, 0, NULL);
 }
 
-static void cliprdr_virtual_channel_event_terminated(cliprdrPlugin* cliprdr)
+static void cliprdr_virtual_channel_event_disconnected(cliprdrPlugin* cliprdr)
 {
-	MessagePipe_PostQuit(cliprdr->MsgPipe, 0);
+	UINT rc;
+
+	MessageQueue_PostQuit(cliprdr->queue, 0);
 	WaitForSingleObject(cliprdr->thread, INFINITE);
 
-	MessagePipe_Free(cliprdr->MsgPipe);
+	MessageQueue_Free(cliprdr->queue);
 	CloseHandle(cliprdr->thread);
 
-	cliprdr->channelEntryPoints.pVirtualChannelClose(cliprdr->OpenHandle);
+	rc = cliprdr->channelEntryPoints.pVirtualChannelClose(cliprdr->OpenHandle);
+	if (CHANNEL_RC_OK != rc)
+	{
+		WLog_ERR(TAG, "pVirtualChannelClose failed with %s [%08X]",
+				 WTSErrorToString(rc), rc);
+	}
 
 	if (cliprdr->data_in)
 	{
@@ -893,6 +913,10 @@ static void cliprdr_virtual_channel_event_terminated(cliprdrPlugin* cliprdr)
 	}
 
 	cliprdr_remove_open_handle_data(cliprdr->OpenHandle);
+}
+
+static void cliprdr_virtual_channel_event_terminated(cliprdrPlugin* cliprdr)
+{
 	cliprdr_remove_init_handle_data(cliprdr->InitHandle);
 
 	free(cliprdr);
@@ -917,6 +941,7 @@ static VOID VCAPITYPE cliprdr_virtual_channel_init_event(LPVOID pInitHandle, UIN
 			break;
 
 		case CHANNEL_EVENT_DISCONNECTED:
+			cliprdr_virtual_channel_event_disconnected(cliprdr);
 			break;
 
 		case CHANNEL_EVENT_TERMINATED:
@@ -930,6 +955,8 @@ static VOID VCAPITYPE cliprdr_virtual_channel_init_event(LPVOID pInitHandle, UIN
 
 BOOL VCAPITYPE VirtualChannelEntry(PCHANNEL_ENTRY_POINTS pEntryPoints)
 {
+	UINT rc;
+
 	cliprdrPlugin* cliprdr;
 	CliprdrClientContext* context;
 	CHANNEL_ENTRY_POINTS_FREERDP* pEntryPointsEx;
@@ -966,6 +993,7 @@ BOOL VCAPITYPE VirtualChannelEntry(PCHANNEL_ENTRY_POINTS pEntryPoints)
 		context->ClientFileContentsResponse = cliprdr_client_file_contents_response;
 
 		*(pEntryPointsEx->ppInterface) = (void*) context;
+		cliprdr->context = context;
 	}
 
 	cliprdr->log = WLog_Get("com.freerdp.channels.cliprdr.client");
@@ -979,8 +1007,15 @@ BOOL VCAPITYPE VirtualChannelEntry(PCHANNEL_ENTRY_POINTS pEntryPoints)
 
 	CopyMemory(&(cliprdr->channelEntryPoints), pEntryPoints, sizeof(CHANNEL_ENTRY_POINTS_FREERDP));
 
-	cliprdr->channelEntryPoints.pVirtualChannelInit(&cliprdr->InitHandle,
+	rc = cliprdr->channelEntryPoints.pVirtualChannelInit(&cliprdr->InitHandle,
 		&cliprdr->channelDef, 1, VIRTUAL_CHANNEL_VERSION_WIN2000, cliprdr_virtual_channel_init_event);
+	if (CHANNEL_RC_OK != rc)
+	{
+		WLog_ERR(TAG, "pVirtualChannelInit failed with %s [%08X]",
+				 WTSErrorToString(rc), rc);
+		free(cliprdr);
+		return -1;
+	}
 
 	cliprdr->channelEntryPoints.pInterface = *(cliprdr->channelEntryPoints.ppInterface);
 	cliprdr->channelEntryPoints.ppInterface = &(cliprdr->channelEntryPoints.pInterface);
