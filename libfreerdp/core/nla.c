@@ -84,7 +84,7 @@
  *
  */
 
-#define NLA_PKG_NAME	NEGOSSP_NAME
+#define NLA_PKG_NAME	NTLMSP_NAME
 
 #define TERMSRV_SPN_PREFIX	"TERMSRV/"
 
@@ -1349,23 +1349,28 @@ rdpNla* nla_new(freerdp* instance, rdpTransport* transport, rdpSettings* setting
 
 		if (nla->server)
 		{
-			status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Server"),
-								  0, KEY_READ | KEY_WOW64_64KEY, &hKey);
-
-			if (status == ERROR_SUCCESS)
-			{
-				status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType, NULL, &dwSize);
+			if (!settings->guestSSPIEnabled) {
+				nla->SspiModule = (LPTSTR) malloc((_tcslen(_T("secur32.dll"))  + 1)  * sizeof(TCHAR));
+				_tcscpy(nla->SspiModule,_T("secur32.dll"));				 
+			} else {
+				status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Server"),
+									  0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 				if (status == ERROR_SUCCESS)
 				{
-					nla->SspiModule = (LPTSTR) malloc(dwSize + sizeof(TCHAR));
-					status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType,
-											 (BYTE*) nla->SspiModule, &dwSize);
+					status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType, NULL, &dwSize);
 
 					if (status == ERROR_SUCCESS)
 					{
-						WLog_INFO(TAG, "Using SSPI Module: %s", nla->SspiModule);
-						RegCloseKey(hKey);
+						nla->SspiModule = (LPTSTR) malloc(dwSize + sizeof(TCHAR));
+						status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType,
+												 (BYTE*) nla->SspiModule, &dwSize);
+
+						if (status == ERROR_SUCCESS)
+						{
+							WLog_INFO(TAG, "Using SSPI Module: %s", nla->SspiModule);
+							RegCloseKey(hKey);
+						}
 					}
 				}
 			}
