@@ -32,6 +32,7 @@ void Stream_EnsureCapacity(wStream* s, size_t size)
 		size_t position;
 		size_t old_capacity;
 		size_t new_capacity;
+		BYTE* new_buf;
 
 		old_capacity = s->capacity;
 		new_capacity = old_capacity;
@@ -42,13 +43,15 @@ void Stream_EnsureCapacity(wStream* s, size_t size)
 		}
 		while (new_capacity < size);
 
-		s->capacity = new_capacity;
-		s->length = new_capacity;
 
 		position = Stream_GetPosition(s);
 
-		s->buffer = (BYTE*) realloc(s->buffer, s->capacity);
-
+		new_buf = (BYTE*) realloc(s->buffer, new_capacity);
+		if (!new_buf)
+			return;
+		s->buffer = new_buf;
+		s->capacity = new_capacity;
+		s->length = new_capacity;
 		ZeroMemory(&s->buffer[old_capacity], s->capacity - old_capacity);
 
 		Stream_SetPosition(s, position);
@@ -67,20 +70,27 @@ wStream* Stream_New(BYTE* buffer, size_t size)
 
 	s = malloc(sizeof(wStream));
 
-	if (s)
+	if (!s)
+		return NULL;
+
+
+	if (buffer)
+		s->buffer = buffer;
+	else
+		s->buffer = (BYTE*) malloc(size);
+
+	if (!s->buffer)
 	{
-		if (buffer)
-			s->buffer = buffer;
-		else
-			s->buffer = (BYTE*) malloc(size);
-
-		s->pointer = s->buffer;
-		s->capacity = size;
-		s->length = size;
-
-		s->pool = NULL;
-		s->count = 0;
+		free(s);
+		return NULL;
 	}
+
+	s->pointer = s->buffer;
+	s->capacity = size;
+	s->length = size;
+
+	s->pool = NULL;
+	s->count = 0;
 
 	return s;
 }

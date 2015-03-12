@@ -399,6 +399,7 @@ struct rdp_monitor
 	INT32 width;
 	INT32 height;
 	UINT32 is_primary;
+	UINT32 orig_screen;
 };
 typedef struct rdp_monitor rdpMonitor;
 
@@ -615,6 +616,7 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_AuthenticationServiceClass 			1098
 #define FreeRDP_DisableCredentialsDelegation 			1099
 #define FreeRDP_AuthenticationLevel				1100
+#define FreeRDP_AllowedTlsCiphers				1101
 #define FreeRDP_MstscCookieMode					1152
 #define FreeRDP_CookieMaxLength					1153
 #define FreeRDP_PreconnectionId					1154
@@ -896,7 +898,10 @@ struct rdp_settings
 	ALIGN64 BOOL ListMonitors; /* 392 */
 	ALIGN64 UINT32* MonitorIds; /* 393 */
 	ALIGN64 UINT32 NumMonitorIds; /* 394 */
-	UINT64 padding0448[448 - 395]; /* 395 */
+	ALIGN64 UINT32 MonitorLocalShiftX; /*395 */
+	ALIGN64 UINT32 MonitorLocalShiftY; /* 396 */
+	UINT64 padding0448[448 - 397]; /* 397 */
+
 
 	/* Client Message Channel Data */
 	UINT64 padding0512[512 - 448]; /* 448 */
@@ -998,7 +1003,7 @@ struct rdp_settings
 	ALIGN64 char* AuthenticationServiceClass; /* 1098 */
 	ALIGN64 BOOL DisableCredentialsDelegation; /* 1099 */
 	ALIGN64 BOOL AuthenticationLevel; /* 1100 */
-	ALIGN64 char* PermittedTLSCiphers; /* 1101 */
+	ALIGN64 char* AllowedTlsCiphers; /* 1101 */
 	UINT64 padding1152[1152 - 1102]; /* 1102 */
 
 	/* Connection Cookie */
