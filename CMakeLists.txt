@@ -43,6 +43,7 @@ include(CheckCmakeCompat)
 # Include cmake modules
 include(CheckIncludeFiles)
 include(CheckLibraryExists)
+include(CheckSymbolExists)
 include(CheckStructHasMember)
 include(FindPkgConfig)
 include(TestBigEndian)
@@ -65,7 +66,7 @@ endif()
 set(WITH_LIBRARY_VERSIONING "ON")
 set(FREERDP_VERSION_MAJOR "1")
 set(FREERDP_VERSION_MINOR "2")
-set(FREERDP_VERSION_REVISION "0")
+set(FREERDP_VERSION_REVISION "1")
 set(FREERDP_VERSION_SUFFIX "dev")
 set(FREERDP_API_VERSION "${FREERDP_VERSION_MAJOR}.${FREERDP_VERSION_MINOR}")
 set(FREERDP_VERSION "${FREERDP_API_VERSION}.${FREERDP_VERSION_REVISION}")
@@ -85,7 +86,7 @@ if (${GIT_REVISION} STREQUAL "n/a")
   git_rev_parse(GIT_REVISION --short)
 endif()
 if(ANDROID OR IOS)
-	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY)
+    SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY)
 endif(ANDROID OR IOS)
 
 message(STATUS "Git Revision ${GIT_REVISION}")
@@ -131,7 +132,8 @@ endif()
 # Compiler-specific flags
 if(CMAKE_COMPILER_IS_GNUCC)
 	if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "i686")
-		if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+		CHECK_SYMBOL_EXISTS(__x86_64__ "" IS_X86_64)
+		if(IS_X86_64)
 			set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 		else()
 			set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=i686")
@@ -172,6 +174,14 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		if(Wno-format)
 			set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-format")
 		endif()
+	endif()
+	CHECK_C_COMPILER_FLAG (-Wimplicit-function-declaration Wimplicit-function-declaration)
+	if(Wimplicit-function-declaration)
+		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wimplicit-function-declaration")
+	endif()
+	CHECK_C_COMPILER_FLAG (-Wredundant-decls Wredundant-decls)
+	if(Wredundant-decls)
+		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wredundant-decls")
 	endif()
 	if(CMAKE_BUILD_TYPE STREQUAL "Release")
 		set(CMAKE_C_FLAGS_RELEASE "-DNDEBUG")
@@ -217,6 +227,21 @@ if(${CMAKE_C_COMPILER_ID} STREQUAL "Clang")
 endif()
 
 if(MSVC)
+	# Remove previous warning definitions,
+	# NMake is otherwise complaining.
+	foreach (flags_var_to_scrub
+		CMAKE_C_FLAGS
+		CMAKE_CXX_FLAGS
+		CMAKE_CXX_FLAGS_RELEASE
+		CMAKE_CXX_FLAGS_RELWITHDEBINFO
+		CMAKE_CXX_FLAGS_MINSIZEREL
+		CMAKE_C_FLAGS_RELEASE
+		CMAKE_C_FLAGS_RELWITHDEBINFO
+		CMAKE_C_FLAGS_MINSIZEREL)
+		string (REGEX REPLACE "(^| )[/-]W[ ]*[1-9]" " "
+		"${flags_var_to_scrub}" "${${flags_var_to_scrub}}")
+	endforeach()
+
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Gd")
   string(REGEX MATCH "/W[0-9]" WARN_FOUND ${CMAKE_C_FLAGS})
   if ("${WARN_FOUND}" STREQUAL "")
@@ -269,7 +294,7 @@ if(WIN32)
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DWINVER=0x0602 -DWIN32_WINNT=0x0602")
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWINVER=0x0602 -DWIN32_WINNT=0x0602")
 	endif()
-	
+
 	if (FREERDP_EXTERNAL_SSL_PATH)
 		set(OPENSSL_ROOT_DIR ${FREERDP_EXTERNAL_SSL_PATH})
 	endif()
@@ -352,13 +377,13 @@ if(ANDROID)
 	endif()
 	set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -llog")
 
-    if (NOT FREERDP_EXTERNAL_JPEG_PATH)
+	if (NOT FREERDP_EXTERNAL_JPEG_PATH)
 		if(IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/external/jpeg8d")
-            set(FREERDP_EXTERNAL_JPEG_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/jpeg8d")
+			set(FREERDP_EXTERNAL_JPEG_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/jpeg8d")
 		else()
 			message(STATUS "FREERDP_EXTERNAL_SSL_PATH not set! - Needs to be set if openssl is not found in the android NDK (which usually isn't)")
 		endif()
-    endif()
+	endif()
 	if (NOT FREERDP_EXTERNAL_SSL_PATH)
 		if(IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/external/openssl")
 			set(FREERDP_EXTERNAL_SSL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/openssl")
@@ -509,9 +534,9 @@ if(APPLE)
 	set(GSTREAMER_1_0_FEATURE_TYPE "OPTIONAL")
 	set(X11_FEATURE_TYPE "OPTIONAL")
 	set(WAYLAND_FEATURE_TYPE "DISABLED")
+	set(ALSA_FEATURE_TYPE "DISABLED")
 	if(IOS)
 		set(X11_FEATURE_TYPE "DISABLED")
-		set(ALSA_FEATURE_TYPE "DISABLED")
 		set(PULSE_FEATURE_TYPE "DISABLED")
 		set(CUPS_FEATURE_TYPE "DISABLED")
 		set(PCSC_FEATURE_TYPE "DISABLED")
@@ -569,6 +594,10 @@ if(TARGET_ARCH MATCHES "x86|x64")
 	endif()
 endif()
 
+if (TARGET_ARCH MATCHES "sparc")
+	set(HAVE_ALIGNED_REQUIRED 1)
+endif()
+
 # Path to put FreeRDP data
 set(FREERDP_DATA_PATH "${CMAKE_INSTALL_PREFIX}/share/freerdp")
 
@@ -615,11 +644,11 @@ endif()
 
 include(CTest)
 
-if(BUILD_TESTING)	
+if(BUILD_TESTING)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DFREERDP_TEST_EXPORTS")
-	
+
 	enable_testing()
-	
+
 	if(MSVC)
 		set(TESTING_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 	else()

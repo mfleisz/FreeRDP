@@ -172,11 +172,16 @@ BOOL update_read_bitmap_update(rdpUpdate* update, wStream* s, BITMAP_UPDATE* bit
 	if (bitmapUpdate->number > bitmapUpdate->count)
 	{
 		UINT16 count;
+		BITMAP_DATA *newdata;
 
 		count = bitmapUpdate->number * 2;
 
-		bitmapUpdate->rectangles = (BITMAP_DATA*) realloc(bitmapUpdate->rectangles,
+		newdata = (BITMAP_DATA*) realloc(bitmapUpdate->rectangles,
 				sizeof(BITMAP_DATA) * count);
+		if (!newdata)
+			return FALSE;
+
+		bitmapUpdate->rectangles = newdata;
 
 		ZeroMemory(&bitmapUpdate->rectangles[bitmapUpdate->count],
 				sizeof(BITMAP_DATA) * (count - bitmapUpdate->count));
@@ -1614,7 +1619,10 @@ BOOL update_read_refresh_rect(rdpUpdate* update, wStream* s)
 		Stream_Read_UINT16(s, areas[index].bottom);
 	}
 
-	IFCALL(update->RefreshRect, update->context, numberOfAreas, areas);
+	if (update->context->settings->RefreshRect)
+		IFCALL(update->RefreshRect, update->context, numberOfAreas, areas);
+	else
+		WLog_Print(update->log, WLOG_WARN, "ignoring refresh rect request from client");
 
 	free(areas);
 
@@ -1634,8 +1642,11 @@ BOOL update_read_suppress_output(rdpUpdate* update, wStream* s)
 	if (allowDisplayUpdates > 0 && Stream_GetRemainingLength(s) < 8)
 		return FALSE;
 
-	IFCALL(update->SuppressOutput, update->context, allowDisplayUpdates,
-		allowDisplayUpdates > 0 ? (RECTANGLE_16*) Stream_Pointer(s) : NULL);
+	if (update->context->settings->SuppressOutput)
+		IFCALL(update->SuppressOutput, update->context, allowDisplayUpdates,
+			allowDisplayUpdates > 0 ? (RECTANGLE_16*) Stream_Pointer(s) : NULL);
+	else
+		WLog_Print(update->log, WLOG_WARN, "ignoring suppress output request from client");
 
 	return TRUE;
 }
