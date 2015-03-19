@@ -219,7 +219,7 @@ int nla_client_init(rdpNla* nla)
 
 	nla->cbMaxToken = nla->pPackageInfo->cbMaxToken;
 	nla->status = nla->table->AcquireCredentialsHandle(NULL, NLA_PKG_NAME,
-			 SECPKG_CRED_OUTBOUND, NULL, &nla->identity, NULL, NULL, &nla->credentials, &nla->expiration);
+			 SECPKG_CRED_OUTBOUND, NULL, (nla->identity.User && nla->identity.Password) ? &nla->identity : NULL, NULL, NULL, &nla->credentials, &nla->expiration);
 
 	if (nla->status != SEC_E_OK)
 	{
