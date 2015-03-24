@@ -39,6 +39,10 @@
 #include <poll.h>
 #endif
 
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+#include <valgrind/memcheck.h>
+#endif
+
 #define TAG FREERDP_TAG("crypto")
 
 struct _BIO_RDP_TLS
@@ -92,16 +96,7 @@ static int bio_rdp_tls_write(BIO* bio, const char* buf, int size)
 				break;
 
 			case SSL_ERROR_SYSCALL:
-				error = WSAGetLastError();
-				if ((error == WSAEWOULDBLOCK) || (error == WSAEINTR) ||
-					(error == WSAEINPROGRESS) || (error == WSAEALREADY))
-				{
-					BIO_set_flags(bio, (BIO_FLAGS_WRITE | BIO_FLAGS_SHOULD_RETRY));
-				}
-				else
-				{
-					BIO_clear_flags(bio, BIO_FLAGS_SHOULD_RETRY);
-				}
+				BIO_set_flags(bio, (BIO_FLAGS_WRITE | BIO_FLAGS_SHOULD_RETRY));
 				break;
 
 			case SSL_ERROR_SSL:
@@ -166,19 +161,17 @@ static int bio_rdp_tls_read(BIO* bio, char* buf, int size)
 				break;
 
 			case SSL_ERROR_SYSCALL:
-				error = WSAGetLastError();
-				if ((error == WSAEWOULDBLOCK) || (error == WSAEINTR) ||
-					(error == WSAEINPROGRESS) || (error == WSAEALREADY))
-				{
-					BIO_set_flags(bio, (BIO_FLAGS_READ | BIO_FLAGS_SHOULD_RETRY));
-				}
-				else
-				{
-					BIO_clear_flags(bio, BIO_FLAGS_SHOULD_RETRY);
-				}
+				BIO_set_flags(bio, (BIO_FLAGS_READ | BIO_FLAGS_SHOULD_RETRY));
 				break;
 		}
 	}
+
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+	if (status > 0)
+	{
+		VALGRIND_MAKE_MEM_DEFINED(buf, status);
+	}
+#endif
 
 	return status;
 }

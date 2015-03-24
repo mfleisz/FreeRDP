@@ -445,19 +445,26 @@ int rpc_client_recv_fragment(rdpRpc* rpc, wStream* fragment)
 	return 1;
 }
 
-int rpc_client_out_channel_recv(rdpRpc* rpc)
+int rpc_client_default_out_channel_recv(rdpRpc* rpc)
 {
 	int status = -1;
+	UINT32 statusCode;
 	HttpResponse* response;
 	RpcInChannel* inChannel;
 	RpcOutChannel* outChannel;
+	HANDLE outChannelEvent = NULL;
 	RpcVirtualConnection* connection = rpc->VirtualConnection;
 
 	inChannel = connection->DefaultInChannel;
 	outChannel = connection->DefaultOutChannel;
 
+	BIO_get_event(outChannel->tls->bio, &outChannelEvent);
+
 	if (outChannel->State < CLIENT_OUT_CHANNEL_STATE_OPENED)
 	{
+		if (WaitForSingleObject(outChannelEvent, 0) != WAIT_OBJECT_0)
+			return 1;
+
 		response = http_response_recv(outChannel->tls);
 
 		if (!response)
@@ -481,10 +488,10 @@ int rpc_client_out_channel_recv(rdpRpc* rpc)
 				return -1;
 			}
 
-			rpc_ncacn_http_ntlm_uninit(rpc, (RpcChannel*) outChannel);
+			rpc_ncacn_http_ntlm_uninit(rpc, (RpcChannel*)outChannel);
 
 			rpc_out_channel_transition_to_state(outChannel,
-					CLIENT_OUT_CHANNEL_STATE_NEGOTIATED);
+				CLIENT_OUT_CHANNEL_STATE_NEGOTIATED);
 
 			/* Send CONN/A1 PDU over OUT channel */
 
@@ -495,7 +502,7 @@ int rpc_client_out_channel_recv(rdpRpc* rpc)
 			}
 
 			rpc_out_channel_transition_to_state(outChannel,
-					CLIENT_OUT_CHANNEL_STATE_OPENED);
+				CLIENT_OUT_CHANNEL_STATE_OPENED);
 
 			if (inChannel->State == CLIENT_IN_CHANNEL_STATE_OPENED)
 			{
@@ -512,18 +519,23 @@ int rpc_client_out_channel_recv(rdpRpc* rpc)
 	{
 		/* Receive OUT channel response */
 
+		if (WaitForSingleObject(outChannelEvent, 0) != WAIT_OBJECT_0)
+			return 1;
+
 		response = http_response_recv(outChannel->tls);
 
 		if (!response)
 			return -1;
 
-		if (response->StatusCode != HTTP_STATUS_OK)
+		statusCode = response->StatusCode;
+
+		if (statusCode != HTTP_STATUS_OK)
 		{
-			WLog_ERR(TAG, "error! Status Code: %d", response->StatusCode);
+			WLog_ERR(TAG, "error! Status Code: %d", statusCode);
 			http_response_print(response);
 			http_response_free(response);
 
-			if (response->StatusCode == HTTP_STATUS_DENIED)
+			if (statusCode == HTTP_STATUS_DENIED)
 			{
 				if (!freerdp_get_last_error(rpc->context))
 					freerdp_set_last_error(rpc->context, FREERDP_ERROR_AUTHENTICATION_FAILED);
@@ -535,7 +547,7 @@ int rpc_client_out_channel_recv(rdpRpc* rpc)
 		http_response_free(response);
 
 		rpc_virtual_connection_transition_to_state(rpc,
-				rpc->VirtualConnection, VIRTUAL_CONNECTION_STATE_WAIT_A3W);
+			rpc->VirtualConnection, VIRTUAL_CONNECTION_STATE_WAIT_A3W);
 
 		status = 1;
 	}
@@ -551,7 +563,7 @@ int rpc_client_out_channel_recv(rdpRpc* rpc)
 			while (Stream_GetPosition(fragment) < RPC_COMMON_FIELDS_LENGTH)
 			{
 				status = rpc_out_channel_read(outChannel, Stream_Pointer(fragment),
-						RPC_COMMON_FIELDS_LENGTH - Stream_GetPosition(fragment));
+					RPC_COMMON_FIELDS_LENGTH - Stream_GetPosition(fragment));
 
 				if (status < 0)
 					return -1;
@@ -565,12 +577,12 @@ int rpc_client_out_channel_recv(rdpRpc* rpc)
 			if (Stream_GetPosition(fragment) < RPC_COMMON_FIELDS_LENGTH)
 				return status;
 
-			header = (rpcconn_common_hdr_t*) Stream_Buffer(fragment);
+			header = (rpcconn_common_hdr_t*)Stream_Buffer(fragment);
 
 			if (header->frag_length > rpc->max_recv_frag)
 			{
 				WLog_ERR(TAG, "rpc_client_recv: invalid fragment size: %d (max: %d)",
-						 header->frag_length, rpc->max_recv_frag);
+					header->frag_length, rpc->max_recv_frag);
 				winpr_HexDump(TAG, WLOG_ERROR, Stream_Buffer(fragment), Stream_GetPosition(fragment));
 				return -1;
 			}
@@ -578,7 +590,7 @@ int rpc_client_out_channel_recv(rdpRpc* rpc)
 			while (Stream_GetPosition(fragment) < header->frag_length)
 			{
 				status = rpc_out_channel_read(outChannel, Stream_Pointer(fragment),
-						header->frag_length - Stream_GetPosition(fragment));
+					header->frag_length - Stream_GetPosition(fragment));
 
 				if (status < 0)
 				{
@@ -604,12 +616,22 @@ int rpc_client_out_channel_recv(rdpRpc* rpc)
 
 				status = rpc_client_recv_fragment(rpc, fragment);
 
-				/* channel recycling may update channel pointers */
-				inChannel = connection->DefaultInChannel;
-				outChannel = connection->DefaultOutChannel;
-
 				if (status < 0)
 					return status;
+
+				/* channel recycling may update channel pointers */
+				inChannel = connection->DefaultInChannel;
+				if (outChannel->State == CLIENT_OUT_CHANNEL_STATE_RECYCLED && connection->NonDefaultOutChannel)
+				{
+					rpc_out_channel_free(connection->DefaultOutChannel);
+					connection->DefaultOutChannel = connection->NonDefaultOutChannel;
+					connection->NonDefaultOutChannel = NULL;
+
+					rpc_out_channel_transition_to_state(connection->DefaultOutChannel, CLIENT_OUT_CHANNEL_STATE_OPENED);
+					rpc_virtual_connection_transition_to_state(rpc, connection, VIRTUAL_CONNECTION_STATE_OUT_CHANNEL_WAIT);
+
+					return 0;
+				}
 
 				Stream_SetPosition(fragment, 0);
 			}
@@ -619,9 +641,91 @@ int rpc_client_out_channel_recv(rdpRpc* rpc)
 	return status;
 }
 
-int rpc_client_in_channel_recv(rdpRpc* rpc)
+int rpc_client_nondefault_out_channel_recv(rdpRpc* rpc)
 {
 	int status = -1;
+	HttpResponse* response;
+	RpcOutChannel* nextOutChannel;
+	HANDLE nextOutChannelEvent = NULL;
+
+	nextOutChannel = rpc->VirtualConnection->NonDefaultOutChannel;
+
+	BIO_get_event(nextOutChannel->tls->bio, &nextOutChannelEvent);
+
+	if (WaitForSingleObject(nextOutChannelEvent, 0) != WAIT_OBJECT_0)
+		return 1;
+
+	response = http_response_recv(nextOutChannel->tls);
+
+	if (response)
+	{
+		if (nextOutChannel->State == CLIENT_OUT_CHANNEL_STATE_SECURITY)
+		{
+			status = rpc_ncacn_http_recv_out_channel_response(rpc, nextOutChannel, response);
+
+			if (status >= 0)
+			{
+				status = rpc_ncacn_http_send_out_channel_request(rpc, nextOutChannel, TRUE);
+
+				if (status >= 0)
+				{
+					rpc_ncacn_http_ntlm_uninit(rpc, (RpcChannel*) nextOutChannel);
+
+					status = rts_send_OUT_R1_A3_pdu(rpc);
+
+					if (status >= 0)
+					{
+						rpc_out_channel_transition_to_state(nextOutChannel, CLIENT_OUT_CHANNEL_STATE_OPENED_A6W);
+					}
+					else
+					{
+						WLog_ERR(TAG, "rts_send_OUT_R1/A3_pdu failure");
+					}
+				}
+				else
+				{
+					WLog_ERR(TAG, "rpc_ncacn_http_send_out_channel_request failure");
+				}
+			}
+			else
+			{
+				WLog_ERR(TAG, "rpc_ncacn_http_recv_out_channel_response failure");
+			}
+		}
+
+		http_response_free(response);
+	}
+
+	return status;
+}
+
+int rpc_client_out_channel_recv(rdpRpc* rpc)
+{
+	int status;
+	RpcVirtualConnection* connection = rpc->VirtualConnection;
+
+	if (connection->DefaultOutChannel)
+	{
+		status = rpc_client_default_out_channel_recv(rpc);
+
+		if (status < 0)
+			return -1;
+	}
+
+	if (connection->NonDefaultOutChannel)
+	{
+		status = rpc_client_nondefault_out_channel_recv(rpc);
+
+		if (status < 0)
+			return -1;
+	}
+
+	return 1;
+}
+
+int rpc_client_in_channel_recv(rdpRpc* rpc)
+{
+	int status = 1;
 	HttpResponse* response;
 	RpcInChannel* inChannel;
 	RpcOutChannel* outChannel;
@@ -683,6 +787,17 @@ int rpc_client_in_channel_recv(rdpRpc* rpc)
 
 			status = 1;
 		}
+
+		http_response_free(response);
+	}
+	else
+	{
+		response = http_response_recv(inChannel->tls);
+
+		if (!response)
+			return -1;
+
+		/* We can receive an unauthorized HTTP response on the IN channel */
 
 		http_response_free(response);
 	}
