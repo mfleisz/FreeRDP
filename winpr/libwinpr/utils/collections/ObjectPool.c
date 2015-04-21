@@ -127,14 +127,19 @@ wObjectPool* ObjectPool_New(BOOL synchronized)
 
 	if (pool)
 	{
+		pool->capacity = 32;
+		pool->size = 0;
+		pool->array = (void**) malloc(sizeof(void*) * pool->capacity);
+		if (!pool->array)
+		{
+			free(pool);
+			return NULL;
+		}
 		pool->synchronized = synchronized;
 
 		if (pool->synchronized)
 			InitializeCriticalSectionAndSpinCount(&pool->lock, 4000);
 
-		pool->size = 0;
-		pool->capacity = 32;
-		pool->array = (void**) malloc(sizeof(void*) * pool->capacity);
 	}
 
 	return pool;

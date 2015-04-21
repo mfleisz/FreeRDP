@@ -208,7 +208,7 @@ static BOOL FileIsHandled(HANDLE handle)
 {
 	WINPR_NAMED_PIPE* pFile = (WINPR_NAMED_PIPE*) handle;
 
-	if (!pFile || pFile->Type != HANDLE_TYPE_NAMED_PIPE)
+	if (!pFile || (pFile->Type != HANDLE_TYPE_NAMED_PIPE) || (pFile == INVALID_HANDLE_VALUE))
 	{
 		SetLastError(ERROR_INVALID_HANDLE);
 		return FALSE;
@@ -271,8 +271,14 @@ static void _HandleCreatorsInit()
 	/* NB: error management to be done outside of this function */
 	assert(_HandleCreators == NULL);
 	_HandleCreators = (HANDLE_CREATOR**)calloc(HANDLE_CREATOR_MAX+1, sizeof(HANDLE_CREATOR*));
-	InitializeCriticalSection(&_HandleCreatorsLock);
-	assert(_HandleCreators != NULL);
+	if (!_HandleCreators)
+		return;
+
+	if (!InitializeCriticalSectionEx(&_HandleCreatorsLock, 0, 0))
+	{
+		free(_HandleCreators);
+		_HandleCreators = NULL;
+	}
 }
 
 /**
@@ -407,9 +413,21 @@ HANDLE CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, 
 
 	free(name);
 	pNamedPipe = (WINPR_NAMED_PIPE*) calloc(1, sizeof(WINPR_NAMED_PIPE));
+	if (!pNamedPipe)
+	{
+		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+		return INVALID_HANDLE_VALUE;
+	}
+
 	hNamedPipe = (HANDLE) pNamedPipe;
 	WINPR_HANDLE_SET_TYPE(pNamedPipe, HANDLE_TYPE_NAMED_PIPE);
 	pNamedPipe->name = _strdup(lpFileName);
+	if (!pNamedPipe->name)
+	{
+		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+		free(pNamedPipe);
+		return INVALID_HANDLE_VALUE;
+	}
 	pNamedPipe->dwOpenMode = 0;
 	pNamedPipe->dwPipeMode = 0;
 	pNamedPipe->nMaxInstances = 0;
@@ -418,7 +436,22 @@ HANDLE CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, 
 	pNamedPipe->nDefaultTimeOut = 0;
 	pNamedPipe->dwFlagsAndAttributes = dwFlagsAndAttributes;
 	pNamedPipe->lpFileName = GetNamedPipeNameWithoutPrefixA(lpFileName);
+	if (!pNamedPipe->lpFileName)
+	{
+		free((void *)pNamedPipe->name);
+		free(pNamedPipe);
+		return INVALID_HANDLE_VALUE;
+
+	}
 	pNamedPipe->lpFilePath = GetNamedPipeUnixDomainSocketFilePathA(lpFileName);
+	if (!pNamedPipe->lpFilePath)
+	{
+		free((void *)pNamedPipe->lpFileName);
+		free((void *)pNamedPipe->name);
+		free(pNamedPipe);
+		return INVALID_HANDLE_VALUE;
+
+	}
 	pNamedPipe->clientfd = socket(PF_LOCAL, SOCK_STREAM, 0);
 	pNamedPipe->serverfd = -1;
 	pNamedPipe->ServerMode = FALSE;
@@ -608,8 +641,12 @@ HANDLE FindFirstFileA(LPCSTR lpFileName, LPWIN32_FIND_DATAA lpFindFileData)
 	struct stat fileStat;
 	WIN32_FILE_SEARCH* pFileSearch;
 	ZeroMemory(lpFindFileData, sizeof(WIN32_FIND_DATAA));
-	pFileSearch = (WIN32_FILE_SEARCH*) malloc(sizeof(WIN32_FILE_SEARCH));
-	ZeroMemory(pFileSearch, sizeof(WIN32_FILE_SEARCH));
+	pFileSearch = (WIN32_FILE_SEARCH*) calloc(1, sizeof(WIN32_FILE_SEARCH));
+	if (!pFileSearch)
+	{
+		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+		return INVALID_HANDLE_VALUE;
+	}
 	/* Separate lpFileName into path and pattern components */
 	p = strrchr(lpFileName, '/');
 
@@ -619,10 +656,23 @@ HANDLE FindFirstFileA(LPCSTR lpFileName, LPWIN32_FIND_DATAA lpFindFileData)
 	index = (p - lpFileName);
 	length = (p - lpFileName);
 	pFileSearch->lpPath = (LPSTR) malloc(length + 1);
+	if (!pFileSearch->lpPath)
+	{
+		free(pFileSearch);
+		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+		return INVALID_HANDLE_VALUE;
+	}
 	CopyMemory(pFileSearch->lpPath, lpFileName, length);
 	pFileSearch->lpPath[length] = '\0';
 	length = strlen(lpFileName) - index;
 	pFileSearch->lpPattern = (LPSTR) malloc(length + 1);
+	if (!pFileSearch->lpPattern)
+	{
+		free(pFileSearch->lpPath);
+		free(pFileSearch);
+		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+		return INVALID_HANDLE_VALUE;
+	}
 	CopyMemory(pFileSearch->lpPattern, &lpFileName[index + 1], length);
 	pFileSearch->lpPattern[length] = '\0';
 
@@ -783,6 +833,8 @@ char* GetNamedPipeUnixDomainSocketBaseFilePathA()
 	char* lpTempPath;
 	char* lpPipePath;
 	lpTempPath = GetKnownPath(KNOWN_PATH_TEMP);
+	if (!lpTempPath)
+		return NULL;
 	lpPipePath = GetCombinedPath(lpTempPath, ".pipe");
 	free(lpTempPath);
 	return lpPipePath;

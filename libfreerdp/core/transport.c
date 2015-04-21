@@ -61,8 +61,13 @@ static void* transport_client_thread(void* arg);
 wStream* transport_send_stream_init(rdpTransport* transport, int size)
 {
 	wStream* s;
-	s = StreamPool_Take(transport->ReceivePool, size);
-	Stream_EnsureCapacity(s, size);
+	if (!(s = StreamPool_Take(transport->ReceivePool, size)))
+		return NULL;
+	if (!Stream_EnsureCapacity(s, size))
+	{
+		Stream_Release(s);
+		return NULL;
+	}
 	Stream_SetPosition(s, 0);
 	return s;
 }
@@ -445,7 +450,8 @@ int transport_read_pdu(rdpTransport* transport, wStream* s)
 
 	position = Stream_GetPosition(s);
 	/* Make sure there is enough space for the longest header within the stream */
-	Stream_EnsureCapacity(s, 4);
+	if (!Stream_EnsureCapacity(s, 4))
+		return -1;
 
 	/* Make sure at least two bytes are read for further processing */
 	if (position < 2 && (status = transport_read_layer_bytes(transport, s, 2 - position)) != 1)
@@ -551,7 +557,8 @@ int transport_read_pdu(rdpTransport* transport, wStream* s)
 		}
 	}
 
-	Stream_EnsureCapacity(s, Stream_GetPosition(s) + pduLength);
+	if (!Stream_EnsureCapacity(s, Stream_GetPosition(s) + pduLength))
+		return -1;
 	status = transport_read_layer_bytes(transport, s, pduLength - Stream_GetPosition(s));
 
 	if (status != 1)
@@ -569,10 +576,12 @@ int transport_write(rdpTransport* transport, wStream* s)
 {
 	int length;
 	int status = -1;
+	int writtenlength = 0;
 
 	EnterCriticalSection(&(transport->WriteLock));
 
 	length = Stream_GetPosition(s);
+	writtenlength = length;
 	Stream_SetPosition(s, 0);
 
 	if (length > 0)
@@ -591,16 +600,17 @@ int transport_write(rdpTransport* transport, wStream* s)
 			 * is a SSL or TSG BIO in the chain.
 			 */
 			if (!BIO_should_retry(transport->frontBio))
-				return status;
+				goto out_cleanup;
 
 			/* non-blocking can live with blocked IOs */
 			if (!transport->blocking)
-				return status;
+				goto out_cleanup;
 
 			if (BIO_wait_write(transport->frontBio, 100) < 0)
 			{
 				WLog_ERR(TAG, "error when selecting for write");
-				return -1;
+				status = -1;
+				goto out_cleanup;
 			}
 
 			continue;
@@ -613,13 +623,15 @@ int transport_write(rdpTransport* transport, wStream* s)
 				if (BIO_wait_write(transport->frontBio, 100) < 0)
 				{
 					WLog_ERR(TAG, "error when selecting for write");
-					return -1;
+					status = -1;
+					goto out_cleanup;
 				}
 
 				if (BIO_flush(transport->frontBio) < 1)
 				{
 					WLog_ERR(TAG, "error when flushing outputBuffer");
-					return -1;
+					status = -1;
+					goto out_cleanup;
 				}
 			}
 		}
@@ -627,6 +639,9 @@ int transport_write(rdpTransport* transport, wStream* s)
 		length -= status;
 		Stream_Seek(s, status);
 	}
+	transport->written += writtenlength;
+
+out_cleanup:
 
 	if (status < 0)
 	{
@@ -734,7 +749,8 @@ int transport_check_fds(rdpTransport* transport)
 		}
 
 		received = transport->ReceiveBuffer;
-		transport->ReceiveBuffer = StreamPool_Take(transport->ReceivePool, 0);
+		if (!(transport->ReceiveBuffer = StreamPool_Take(transport->ReceivePool, 0)))
+			return -1;
 		/**
 		 * status:
 		 * 	-1: error

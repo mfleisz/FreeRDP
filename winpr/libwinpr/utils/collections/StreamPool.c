@@ -169,20 +169,23 @@ wStream* StreamPool_Take(wStreamPool* pool, size_t size)
 	if (foundIndex < 0)
 	{
 		s = Stream_New(NULL, size);
+		if (!s)
+			goto out_fail;
 	}
 	else
 	{
-		StreamPool_ShiftAvailable(pool, foundIndex, -1);
-
 		Stream_SetPosition(s, 0);
-		Stream_EnsureCapacity(s, size);
+		StreamPool_ShiftAvailable(pool, foundIndex, -1);
 	}
 
-	s->pool = pool;
-	s->count = 1;
+	if (s)
+	{
+		s->pool = pool;
+		s->count = 1;
+		StreamPool_AddUsed(pool, s);
+	}
 
-	StreamPool_AddUsed(pool, s);
-
+out_fail:
 	if (pool->synchronized)
 		LeaveCriticalSection(&pool->lock);
 
@@ -206,7 +209,7 @@ void StreamPool_Return(wStreamPool* pool, wStream* s)
 		new_cap = pool->aCapacity * 2;
 		new_arr = (wStream**) realloc(pool->aArray, sizeof(wStream*) * new_cap);
 		if (!new_arr)
-			return;
+			goto out_fail;
 		pool->aCapacity = new_cap;
 		pool->aArray = new_arr;
 	}
@@ -218,7 +221,7 @@ void StreamPool_Return(wStreamPool* pool, wStream* s)
 		new_cap = pool->aCapacity / 2;
 		new_arr = (wStream**) realloc(pool->aArray, sizeof(wStream*) * new_cap);
 		if (!new_arr)
-			return;
+			goto out_fail;
 		pool->aCapacity = new_cap;
 		pool->aArray = new_arr;
 	}
@@ -226,6 +229,7 @@ void StreamPool_Return(wStreamPool* pool, wStream* s)
 	pool->aArray[(pool->aSize)++] = s;
 	StreamPool_RemoveUsed(pool, s);
 
+out_fail:
 	if (pool->synchronized)
 		LeaveCriticalSection(&pool->lock);
 }
