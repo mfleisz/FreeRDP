@@ -36,15 +36,12 @@
 
 #include "../handle/handle.h"
 
-#include <signal.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/un.h>
-#include <sys/stat.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <assert.h>
-#include <pthread.h>
+#include <unistd.h>
 
 #ifdef HAVE_AIO_H
 #undef HAVE_AIO_H /* disable for now, incomplete */
@@ -86,7 +83,7 @@ static BOOL PipeIsHandled(HANDLE handle)
 {
 	WINPR_PIPE* pPipe = (WINPR_PIPE*) handle;
 
-	if (!pPipe || pPipe->Type != HANDLE_TYPE_ANONYMOUS_PIPE)
+	if (!pPipe || (pPipe->Type != HANDLE_TYPE_ANONYMOUS_PIPE))
 	{
 		SetLastError(ERROR_INVALID_HANDLE);
 		return FALSE;
@@ -190,7 +187,7 @@ static BOOL NamedPipeIsHandled(HANDLE handle)
 {
 	WINPR_NAMED_PIPE* pPipe = (WINPR_NAMED_PIPE*) handle;
 
-	if (!pPipe || pPipe->Type != HANDLE_TYPE_NAMED_PIPE)
+	if (!pPipe || (pPipe->Type != HANDLE_TYPE_NAMED_PIPE) || (pPipe == INVALID_HANDLE_VALUE))
 	{
 		SetLastError(ERROR_INVALID_HANDLE);
 		return FALSE;
@@ -760,6 +757,8 @@ BOOL WaitNamedPipeA(LPCSTR lpNamedPipeName, DWORD nTimeOut)
 		return FALSE;
 
 	lpFilePath = GetNamedPipeUnixDomainSocketFilePathA(lpNamedPipeName);
+	if (!lpFilePath)
+		return FALSE;
 
 	if (nTimeOut == NMPWAIT_USE_DEFAULT_WAIT)
 		nTimeOut = 50;

@@ -389,7 +389,8 @@ static int fastpath_recv_update_data(rdpFastPath* fastpath, wStream* s)
 		/* data was compressed, copy from decompression buffer */
 
 		size = DstSize;
-		cs = StreamPool_Take(transport->ReceivePool, DstSize);
+		if (!(cs = StreamPool_Take(transport->ReceivePool, DstSize)))
+			return -1;
 
 		Stream_SetPosition(cs, 0);
 		Stream_Write(cs, pDstData, DstSize);
@@ -432,7 +433,9 @@ static int fastpath_recv_update_data(rdpFastPath* fastpath, wStream* s)
 				return -1;
 			}
 
-			fastpath->updateData = StreamPool_Take(transport->ReceivePool, size);
+			if (!(fastpath->updateData = StreamPool_Take(transport->ReceivePool, size)))
+				return -1;
+
 			Stream_SetPosition(fastpath->updateData, 0);
 
 			Stream_Copy(fastpath->updateData, cs, size);
@@ -457,7 +460,11 @@ static int fastpath_recv_update_data(rdpFastPath* fastpath, wStream* s)
 				return -1;
 			}
 
-			Stream_EnsureCapacity(fastpath->updateData, totalSize);
+			if (!Stream_EnsureCapacity(fastpath->updateData, totalSize))
+			{
+				WLog_ERR(TAG,  "Couldn't re-allocate memory for stream");
+				return -1;
+			}
 
 			Stream_Copy(fastpath->updateData, cs, size);
 		}
@@ -481,7 +488,11 @@ static int fastpath_recv_update_data(rdpFastPath* fastpath, wStream* s)
 				return -1;
 			}
 
-			Stream_EnsureCapacity(fastpath->updateData, totalSize);
+			if (!Stream_EnsureCapacity(fastpath->updateData, totalSize))
+			{
+				WLog_ERR(TAG,  "Couldn't re-allocate memory for stream");
+				return -1;
+			}
 
 			Stream_Copy(fastpath->updateData, cs, size);
 
@@ -806,23 +817,28 @@ BOOL fastpath_send_multiple_input_pdu(rdpFastPath* fastpath, wStream* s, int iNu
 			Stream_Write_UINT8(s, 0x1); /* TSFIPS_VERSION 1*/
 			Stream_Write_UINT8(s, pad); /* padding */
 
-			security_hmac_signature(fpInputEvents, fpInputEvents_length, Stream_Pointer(s), rdp);
+			if (!security_hmac_signature(fpInputEvents, fpInputEvents_length, Stream_Pointer(s), rdp))
+				return FALSE;
 
 			if (pad)
 				memset(fpInputEvents + fpInputEvents_length, 0, pad);
 
-			security_fips_encrypt(fpInputEvents, fpInputEvents_length + pad, rdp);
+			if (!security_fips_encrypt(fpInputEvents, fpInputEvents_length + pad, rdp))
+				return FALSE;
 
 			length += pad;
 		}
 		else
 		{
-			if (rdp->sec_flags & SEC_SECURE_CHECKSUM)
-				security_salted_mac_signature(rdp, fpInputEvents, fpInputEvents_length, TRUE, Stream_Pointer(s));
-			else
-				security_mac_signature(rdp, fpInputEvents, fpInputEvents_length, Stream_Pointer(s));
+			BOOL status;
 
-			security_encrypt(fpInputEvents, fpInputEvents_length, rdp);
+			if (rdp->sec_flags & SEC_SECURE_CHECKSUM)
+				status = security_salted_mac_signature(rdp, fpInputEvents, fpInputEvents_length, TRUE, Stream_Pointer(s));
+			else
+				status = security_mac_signature(rdp, fpInputEvents, fpInputEvents_length, Stream_Pointer(s));
+
+			if (!status || !security_encrypt(fpInputEvents, fpInputEvents_length, rdp))
+				return FALSE;
 		}
 	}
 
@@ -1010,17 +1026,19 @@ BOOL fastpath_send_update_pdu(rdpFastPath* fastpath, BYTE updateCode, wStream* s
 
 			if (rdp->settings->EncryptionMethods == ENCRYPTION_METHOD_FIPS)
 			{
-				security_hmac_signature(data, dataSize - pad, pSignature, rdp);
+				if (!security_hmac_signature(data, dataSize - pad, pSignature, rdp))
+					return FALSE;
 				security_fips_encrypt(data, dataSize, rdp);
 			}
 			else
 			{
 				if (rdp->sec_flags & SEC_SECURE_CHECKSUM)
-					security_salted_mac_signature(rdp, data, dataSize, TRUE, pSignature);
+					status = security_salted_mac_signature(rdp, data, dataSize, TRUE, pSignature);
 				else
-					security_mac_signature(rdp, data, dataSize, pSignature);
+					status = security_mac_signature(rdp, data, dataSize, pSignature);
 
-				security_encrypt(data, dataSize, rdp);
+				if (!status || !security_encrypt(data, dataSize, rdp))
+					return FALSE;
 			}
 		}
 

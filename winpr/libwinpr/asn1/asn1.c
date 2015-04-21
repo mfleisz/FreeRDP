@@ -37,8 +37,7 @@ ASN1module_t ASN1_CreateModule(ASN1uint32_t nVersion, ASN1encodingrule_e eRule,
 	if (!((apfnEncoder) && (apfnDecoder) && (apfnFreeMemory) && (acbStructSize)))
 		return NULL;
 
-	module = (ASN1module_t) malloc(sizeof(struct tagASN1module_t));
-	ZeroMemory(module, sizeof(struct tagASN1module_t));
+	module = (ASN1module_t) calloc(1, sizeof(struct tagASN1module_t));
 
 	if (module)
 	{
@@ -81,7 +80,7 @@ ASN1error_e ASN1_CreateEncoder(ASN1module_t pModule, ASN1encoding_t* ppEncoderIn
 		{
 			ZeroMemory(encoder, sizeof(struct ASN1encoding_s));
 			encoder->magic = 0x44434E45;
-			encoder->err = 0;
+			encoder->err = ASN1_SUCCESS;
 			encoder->dwFlags = pModule->dwFlags;
 			encoder->module = pModule;
 
@@ -113,7 +112,7 @@ ASN1error_e ASN1_CreateEncoder(ASN1module_t pModule, ASN1encoding_t* ppEncoderIn
 			{
 LABEL_ENCODER_COMPLETE:
 				*ppEncoderInfo = encoder;
-				return 0;
+				return ASN1_SUCCESS;
 			}
 
 			if (rule & ASN1_BER_RULE)

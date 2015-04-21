@@ -145,6 +145,8 @@ static int freerdp_peer_virtual_channel_write(freerdp_peer* client, HANDLE hChan
 	while (length > 0)
 	{
 		s = rdp_send_stream_init(rdp);
+		if (!s)
+			return -1;
 
 		if (length > maxChunkSize)
 		{
@@ -161,10 +163,18 @@ static int freerdp_peer_virtual_channel_write(freerdp_peer* client, HANDLE hChan
 
 		Stream_Write_UINT32(s, totalLength);
 		Stream_Write_UINT32(s, flags);
-		Stream_EnsureRemainingCapacity(s, chunkSize);
+		if (!Stream_EnsureRemainingCapacity(s, chunkSize))
+		{
+			Stream_Release(s);
+			return -1;
+		}
 		Stream_Write(s, buffer, chunkSize);
 
-		rdp_send(rdp, s, peerChannel->channelId);
+		if (!rdp_send(rdp, s, peerChannel->channelId))
+		{
+			Stream_Release(s);
+			return -1;
+		}
 
 		buffer += chunkSize;
 		length -= chunkSize;
@@ -214,13 +224,6 @@ static BOOL freerdp_peer_initialize(freerdp_peer* client)
 		{
 			WLog_ERR(TAG, "inavlid RDP key file %s", settings->RdpKeyFile);
 			return FALSE;
-		}
-
-		if (settings->RdpServerRsaKey->ModulusLength > 256)
-		{
-			WLog_ERR(TAG, "Key sizes > 2048 are currently not supported for RDP security.");
-			WLog_ERR(TAG, "Set a different key file than %s", settings->RdpKeyFile);
-			exit(1);
 		}
 	}
 
@@ -655,7 +658,22 @@ void freerdp_peer_context_new(freerdp_peer* client)
 
 	context->metrics = metrics_new(context);
 
+	if (!context->metrics)
+	{
+		client->context = NULL;
+		free(context);
+		return;
+	}
+
 	rdp = rdp_new(context);
+
+	if (!rdp)
+	{
+		metrics_free(context->metrics);
+		free(context);
+		client->context = NULL;
+		return;
+	}
 
 	client->input = rdp->input;
 	client->update = rdp->update;
@@ -686,6 +704,7 @@ void freerdp_peer_context_new(freerdp_peer* client)
 	client->DrainOutputBuffer = freerdp_peer_drain_output_buffer;
 
 	IFCALL(client->ContextNew, client, client->context);
+
 }
 
 void freerdp_peer_context_free(freerdp_peer* client)
@@ -740,7 +759,10 @@ void freerdp_peer_free(freerdp_peer* client)
 	if (!client)
 		return;
 
-	rdp_free(client->context->rdp);
-	free(client->context);
+	if (client->context)
+	{
+		rdp_free(client->context->rdp);
+		free(client->context);
+	}
 	free(client);
 }

@@ -104,7 +104,11 @@ wStream* rdg_receive_packet(rdpRdg* rdg)
 
 	if (Stream_Capacity(s) < packet->packetLength)
 	{
-		Stream_EnsureCapacity(s, packet->packetLength);
+		if (!Stream_EnsureCapacity(s, packet->packetLength))
+		{
+			Stream_Free(s, TRUE);
+			return NULL;
+		}
 		packet = (RdgPacketHeader*) Stream_Buffer(s);
 	}
 
@@ -1345,8 +1349,8 @@ static long rdg_bio_ctrl(BIO* bio, int cmd, long arg1, void* arg2)
 
 	if (cmd == BIO_CTRL_FLUSH)
 	{
-		BIO_flush(tlsOut->bio);
-		BIO_flush(tlsIn->bio);
+		(void)BIO_flush(tlsOut->bio);
+		(void)BIO_flush(tlsIn->bio);
 		status = 1;
 	}
 	else if (cmd == BIO_C_GET_EVENT)
