@@ -60,18 +60,20 @@ static void tf_context_free(freerdp* instance, rdpContext* context)
 	}
 }
 
-static void tf_begin_paint(rdpContext* context)
+static BOOL tf_begin_paint(rdpContext* context)
 {
 	rdpGdi* gdi = context->gdi;
 	gdi->primary->hdc->hwnd->invalid->null = 1;
+    return TRUE;
 }
 
-static void tf_end_paint(rdpContext* context)
+static BOOL tf_end_paint(rdpContext* context)
 {
 	rdpGdi* gdi = context->gdi;
 
 	if (gdi->primary->hdc->hwnd->invalid->null)
-		return;
+		return TRUE;
+	return TRUE;
 }
 
 static BOOL tf_pre_connect(freerdp* instance)
@@ -135,7 +137,13 @@ static void* tf_client_thread_proc(freerdp* instance)
 
 	while (!freerdp_shall_disconnect(instance))
 	{
-		nCount = freerdp_get_event_handles(instance->context, &handles[0]);
+		nCount = freerdp_get_event_handles(instance->context, &handles[0], 64);
+
+		if (nCount == 0)
+		{
+				WLog_ERR(TAG, "%s: freerdp_get_event_handles failed", __FUNCTION__);
+				break;
+		}
 
 		status = WaitForMultipleObjects(nCount, handles, FALSE, 100);
 
