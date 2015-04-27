@@ -42,10 +42,17 @@
 HGDI_DC gdi_GetDC()
 {
 	HGDI_DC hDC = (HGDI_DC) malloc(sizeof(GDI_DC));
+	if (!hDC)
+		return NULL;
 	hDC->bytesPerPixel = 4;
 	hDC->bitsPerPixel = 32;
 	hDC->drawMode = GDI_R2_BLACK;
 	hDC->clip = gdi_CreateRectRgn(0, 0, 0, 0);
+	if (!hDC->clip)
+	{
+		free(hDC);
+		return NULL;
+	}
 	hDC->clip->null = 1;
 	hDC->hwnd = NULL;
 	return hDC;
@@ -94,11 +101,18 @@ HGDI_DC gdi_CreateDC(UINT32 flags, int bpp)
 HGDI_DC gdi_CreateCompatibleDC(HGDI_DC hdc)
 {
 	HGDI_DC hDC = (HGDI_DC) malloc(sizeof(GDI_DC));
+	if (!hDC)
+		return NULL;
+
+	if (!(hDC->clip = gdi_CreateRectRgn(0, 0, 0, 0)))
+	{
+		free(hDC);
+		return NULL;
+	}
+	hDC->clip->null = 1;
 	hDC->bytesPerPixel = hdc->bytesPerPixel;
 	hDC->bitsPerPixel = hdc->bitsPerPixel;
 	hDC->drawMode = hdc->drawMode;
-	hDC->clip = gdi_CreateRectRgn(0, 0, 0, 0);
-	hDC->clip->null = 1;
 	hDC->hwnd = NULL;
 	hDC->alpha = hdc->alpha;
 	hDC->invert = hdc->invert;
@@ -138,15 +152,17 @@ HGDIOBJECT gdi_SelectObject(HGDI_DC hdc, HGDIOBJECT hgdiobject)
 	else if (hgdiobject->objectType == GDIOBJECT_REGION)
 	{
 		hdc->selectedObject = hgdiobject;
+		previousSelectedObject = (HGDIOBJECT) COMPLEXREGION;
 	}
 	else if (hgdiobject->objectType == GDIOBJECT_RECT)
 	{
 		hdc->selectedObject = hgdiobject;
+		previousSelectedObject = (HGDIOBJECT) SIMPLEREGION;
 	}
 	else
 	{
 		/* Unknown GDI Object Type */
-		return 0;
+		return NULL;
 	}
 
 	return previousSelectedObject;
@@ -182,7 +198,7 @@ int gdi_DeleteObject(HGDIOBJECT hgdiobject)
 	{
 		HGDI_BRUSH hBrush = (HGDI_BRUSH) hgdiobject;
 
-		if(hBrush->style == GDI_BS_PATTERN)
+		if (hBrush->style == GDI_BS_PATTERN || hBrush->style == GDI_BS_HATCHED)
 		{
 			if (hBrush->pattern != NULL)
 				gdi_DeleteObject((HGDIOBJECT) hBrush->pattern);
@@ -217,13 +233,11 @@ int gdi_DeleteObject(HGDIOBJECT hgdiobject)
 
 int gdi_DeleteDC(HGDI_DC hdc)
 {
-	if (hdc->hwnd)
+	if (hdc && hdc->hwnd)
 	{
-		if (hdc->hwnd->cinvalid != NULL)
-			free(hdc->hwnd->cinvalid);
+		free(hdc->hwnd->cinvalid);
 
-		if (hdc->hwnd->invalid != NULL)
-			free(hdc->hwnd->invalid);
+		free(hdc->hwnd->invalid);
 
 		free(hdc->hwnd);
 	}
