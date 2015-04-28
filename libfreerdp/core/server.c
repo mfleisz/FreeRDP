@@ -427,6 +427,7 @@ BOOL WTSVirtualChannelManagerCheckFileDescriptor(HANDLE hServer)
 {
 	wMessage message;
 	BOOL status = TRUE;
+	BOOL autoDetect = FALSE;
 	rdpPeerChannel* channel;
 	UINT32 dynvc_caps;
 	WTSVirtualChannelManager* vcm = (WTSVirtualChannelManager*) hServer;
@@ -448,6 +449,14 @@ BOOL WTSVirtualChannelManagerCheckFileDescriptor(HANDLE hServer)
 		}
 	}
 
+	autoDetect = (vcm->autoDetectCount > 0 && MessageQueue_Size(vcm->queue) > 0 &&
+		vcm->client->activated && vcm->client->settings->NetworkAutoDetect ? TRUE : FALSE);
+	if (autoDetect)
+	{
+		vcm->client->autodetect->BandwidthMeasureStart(vcm->client->autodetect->context,
+			vcm->autoDetectSeq);
+	}
+
 	while (MessageQueue_Peek(vcm->queue, &message, TRUE))
 	{
 		BYTE* buffer;
@@ -467,6 +476,13 @@ BOOL WTSVirtualChannelManagerCheckFileDescriptor(HANDLE hServer)
 
 		if (!status)
 			break;
+	}
+
+	if (autoDetect)
+	{
+		vcm->client->autodetect->BandwidthMeasureStop(vcm->client->autodetect->context,
+			vcm->autoDetectSeq);
+		vcm->autoDetectSeq++;
 	}
 
 	return status;
@@ -999,6 +1015,7 @@ HANDLE WINAPI FreeRDP_WTSVirtualChannelOpenEx(DWORD SessionId, LPSTR pVirtualNam
 	channel->vcm = vcm;
 	channel->client = client;
 	channel->channelType = RDP_PEER_CHANNEL_TYPE_DVC;
+	channel->channelFlags = flags;
 	channel->receiveData = Stream_New(NULL, client->settings->VirtualChannelChunkSize);
 	channel->queue = MessageQueue_New(NULL);
 
@@ -1009,6 +1026,11 @@ HANDLE WINAPI FreeRDP_WTSVirtualChannelOpenEx(DWORD SessionId, LPSTR pVirtualNam
 	wts_write_drdynvc_create_request(s, channel->channelId, pVirtualName);
 	WTSVirtualChannelWrite(vcm->drdynvc_channel, (PCHAR) Stream_Buffer(s), Stream_GetPosition(s), &written);
 	Stream_Free(s, TRUE);
+
+	if ((flags & WTS_CHANNEL_OPTION_AUTODETECT) != 0)
+	{
+		InterlockedIncrement(&vcm->autoDetectCount);
+	}
 
 	return channel;
 }
@@ -1052,6 +1074,11 @@ BOOL WINAPI FreeRDP_WTSVirtualChannelClose(HANDLE hChannelHandle)
 		{
 			MessageQueue_Free(channel->queue);
 			channel->queue = NULL;
+		}
+
+		if ((channel->channelFlags & WTS_CHANNEL_OPTION_AUTODETECT) != 0)
+		{
+			InterlockedDecrement(&vcm->autoDetectCount);
 		}
 
 		free(channel);

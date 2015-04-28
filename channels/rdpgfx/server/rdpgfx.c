@@ -154,7 +154,8 @@ static BOOL rdpgfx_server_open_channel(rdpgfx_server* rdpgfx)
 		WaitForSingleObject(hEvent, 1000);
 
 		rdpgfx->rdpgfx_channel = WTSVirtualChannelOpenEx(rdpgfx->SessionId,
-				RDPGFX_DVC_CHANNEL_NAME, WTS_CHANNEL_OPTION_DYNAMIC);
+				RDPGFX_DVC_CHANNEL_NAME, WTS_CHANNEL_OPTION_DYNAMIC |
+				WTS_CHANNEL_OPTION_AUTODETECT);
 
 		if (rdpgfx->rdpgfx_channel)
 			break;
