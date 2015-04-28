@@ -88,6 +88,8 @@ struct WTSVirtualChannelManager
 
 	DWORD SessionId;
 	wMessageQueue* queue;
+	LONG autoDetectCount;
+	DWORD autoDetectSeq;
 
 	rdpPeerChannel* drdynvc_channel;
 	BYTE drdynvc_state;
