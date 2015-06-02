@@ -34,6 +34,12 @@
 
 #include <winpr/path.h>
 
+#if defined(WIN32)
+#include <Shlobj.h>
+#endif
+
+static char* GetPath_XDG_CONFIG_HOME();
+
 /**
  * SHGetKnownFolderPath function:
  * http://msdn.microsoft.com/en-us/library/windows/desktop/bb762188/
@@ -44,7 +50,7 @@
  * http://standards.freedesktop.org/basedir-spec/basedir-spec-latest.html
  */
 
-char* GetEnvAlloc(LPCSTR lpName)
+static char* GetEnvAlloc(LPCSTR lpName)
 {
 	DWORD length;
 	char* env = NULL;
@@ -63,7 +69,7 @@ char* GetEnvAlloc(LPCSTR lpName)
 	return env;
 }
 
-char* GetPath_HOME()
+static char* GetPath_HOME()
 {
 	char* path = NULL;
 
@@ -81,7 +87,7 @@ char* GetPath_HOME()
 	return path;
 }
 
-char* GetPath_TEMP()
+static char* GetPath_TEMP()
 {
 	char* path = NULL;
 
@@ -97,11 +103,14 @@ char* GetPath_TEMP()
 	return path;
 }
 
-char* GetPath_XDG_DATA_HOME()
+static char* GetPath_XDG_DATA_HOME()
 {
 	char* path = NULL;
-	char* home = NULL;
 
+#if defined(WIN32)
+	path = GetPath_XDG_CONFIG_HOME();
+#else
+	char* home = NULL;
 	/**
 	 * There is a single base directory relative to which user-specific data files should be written.
 	 * This directory is defined by the environment variable $XDG_DATA_HOME.
@@ -128,15 +137,28 @@ char* GetPath_XDG_DATA_HOME()
 	sprintf(path, "%s%s", home, "/.local/share");
 
 	free(home);
+#endif
 
 	return path;
 }
 
-char* GetPath_XDG_CONFIG_HOME()
+static char* GetPath_XDG_CONFIG_HOME()
 {
 	char* path = NULL;
-	char* home = NULL;
 
+#if defined(WIN32)
+	path = calloc(MAX_PATH, sizeof(char));
+	if (!path)
+		return NULL;
+
+	if (SHGetFolderPathA(0, CSIDL_APPDATA, NULL,
+			     SHGFP_TYPE_CURRENT, path) != S_OK)
+	{
+		free(path);
+		return NULL;
+	}
+#else
+	char* home = NULL;
 	/**
 	 * There is a single base directory relative to which user-specific configuration files should be written.
 	 * This directory is defined by the environment variable $XDG_CONFIG_HOME.
@@ -167,15 +189,22 @@ char* GetPath_XDG_CONFIG_HOME()
 	sprintf(path, "%s%s", home, "/.config");
 
 	free(home);
+#endif
 
 	return path;
 }
 
-char* GetPath_XDG_CACHE_HOME()
+static char* GetPath_XDG_CACHE_HOME()
 {
 	char* path = NULL;
 	char* home = NULL;
 
+#if defined(WIN32)
+	home = GetPath_XDG_RUNTIME_DIR();
+
+	path = GetCombinedPath(home, "cache");
+	free(home);
+#else
 	/**
 	 * There is a single base directory relative to which user-specific non-essential (cached) data should be written.
 	 * This directory is defined by the environment variable $XDG_CACHE_HOME.
@@ -202,14 +231,26 @@ char* GetPath_XDG_CACHE_HOME()
 	sprintf(path, "%s%s", home, "/.cache");
 
 	free(home);
+#endif
 
 	return path;
 }
 
-char* GetPath_XDG_RUNTIME_DIR()
+static char* GetPath_XDG_RUNTIME_DIR()
 {
 	char* path = NULL;
+#if defined(WIN32)
+	path = calloc(MAX_PATH, sizeof(char));
+	if (!path)
+		return NULL;
 
+	if (SHGetFolderPathA(0, CSIDL_LOCAL_APPDATA, NULL,
+			     SHGFP_TYPE_CURRENT, path) != S_OK)
+	{
+		free(path);
+		return NULL;
+	}
+#else
 	/**
 	 * There is a single base directory relative to which user-specific runtime files and other file objects should be placed.
 	 * This directory is defined by the environment variable $XDG_RUNTIME_DIR.
@@ -238,6 +279,7 @@ char* GetPath_XDG_RUNTIME_DIR()
 	 */
 
 	path = GetEnvAlloc("XDG_RUNTIME_DIR");
+#endif
 
 	if (path)
 		return path;
