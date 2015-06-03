@@ -53,7 +53,9 @@ static const char client_dll[] = "C:\\Windows\\System32\\mstscax.dll";
 	if (RegQueryValueEx(_key, _subkey, NULL, &_type, (BYTE*) &_value, &_size) == ERROR_SUCCESS) \
 		_result = _value ? TRUE : FALSE
 
-#define REG_BASE_KEY "Software\\"FREERDP_VENDOR_STRING"\\"FREERDP_PRODUCT_STRING
+#define REG_BASE_KEY _T("Software\\") _T(FREERDP_VENDOR_STRING) \
+	_T("\\") _T(FREERDP_PRODUCT_STRING)
+#define REG_BASE_KEY_CLIENT REG_BASE_KEY _T("\\Client")
 
 void settings_client_load_hkey_local_machine(rdpSettings* settings)
 {
@@ -63,7 +65,8 @@ void settings_client_load_hkey_local_machine(rdpSettings* settings)
 	DWORD dwSize;
 	DWORD dwValue;
 
-	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T(REG_BASE_KEY"\\Client"), 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, REG_BASE_KEY_CLIENT,
+			      0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 	if (status == ERROR_SUCCESS)
 	{
@@ -95,7 +98,9 @@ void settings_client_load_hkey_local_machine(rdpSettings* settings)
 		RegCloseKey(hKey);
 	}
 
-	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T(REG_BASE_KEY"\\Client\\BitmapCacheV2"), 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+			      REG_BASE_KEY_CLIENT _T("\\BitmapCacheV2"),
+			      0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 	if (status == ERROR_SUCCESS)
 	{
@@ -117,7 +122,9 @@ void settings_client_load_hkey_local_machine(rdpSettings* settings)
 		RegCloseKey(hKey);
 	}
 
-	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T(REG_BASE_KEY"\\Client\\GlyphCache"), 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+			      REG_BASE_KEY_CLIENT _T("\\GlyphCache"),
+			      0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 	if (status == ERROR_SUCCESS)
 	{
@@ -150,7 +157,9 @@ void settings_client_load_hkey_local_machine(rdpSettings* settings)
 		RegCloseKey(hKey);
 	}
 
-	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T(REG_BASE_KEY"\\Client\\PointerCache"), 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+			      REG_BASE_KEY_CLIENT _T("\\PointerCache"),
+			      0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 	if (status == ERROR_SUCCESS)
 	{
@@ -170,7 +179,9 @@ void settings_server_load_hkey_local_machine(rdpSettings* settings)
 	DWORD dwSize;
 	DWORD dwValue;
 
-	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T(REG_BASE_KEY"\\Server"), 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+			      REG_BASE_KEY _T("\\Server"), 0,
+			      KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 	if (status != ERROR_SUCCESS)
 		return;
