@@ -29,7 +29,7 @@
 #include <freerdp/client/cmdline.h>
 #include <freerdp/client/channels.h>
 
-int freerdp_client_common_new(freerdp* instance, rdpContext* context)
+BOOL freerdp_client_common_new(freerdp* instance, rdpContext* context)
 {
 	RDP_CLIENT_ENTRY_POINTS* pEntryPoints = instance->pClientEntryPoints;
 	return pEntryPoints->ClientNew(instance, context);
@@ -51,6 +51,7 @@ rdpContext* freerdp_client_context_new(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 	pEntryPoints->GlobalInit();
 
 	instance = freerdp_new();
+
 	if (!instance)
 		return NULL;
 
@@ -59,12 +60,13 @@ rdpContext* freerdp_client_context_new(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 	instance->ContextNew = freerdp_client_common_new;
 	instance->ContextFree = freerdp_client_common_free;
 	instance->pClientEntryPoints = (RDP_CLIENT_ENTRY_POINTS*) malloc(pEntryPoints->Size);
+
 	if (!instance->pClientEntryPoints)
 		goto out_fail;
 
-
 	CopyMemory(instance->pClientEntryPoints, pEntryPoints, pEntryPoints->Size);
-	if (freerdp_context_new(instance) != 0)
+
+	if (!freerdp_context_new(instance))
 		goto out_fail2;
 
 	context = instance->context;
@@ -202,7 +204,7 @@ int freerdp_client_settings_parse_command_line(rdpSettings* settings, int argc,
 
 	/* This function will call logic that is applicable to the settings
 	 * from command line parsing AND the rdp file parsing */
-	if(!freerdp_client_settings_post_process(settings))
+	if (!freerdp_client_settings_post_process(settings))
 		status = -1;
 
 	return status;

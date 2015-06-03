@@ -3,6 +3,8 @@
  * WinPR Logger
  *
  * Copyright 2013 Marc-Andre Moreau <marcandre.moreau@gmail.com>
+ * Copyright 2015 Thincast Technologies GmbH
+ * Copyright 2015 DI (FH) Martin Haimberger <martin.haimberger@thincast.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -96,7 +98,8 @@ int WLog_BinaryAppender_Open(wLog* log, wLogBinaryAppender* appender)
 
 	if (!PathFileExistsA(appender->FilePath))
 	{
-		CreateDirectoryA(appender->FilePath, 0);
+		if (!CreateDirectoryA(appender->FilePath, 0))
+			return -1;
 		UnixChangeFileMode(appender->FilePath, 0xFFFF);
 	}
 
@@ -147,6 +150,8 @@ int WLog_BinaryAppender_WriteMessage(wLog* log, wLogBinaryAppender* appender, wL
 			(4 + TextStringLength + 1);
 
 	s = Stream_New(NULL, MessageLength);
+	if (!s)
+		return -1;
 
 	Stream_Write_UINT32(s, MessageLength);
 
@@ -217,15 +222,9 @@ void WLog_BinaryAppender_Free(wLog* log, wLogBinaryAppender* appender)
 {
 	if (appender)
 	{
-		if (appender->FileName)
-			free(appender->FileName);
-
-		if (appender->FilePath)
-			free(appender->FilePath);
-
-		if (appender->FullFileName)
-			free(appender->FullFileName);
-
+		free(appender->FileName);
+		free(appender->FilePath);
+		free(appender->FullFileName);
 		free(appender);
 	}
 }

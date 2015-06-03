@@ -328,7 +328,8 @@ RFX_CONTEXT* rfx_context_new(BOOL encoder)
 		SetThreadpoolCallbackPool(&priv->ThreadPoolEnv, priv->ThreadPool);
 
 		if (priv->MinThreadCount)
-			SetThreadpoolThreadMinimum(priv->ThreadPool, priv->MinThreadCount);
+			if (!SetThreadpoolThreadMinimum(priv->ThreadPool, priv->MinThreadCount))
+				goto error_threadPool_minimum;
 
 		if (priv->MaxThreadCount)
 			SetThreadpoolThreadMaximum(priv->ThreadPool, priv->MaxThreadCount);
@@ -352,6 +353,8 @@ RFX_CONTEXT* rfx_context_new(BOOL encoder)
 	context->state = RFX_STATE_SEND_HEADERS;
 	return context;
 
+error_threadPool_minimum:
+	CloseThreadpool(priv->ThreadPool);
 error_threadPool:
 	BufferPool_Free(priv->BufferPool);
 error_BufferPool:
@@ -1001,6 +1004,9 @@ RFX_MESSAGE* rfx_process_message(RFX_CONTEXT* context, BYTE* data, UINT32 length
 	wStream* s = NULL;
 	BOOL ok = TRUE;
 	UINT16 expectedDataBlockType = WBT_FRAME_BEGIN;
+
+	if (!context || !data || !length)
+		goto fail;
 
 	if (!(s = Stream_New(data, length)))
 		goto fail;

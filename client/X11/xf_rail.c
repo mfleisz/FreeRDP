@@ -470,7 +470,8 @@ static BOOL xf_rail_window_common(rdpContext* context, WINDOW_ORDER_INFO* orderI
 
 	if (fieldFlags & WINDOW_ORDER_FIELD_TITLE)
 	{
-		xf_SetWindowText(xfc, appWindow, appWindow->title);
+		if (appWindow->title)
+			xf_SetWindowText(xfc, appWindow, appWindow->title);
 	}
 
 	if ((fieldFlags & WINDOW_ORDER_FIELD_WND_OFFSET) ||
@@ -871,6 +872,8 @@ int xf_rail_init(xfContext* xfc, RailClientContext* rail)
 	rail->ServerGetAppIdResponse = xf_rail_server_get_appid_response;
 
 	xfc->railWindows = HashTable_New(TRUE);
+	if (!xfc->railWindows)
+		return 0;
 
 	return 1;
 }

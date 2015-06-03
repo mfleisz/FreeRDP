@@ -45,10 +45,12 @@ struct tf_context
 };
 typedef struct tf_context tfContext;
 
-static int tf_context_new(freerdp* instance, rdpContext* context)
+static BOOL tf_context_new(freerdp* instance, rdpContext* context)
 {
-	context->channels = freerdp_channels_new();
-	return 0;
+	if (!(context->channels = freerdp_channels_new()))
+		return FALSE;
+
+	return TRUE;
 }
 
 static void tf_context_free(freerdp* instance, rdpContext* context)
@@ -57,6 +59,7 @@ static void tf_context_free(freerdp* instance, rdpContext* context)
 	{
 		freerdp_channels_close(context->channels, instance);
 		freerdp_channels_free(context->channels);
+		context->channels = NULL;
 	}
 }
 
@@ -113,7 +116,8 @@ static BOOL tf_pre_connect(freerdp* instance)
 
 static BOOL tf_post_connect(freerdp* instance)
 {
-	gdi_init(instance, CLRCONV_ALPHA | CLRCONV_INVERT | CLRBUF_16BPP | CLRBUF_32BPP, NULL);
+	if (!gdi_init(instance, CLRCONV_ALPHA | CLRCONV_INVERT | CLRBUF_16BPP | CLRBUF_32BPP, NULL))
+		return FALSE;
 
 	instance->update->BeginPaint = tf_begin_paint;
 	instance->update->EndPaint = tf_end_paint;
@@ -184,7 +188,8 @@ int main(int argc, char* argv[])
 	instance->ContextSize = sizeof(tfContext);
 	instance->ContextNew = tf_context_new;
 	instance->ContextFree = tf_context_free;
-	if (freerdp_context_new(instance) != 0)
+
+	if (!freerdp_context_new(instance))
 	{
 		WLog_ERR(TAG, "Couldn't create context");
 		exit(1);
@@ -199,10 +204,16 @@ int main(int argc, char* argv[])
 
 	freerdp_client_load_addins(instance->context->channels, instance->settings);
 
-	thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)
-			tf_client_thread_proc, instance, 0, NULL);
+	if (!(thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)
+			tf_client_thread_proc, instance, 0, NULL)))
+	{
+		WLog_ERR(TAG, "Failed to create client thread");
+	}
+	else
+	{
+		WaitForSingleObject(thread, INFINITE);
+	}
 
-	WaitForSingleObject(thread, INFINITE);
 	freerdp_context_free(instance);
 	freerdp_free(instance);
 

@@ -21,6 +21,8 @@
 #include "config.h"
 #endif
 
+#include <assert.h>
+
 #include "ntlm.h"
 #include "../sspi.h"
 
@@ -143,6 +145,7 @@ NTLM_AV_PAIR* ntlm_av_pair_add(NTLM_AV_PAIR* pAvPairList, NTLM_AV_ID AvId, PBYTE
 	if (!pAvPair)
 		return NULL;
 
+	assert(Value != NULL);
 	pAvPair->AvId = AvId;
 	pAvPair->AvLen = AvLen;
 	CopyMemory(ntlm_av_pair_get_value_pointer(pAvPair), Value, AvLen);
@@ -198,8 +201,7 @@ void ntlm_free_unicode_string(PUNICODE_STRING string)
 	{
 		if (string->Length > 0)
 		{
-			if (string->Buffer)
-				free(string->Buffer);
+			free(string->Buffer);
 
 			string->Buffer = NULL;
 			string->Length = 0;

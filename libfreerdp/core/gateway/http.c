@@ -75,9 +75,6 @@ static BOOL strings_equals_nocase(void* obj1, void* obj2)
 
 static void string_free(void* obj1)
 {
-	if (!obj1)
-		return;
-
 	free(obj1);
 }
 
@@ -412,13 +409,10 @@ wStream* http_request_write(HttpContext* context, HttpRequest* request)
 	Stream_Rewind(s, 1); /* don't include null terminator in length */
 	Stream_Length(s) = Stream_GetPosition(s);
 	return s;
-out_free:
 
-	for (i = 0; i < 9; i++)
-	{
-		if (lines[i])
-			free(lines[i]);
-	}
+out_free:
+	for (i = 0; i < count; i++)
+		free(lines[i]);
 
 	free(lines);
 	return NULL;
@@ -434,21 +428,13 @@ void http_request_free(HttpRequest* request)
 	if (!request)
 		return;
 
-	if (request->AuthParam)
-		free(request->AuthParam);
-
-	if (request->AuthScheme)
-		free(request->AuthScheme);
-
-	if (request->Authorization)
-		free(request->Authorization);
-
+	free(request->AuthParam);
+	free(request->AuthScheme);
+	free(request->Authorization);
 	free(request->Content);
 	free(request->Method);
 	free(request->URI);
-
 	free(request->TransferEncoding);
-
 	free(request);
 }
 
@@ -810,6 +796,11 @@ HttpResponse* http_response_new()
 		return NULL;
 
 	response->Authenticates = ListDictionary_New(FALSE);
+	if (!response->Authenticates)
+	{
+		free(response);
+		return NULL;
+	}
 
 	ListDictionary_KeyObject(response->Authenticates)->fnObjectEquals = strings_equals_nocase;
 	ListDictionary_KeyObject(response->Authenticates)->fnObjectFree = string_free;
@@ -827,11 +818,9 @@ void http_response_free(HttpResponse* response)
 	if (!response)
 		return;
 
-	for (i = 0; i < response->count; i++)
-	{
-		if (response->lines && response->lines[i])
+	if (response->lines)
+		for (i = 0; i < response->count; i++)
 			free(response->lines[i]);
-	}
 
 	free(response->lines);
 	free(response->ReasonPhrase);

@@ -44,9 +44,16 @@ int TestSynchWaitableTimerAPC(int argc, char* argv[])
 	if (!apcData)
 	{
 		printf("Memory allocation failed\n");
-		return -1;
+		goto cleanup;
 	}
+
 	g_Event = CreateEvent(NULL, TRUE, FALSE, NULL);
+	if (!g_Event)
+	{
+		printf("Failed to create event\n");
+		goto cleanup;
+	}
+
 	hTimer = CreateWaitableTimer(NULL, FALSE, NULL);
 
 	if (!hTimer)
@@ -73,8 +80,7 @@ cleanup:
 		CloseHandle(hTimer);
 	if (g_Event)
 		CloseHandle(g_Event);
-	if (apcData)
-		free(apcData);
+	free(apcData);
 
 	return status;
 }

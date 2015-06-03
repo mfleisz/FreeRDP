@@ -133,7 +133,7 @@ BOOL wf_sw_desktop_resize(wfContext* wfc)
 	rdpGdi* gdi;
 	rdpContext* context;
 	rdpSettings* settings;
-	freerdp *instance = wfc->instance;
+	freerdp* instance = wfc->instance;
 
 	context = (rdpContext*) wfc;
 	settings = wfc->instance->settings;
@@ -142,15 +142,21 @@ BOOL wf_sw_desktop_resize(wfContext* wfc)
 	wfc->width = settings->DesktopWidth;
 	wfc->height = settings->DesktopHeight;
 
+	gdi->primary->bitmap->data = NULL;
 	gdi_free(instance);
+
 	if (wfc->primary)
 	{
 		wf_image_free(wfc->primary);
 		wfc->primary = wf_image_new(wfc, wfc->width, wfc->height, wfc->dstBpp, NULL);
 	}
-	gdi_init(instance, CLRCONV_ALPHA | CLRBUF_32BPP, wfc->primary->pdata);
+
+	if (!gdi_init(instance, CLRCONV_ALPHA | CLRBUF_32BPP, wfc->primary->pdata))
+		return FALSE;
+
 	gdi = instance->context->gdi;
 	wfc->hdc = gdi->primary->hdc;
+
 	return TRUE;
 }
 
@@ -378,7 +384,8 @@ BOOL wf_post_connect(freerdp* instance)
 	{
 		wfc->primary = wf_image_new(wfc, wfc->width, wfc->height, wfc->dstBpp, NULL);
 
-		gdi_init(instance, CLRCONV_ALPHA | CLRBUF_32BPP, wfc->primary->pdata);
+		if (!gdi_init(instance, CLRCONV_ALPHA | CLRBUF_32BPP, wfc->primary->pdata))
+			return FALSE;
 
 		gdi = instance->context->gdi;
 		wfc->hdc = gdi->primary->hdc;
@@ -389,7 +396,9 @@ BOOL wf_post_connect(freerdp* instance)
 		wfc->srcBpp = instance->settings->ColorDepth;
 		wfc->primary = wf_image_new(wfc, wfc->width, wfc->height, wfc->dstBpp, NULL);
 
-		wfc->hdc = gdi_GetDC();
+		if (!(wfc->hdc = gdi_GetDC()))
+			return FALSE;
+
 		wfc->hdc->bitsPerPixel = wfc->dstBpp;
 		wfc->hdc->bytesPerPixel = wfc->dstBpp / 8;
 
@@ -670,9 +679,13 @@ DWORD WINAPI wf_client_thread(LPVOID lpParam)
 
 	if (async_input)
 	{
-		input_thread = CreateThread(NULL, 0,
+		if (!(input_thread = CreateThread(NULL, 0,
 				(LPTHREAD_START_ROUTINE) wf_input_thread,
-				instance, 0, NULL);
+				instance, 0, NULL)))
+		{
+			WLog_ERR(TAG, "Failed to create async input thread.");
+			goto disconnect;
+		}
 	}
 
 	while (1)
@@ -766,11 +779,12 @@ DWORD WINAPI wf_client_thread(LPVOID lpParam)
 	{
 		wMessageQueue* input_queue;
 		input_queue = freerdp_get_message_queue(instance, FREERDP_INPUT_MESSAGE_QUEUE);
-		MessageQueue_PostQuit(input_queue, 0);
-		WaitForSingleObject(input_thread, INFINITE);
+		if (MessageQueue_PostQuit(input_queue, 0))
+			WaitForSingleObject(input_thread, INFINITE);
 		CloseHandle(input_thread);
 	}
 
+disconnect:
 	freerdp_disconnect(instance);
 	WLog_DBG(TAG, "Main thread exited.");
 
@@ -1012,11 +1026,15 @@ void wfreerdp_client_global_uninit(void)
 	WSACleanup();
 }
 
-int wfreerdp_client_new(freerdp* instance, rdpContext* context)
+BOOL wfreerdp_client_new(freerdp* instance, rdpContext* context)
 {
 	wfContext* wfc = (wfContext*) context;
 
-	wfreerdp_client_global_init();
+	if (!(wfreerdp_client_global_init()))
+		return FALSE;
+
+	if (!(context->channels = freerdp_channels_new()))
+		return FALSE;
 
 	instance->PreConnect = wf_pre_connect;
 	instance->PostConnect = wf_post_connect;
@@ -1025,20 +1043,27 @@ int wfreerdp_client_new(freerdp* instance, rdpContext* context)
 
 	wfc->instance = instance;
 	wfc->settings = instance->settings;
-	context->channels = freerdp_channels_new();
 
-	return 0;
+	return TRUE;
 }
 
 void wfreerdp_client_free(freerdp* instance, rdpContext* context)
 {
-	rdpChannels* channels = context->channels;
+	if (!context)
+		return;
+
+	if (context->channels)
+	{
+		freerdp_channels_close(context->channels, instance);
+		freerdp_channels_free(context->channels);
+		context->channels = NULL;
+	}
 
 	if (context->cache)
+	{
 		cache_free(context->cache);
-
-	freerdp_channels_close(channels, instance);
-	freerdp_channels_free(context->channels);
+		context->cache = NULL;
+	}
 }
 
 int wfreerdp_client_start(rdpContext* context)

@@ -217,14 +217,9 @@ BOOL NamedPipeCloseHandle(HANDLE handle) {
 	if (pNamedPipe->pfnUnrefNamedPipe)
 		pNamedPipe->pfnUnrefNamedPipe(pNamedPipe);
 
-	if (pNamedPipe->name)
-		free(pNamedPipe->name);
-
-	if (pNamedPipe->lpFileName)
-		free((void*)pNamedPipe->lpFileName);
-
-	if (pNamedPipe->lpFilePath)
-		free((void*)pNamedPipe->lpFilePath);
+	free(pNamedPipe->name);
+	free(pNamedPipe->lpFileName);
+	free(pNamedPipe->lpFilePath);
 
 	if (pNamedPipe->serverfd != -1)
 		close(pNamedPipe->serverfd);
@@ -418,12 +413,13 @@ static HANDLE_OPS namedOps = {
 };
 
 
-static void InitWinPRPipeModule()
+static BOOL InitWinPRPipeModule()
 {
 	if (g_NamedPipeServerSockets)
-		return;
+		return TRUE;
 
 	g_NamedPipeServerSockets = ArrayList_New(FALSE);
+	return g_NamedPipeServerSockets != NULL;
 }
 
 
@@ -451,12 +447,8 @@ BOOL CreatePipe(PHANDLE hReadPipe, PHANDLE hWritePipe, LPSECURITY_ATTRIBUTES lpP
 
 	if (!pReadPipe || !pWritePipe)
 	{
-		if (pReadPipe)
-			free(pReadPipe);
-
-		if (pWritePipe)
-			free(pWritePipe);
-
+		free(pReadPipe);
+		free(pWritePipe);
 		return FALSE;
 	}
 
@@ -532,7 +524,9 @@ HANDLE CreateNamedPipeA(LPCSTR lpName, DWORD dwOpenMode, DWORD dwPipeMode, DWORD
 	if (!lpName)
 		return INVALID_HANDLE_VALUE;
 
-	InitWinPRPipeModule();
+	if (!InitWinPRPipeModule())
+		return INVALID_HANDLE_VALUE;
+
 	pNamedPipe = (WINPR_NAMED_PIPE*) calloc(1, sizeof(WINPR_NAMED_PIPE));
 	if (!pNamedPipe)
 		return INVALID_HANDLE_VALUE;
@@ -584,7 +578,11 @@ HANDLE CreateNamedPipeA(LPCSTR lpName, DWORD dwOpenMode, DWORD dwPipeMode, DWORD
 
 		if (!PathFileExistsA(lpPipePath))
 		{
-			CreateDirectoryA(lpPipePath, 0);
+			if (!CreateDirectoryA(lpPipePath, 0))
+			{
+				free(lpPipePath);
+				goto out;
+			}
 			UnixChangeFileMode(lpPipePath, 0xFFFF);
 		}
 
@@ -630,7 +628,12 @@ HANDLE CreateNamedPipeA(LPCSTR lpName, DWORD dwOpenMode, DWORD dwPipeMode, DWORD
 
 		baseSocket->serverfd = serverfd;
 		baseSocket->references = 0;
-		ArrayList_Add(g_NamedPipeServerSockets, baseSocket);
+
+		if (ArrayList_Add(g_NamedPipeServerSockets, baseSocket) < 0)
+		{
+			free(baseSocket->name);
+			goto out;
+		}
 		//WLog_DBG(TAG, "created shared socked resource for pipe %p (%s). base serverfd = %d", pNamedPipe, lpName, serverfd);
 	}
 

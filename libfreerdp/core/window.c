@@ -30,7 +30,7 @@
 
 #define TAG FREERDP_TAG("core.window")
 
-static BOOL rail_read_unicode_string(wStream* s, RAIL_UNICODE_STRING* unicode_string)
+BOOL rail_read_unicode_string(wStream* s, RAIL_UNICODE_STRING* unicode_string)
 {
 	UINT16 new_len;
 	BYTE *new_str;
@@ -42,6 +42,14 @@ static BOOL rail_read_unicode_string(wStream* s, RAIL_UNICODE_STRING* unicode_st
 
 	if (Stream_GetRemainingLength(s) < new_len)
 		return FALSE;
+
+	if (!new_len)
+	{
+		free(unicode_string->string);
+		unicode_string->string = NULL;
+		unicode_string->length = 0;
+		return TRUE;
+	}
 
 	new_str = (BYTE*) realloc(unicode_string->string, new_len);
 	if (!new_str)
@@ -511,21 +519,23 @@ BOOL update_read_desktop_actively_monitored_order(wStream* s, WINDOW_ORDER_INFO*
 		if (Stream_GetRemainingLength(s) < 4 * monitored_desktop->numWindowIds)
 			return FALSE;
 
-		size = sizeof(UINT32) * monitored_desktop->numWindowIds;
+		if (monitored_desktop->numWindowIds > 0) {
+			size = sizeof(UINT32) * monitored_desktop->numWindowIds;
 
-		newid = (UINT32*) realloc(monitored_desktop->windowIds, size);
-		if (!newid)
-		{
-			free (monitored_desktop->windowIds);
-			monitored_desktop->windowIds = NULL;
-			return FALSE;
-		}
-		monitored_desktop->windowIds = newid;
+			newid = (UINT32*)realloc(monitored_desktop->windowIds, size);
+			if (!newid)
+			{
+				free(monitored_desktop->windowIds);
+				monitored_desktop->windowIds = NULL;
+				return FALSE;
+			}
+			monitored_desktop->windowIds = newid;
 
-		/* windowIds */
-		for (i = 0; i < (int) monitored_desktop->numWindowIds; i++)
-		{
-			Stream_Read_UINT32(s, monitored_desktop->windowIds[i]);
+			/* windowIds */
+			for (i = 0; i < (int)monitored_desktop->numWindowIds; i++)
+			{
+				Stream_Read_UINT32(s, monitored_desktop->windowIds[i]);
+			}
 		}
 	}
 

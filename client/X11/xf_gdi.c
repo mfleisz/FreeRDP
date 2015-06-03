@@ -385,14 +385,16 @@ BOOL xf_gdi_bitmap_update(rdpContext* context, BITMAP_UPDATE* bitmapUpdate)
 
 			if (bitsPerPixel < 32)
 			{
-				freerdp_client_codecs_prepare(codecs, FREERDP_CODEC_INTERLEAVED);
+				if (!freerdp_client_codecs_prepare(codecs, FREERDP_CODEC_INTERLEAVED))
+					return FALSE;
 
 				status = interleaved_decompress(codecs->interleaved, pSrcData, SrcSize, bitsPerPixel,
 						&pDstData, xfc->format, -1, 0, 0, nWidth, nHeight, xfc->palette);
 			}
 			else
 			{
-				freerdp_client_codecs_prepare(codecs, FREERDP_CODEC_PLANAR);
+				if (!freerdp_client_codecs_prepare(codecs, FREERDP_CODEC_PLANAR))
+					return FALSE;
 
 				status = planar_decompress(codecs->planar, pSrcData, SrcSize, &pDstData,
 						xfc->format, -1, 0, 0, nWidth, nHeight, TRUE);
@@ -724,45 +726,36 @@ BOOL xf_gdi_line_to(rdpContext* context, LINE_TO_ORDER* line_to)
 	return ret;
 }
 
-static BOOL xf_gdi_invalidate_poly_region(xfContext* xfc, XPoint* points, int npoints, BOOL autoclose)
+static BOOL xf_gdi_invalidate_poly_region(xfContext* xfc, XPoint* points, int npoints)
 {
-	int i, x, y, x1, y1, x2, y2, w, h;
+	int x, y, x1, y1, x2, y2;
 
-	x1 = points[0].x;
-	y1 = points[0].y;
+	if (npoints < 2)
+		return FALSE;
 
-	for (i = 1; i <= npoints; i++)
+	x = x1 = x2 = points->x;
+	y = y1 = y2 = points->y;
+
+	while (--npoints)
 	{
-		if (i == npoints)
-		{
-			if (!autoclose)
-				break;
+		points++;
+		x += points->x;
+		y += points->y;
 
-			x2 = points[0].x;
-			y2 = points[0].y;
-
-			if (x2 == points[0].x && y2 == points[0].y)
-				break;
-		}
-		else
-		{
-			x2 = points[i].x + x1;
-			y2 = points[i].y + y1;
-		}
-
-		x = MIN(x1, x2);
-		y = MIN(y1, y2);
-
-		w = abs(x2 - x1) + 1;
-		h = abs(y2 - y1) + 1;
-
-		x1 = x2;
-		y1 = y2;
-
-		if (!gdi_InvalidateRegion(xfc->hdc, x, y, w, h))
-			return FALSE;
+		if (x > x2)
+			x2 = x;
+		if (x < x1)
+			x1 = x;
+		if (y > y2)
+			y2 = y;
+		if (y < y1)
+			y1 = y;
 	}
-	return TRUE;
+
+	x2++;
+	y2++;
+
+	return gdi_InvalidateRegion(xfc->hdc, x1, y1, x2 - x1, y2 - y1);
 }
 
 BOOL xf_gdi_polyline(rdpContext* context, POLYLINE_ORDER* polyline)
@@ -803,7 +796,7 @@ BOOL xf_gdi_polyline(rdpContext* context, POLYLINE_ORDER* polyline)
 
 	if (xfc->drawing == xfc->primary)
 	{
-		if (!xf_gdi_invalidate_poly_region(xfc, points, npoints, FALSE))
+		if (!xf_gdi_invalidate_poly_region(xfc, points, npoints))
 			ret = FALSE;
 	}
 
@@ -909,6 +902,7 @@ BOOL xf_gdi_mem3blt(rdpContext* context, MEM3BLT_ORDER* mem3blt)
 	return ret;
 }
 
+
 BOOL xf_gdi_polygon_sc(rdpContext* context, POLYGON_SC_ORDER* polygon_sc)
 {
 	int i, npoints;
@@ -962,7 +956,7 @@ BOOL xf_gdi_polygon_sc(rdpContext* context, POLYGON_SC_ORDER* polygon_sc)
 
 	if (xfc->drawing == xfc->primary)
 	{
-		if (!xf_gdi_invalidate_poly_region(xfc, points, npoints, TRUE))
+		if (!xf_gdi_invalidate_poly_region(xfc, points, npoints))
 			ret = FALSE;
 	}
 
@@ -1058,7 +1052,7 @@ BOOL xf_gdi_polygon_cb(rdpContext* context, POLYGON_CB_ORDER* polygon_cb)
 
 		if (xfc->drawing == xfc->primary)
 		{
-			if (!xf_gdi_invalidate_poly_region(xfc, points, npoints, TRUE))
+			if (!xf_gdi_invalidate_poly_region(xfc, points, npoints))
 				ret = FALSE;
 		}
 	}
@@ -1176,11 +1170,16 @@ BOOL xf_gdi_surface_bits(rdpContext* context, SURFACE_BITS_COMMAND* cmd)
 
 	if (cmd->codecID == RDP_CODEC_ID_REMOTEFX)
 	{
-		freerdp_client_codecs_prepare(xfc->codecs, FREERDP_CODEC_REMOTEFX);
+		if (!freerdp_client_codecs_prepare(xfc->codecs, FREERDP_CODEC_REMOTEFX))
+		{
+			xf_unlock_x11(xfc, FALSE);
+			return FALSE;
+		}
 
 		if (!(message = rfx_process_message(xfc->codecs->rfx, cmd->bitmapData, cmd->bitmapDataLength)))
 		{
 			WLog_ERR(TAG, "Failed to process RemoteFX message");
+			xf_unlock_x11(xfc, FALSE);
 			return FALSE;
 		}
 
@@ -1196,7 +1195,12 @@ BOOL xf_gdi_surface_bits(rdpContext* context, SURFACE_BITS_COMMAND* cmd)
 			xfc->bitmap_buffer = (BYTE*) _aligned_realloc(xfc->bitmap_buffer, xfc->bitmap_size, 16);
 
 			if (!xfc->bitmap_buffer)
+			{
+				rfx_message_free(xfc->codecs->rfx, message);
+				XSetClipMask(xfc->display, xfc->gc, None);
+				xf_unlock_x11(xfc, FALSE);
 				return FALSE;
+			}
 		}
 
 		/* Draw the tiles to primary surface, each is 64x64. */
@@ -1241,7 +1245,11 @@ BOOL xf_gdi_surface_bits(rdpContext* context, SURFACE_BITS_COMMAND* cmd)
 	}
 	else if (cmd->codecID == RDP_CODEC_ID_NSCODEC)
 	{
-		freerdp_client_codecs_prepare(xfc->codecs, FREERDP_CODEC_NSCODEC);
+		if (!freerdp_client_codecs_prepare(xfc->codecs, FREERDP_CODEC_NSCODEC))
+		{
+			xf_unlock_x11(xfc, FALSE);
+			return FALSE;
+		}
 
 		nsc_process_message(xfc->codecs->nsc, cmd->bpp, cmd->width, cmd->height, cmd->bitmapData, cmd->bitmapDataLength);
 
@@ -1254,7 +1262,10 @@ BOOL xf_gdi_surface_bits(rdpContext* context, SURFACE_BITS_COMMAND* cmd)
 			xfc->bitmap_buffer = (BYTE*) _aligned_realloc(xfc->bitmap_buffer, xfc->bitmap_size, 16);
 
 			if (!xfc->bitmap_buffer)
+			{
+				xf_unlock_x11(xfc, FALSE);
 				return FALSE;
+			}
 		}
 
 		pSrcData = xfc->codecs->nsc->BitmapData;
@@ -1286,7 +1297,10 @@ BOOL xf_gdi_surface_bits(rdpContext* context, SURFACE_BITS_COMMAND* cmd)
 			xfc->bitmap_buffer = (BYTE*) _aligned_realloc(xfc->bitmap_buffer, xfc->bitmap_size, 16);
 
 			if (!xfc->bitmap_buffer)
+			{
+				xf_unlock_x11(xfc, FALSE);
 				return FALSE;
+			}
 		}
 
 		pSrcData = cmd->bitmapData;
