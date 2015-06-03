@@ -3,6 +3,8 @@
  * Connection Sequence
  *
  * Copyright 2011 Marc-Andre Moreau <marcandre.moreau@gmail.com>
+ * Copyright 2015 Thincast Technologies GmbH
+ * Copyright 2015 DI (FH) Martin Haimberger <martin.haimberger@thincast.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -415,8 +417,7 @@ static BOOL rdp_client_establish_keys(rdpRdp* rdp)
 
 	/* encrypt client random */
 
-	if (settings->ClientRandom)
-		free(settings->ClientRandom);
+	free(settings->ClientRandom);
 
 	settings->ClientRandomLength = CLIENT_RANDOM_LENGTH;
 	settings->ClientRandom = malloc(settings->ClientRandomLength);
@@ -443,6 +444,12 @@ static BOOL rdp_client_establish_keys(rdpRdp* rdp)
 	/* send crypt client random to server */
 	length = RDP_PACKET_HEADER_MAX_LENGTH + RDP_SECURITY_HEADER_LENGTH + 4 + key_len + 8;
 	s = Stream_New(NULL, length);
+
+	if (!s)
+	{
+		WLog_ERR(TAG, "Stream_New failed!");
+		goto end;
+	}
 
 	rdp_write_header(rdp, s, length, MCS_GLOBAL_CHANNEL_ID);
 	rdp_write_security_header(s, SEC_EXCHANGE_PKT | SEC_LICENSE_ENCRYPT_SC);
@@ -509,8 +516,7 @@ static BOOL rdp_client_establish_keys(rdpRdp* rdp)
 	}
 	ret = TRUE;
 end:
-	if (crypt_client_random)
-		free(crypt_client_random);
+	free(crypt_client_random);
 	return ret;
 }
 
@@ -628,11 +634,9 @@ BOOL rdp_server_establish_keys(rdpRdp* rdp, wStream* s)
 	}
 	ret = TRUE;
 end:
-	if (crypt_client_random)
-		free(crypt_client_random);
+	free(crypt_client_random);
 end2:
-	if (client_random)
-		free(client_random);
+	free(client_random);
 
 	return ret;
 }
@@ -825,7 +829,15 @@ int rdp_client_connect_demand_active(rdpRdp* rdp, wStream* s)
 	 */
 	if (width != rdp->settings->DesktopWidth || height != rdp->settings->DesktopHeight)
 	{
-		IFCALL(rdp->update->DesktopResize, rdp->update->context);
+		BOOL status = TRUE;
+
+		IFCALLRET(rdp->update->DesktopResize, status, rdp->update->context);
+
+		if (!status)
+		{
+			WLog_ERR(TAG, "client desktop resize callback failed");
+			return -1;
+		}
 	}
 
 	rdp_client_transition_to_state(rdp, CONNECTION_STATE_FINALIZATION);

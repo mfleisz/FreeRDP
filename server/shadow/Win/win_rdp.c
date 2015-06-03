@@ -147,7 +147,9 @@ BOOL shw_post_connect(freerdp* instance)
 	shw = (shwContext*) instance->context;
 	settings = instance->settings;
 
-	gdi_init(instance, CLRBUF_32BPP, NULL);
+	if (!gdi_init(instance, CLRBUF_32BPP, NULL))
+		return FALSE;
+
 	gdi = instance->context->gdi;
 
 	instance->update->BeginPaint = shw_begin_paint;
@@ -269,9 +271,13 @@ int shw_freerdp_client_start(rdpContext* context)
 
 	shw = (shwContext*) context;
 
-	shw->thread = CreateThread(NULL, 0,
+	if (!(shw->thread = CreateThread(NULL, 0,
 			(LPTHREAD_START_ROUTINE) shw_client_thread,
-			instance, 0, NULL);
+			instance, 0, NULL)))
+	{
+		WLog_ERR(TAG, "Failed to create thread");
+		return -1;
+	}
 
 	return 0;
 }
@@ -285,22 +291,28 @@ int shw_freerdp_client_stop(rdpContext* context)
 	return 0;
 }
 
-int shw_freerdp_client_new(freerdp* instance, rdpContext* context)
+BOOL shw_freerdp_client_new(freerdp* instance, rdpContext* context)
 {
 	shwContext* shw;
 	rdpSettings* settings;
 
 	shw = (shwContext*) instance->context;
 
+	if (!(shw->StopEvent = CreateEvent(NULL, TRUE, FALSE, NULL)))
+		return FALSE;
+
+	if (!(context->channels = freerdp_channels_new()))
+	{
+		CloseHandle(shw->StopEvent);
+		shw->StopEvent = NULL;
+		return FALSE;
+	}
+
 	instance->PreConnect = shw_pre_connect;
 	instance->PostConnect = shw_post_connect;
 	instance->Authenticate = shw_authenticate;
 	instance->VerifyCertificate = shw_verify_certificate;
 	instance->VerifyX509Certificate = shw_verify_x509_certificate;
-
-	context->channels = freerdp_channels_new();
-
-	shw->StopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 
 	settings = instance->settings;
 	shw->settings = instance->context->settings;
@@ -355,7 +367,7 @@ int shw_freerdp_client_new(freerdp* instance, rdpContext* context)
 	settings->RedirectClipboard = TRUE;
 	settings->SupportDynamicChannels = TRUE;
 
-	return 0;
+	return TRUE;
 }
 
 void shw_freerdp_client_free(freerdp* instance, rdpContext* context)
@@ -392,16 +404,28 @@ int win_shadow_rdp_init(winShadowSubsystem* subsystem)
 
 	shw_RdpClientEntry(&clientEntryPoints);
 
-	context = freerdp_client_context_new(&clientEntryPoints);
+	if (!(subsystem->RdpUpdateEnterEvent = CreateEvent(NULL, TRUE, FALSE, NULL)))
+		goto fail_enter_event;
+
+	if (!(subsystem->RdpUpdateLeaveEvent = CreateEvent(NULL, TRUE, FALSE, NULL)))
+		goto fail_leave_event;
+
+	if (!(context = freerdp_client_context_new(&clientEntryPoints)))
+		goto fail_context;
 
 	subsystem->shw = (shwContext*) context;
 	subsystem->shw->settings = context->settings;
 	subsystem->shw->subsystem = subsystem;
 
-	subsystem->RdpUpdateEnterEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-	subsystem->RdpUpdateLeaveEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-
 	return 1;
+
+fail_context:
+	CloseHandle(subsystem->RdpUpdateLeaveEvent);
+fail_leave_event:
+	CloseHandle(subsystem->RdpUpdateEnterEvent);
+fail_enter_event:
+
+	return -1;
 }
 
 int win_shadow_rdp_start(winShadowSubsystem* subsystem)

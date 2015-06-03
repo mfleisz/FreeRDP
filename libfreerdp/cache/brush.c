@@ -141,24 +141,16 @@ void* brush_cache_get(rdpBrushCache* brushCache, UINT32 index, UINT32* bpp)
 
 void brush_cache_put(rdpBrushCache* brushCache, UINT32 index, void* entry, UINT32 bpp)
 {
-	void* prevEntry;
-
 	if (bpp == 1)
 	{
 		if (index >= brushCache->maxMonoEntries)
 		{
 			WLog_ERR(TAG,  "invalid brush (%d bpp) index: 0x%04X", bpp, index);
-
-			if (entry)
-				free(entry);
-
+			free(entry);
 			return;
 		}
 
-		prevEntry = brushCache->monoEntries[index].entry;
-
-		if (prevEntry != NULL)
-			free(prevEntry);
+		free(brushCache->monoEntries[index].entry);
 
 		brushCache->monoEntries[index].bpp = bpp;
 		brushCache->monoEntries[index].entry = entry;
@@ -168,17 +160,11 @@ void brush_cache_put(rdpBrushCache* brushCache, UINT32 index, void* entry, UINT3
 		if (index >= brushCache->maxEntries)
 		{
 			WLog_ERR(TAG,  "invalid brush (%d bpp) index: 0x%04X", bpp, index);
-
-			if (entry)
-				free(entry);
-
+			free(entry);
 			return;
 		}
 
-		prevEntry = brushCache->entries[index].entry;
-
-		if (prevEntry != NULL)
-			free(prevEntry);
+		free(brushCache->entries[index].entry);
 
 		brushCache->entries[index].bpp = bpp;
 		brushCache->entries[index].entry = entry;
@@ -233,10 +219,7 @@ void brush_cache_free(rdpBrushCache* brushCache)
 		if (brushCache->entries)
 		{
 			for (i = 0; i < (int) brushCache->maxEntries; i++)
-			{
-				if (brushCache->entries[i].entry != NULL)
-					free(brushCache->entries[i].entry);
-			}
+				free(brushCache->entries[i].entry);
 
 			free(brushCache->entries);
 		}
@@ -244,10 +227,7 @@ void brush_cache_free(rdpBrushCache* brushCache)
 		if (brushCache->monoEntries)
 		{
 			for (i = 0; i < (int) brushCache->maxMonoEntries; i++)
-			{
-				if (brushCache->monoEntries[i].entry != NULL)
-					free(brushCache->monoEntries[i].entry);
-			}
+				free(brushCache->monoEntries[i].entry);
 
 			free(brushCache->monoEntries);
 		}

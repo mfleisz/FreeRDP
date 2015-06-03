@@ -3,6 +3,8 @@
  * Network Level Authentication (NLA)
  *
  * Copyright 2010-2012 Marc-Andre Moreau <marcandre.moreau@gmail.com>
+ * Copyright 2015 Thincast Technologies GmbH
+ * Copyright 2015 DI (FH) Martin Haimberger <martin.haimberger@thincast.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -88,7 +90,7 @@
 
 #define TERMSRV_SPN_PREFIX	"TERMSRV/"
 
-void nla_send(rdpNla* nla);
+BOOL nla_send(rdpNla* nla);
 int nla_recv(rdpNla* nla);
 void nla_buffer_print(rdpNla* nla);
 void nla_buffer_free(rdpNla* nla);
@@ -165,8 +167,7 @@ int nla_client_init(rdpNla* nla)
 			{
 				if (strlen(settings->PasswordHash) == 32)
 				{
-					if (identity->Password)
-						free(identity->Password);
+					free(identity->Password);
 
 					identity->PasswordLength = ConvertToUnicode(CP_UTF8, 0,
 							settings->PasswordHash, -1, &identity->Password, 0) - 1;
@@ -296,7 +297,12 @@ int nla_client_begin(rdpNla* nla)
 	WLog_DBG(TAG, "Sending Authentication Token");
 	winpr_HexDump(TAG, WLOG_DEBUG, nla->negoToken.pvBuffer, nla->negoToken.cbBuffer);
 
-	nla_send(nla);
+	if (!nla_send(nla))
+	{
+		nla_buffer_free(nla);
+		return -1;
+	}
+
 	nla_buffer_free(nla);
 
 	nla->state = NLA_STATE_NEGO_TOKEN;
@@ -368,7 +374,11 @@ int nla_client_recv(rdpNla* nla)
 		WLog_DBG(TAG, "Sending Authentication Token");
 		winpr_HexDump(TAG, WLOG_DEBUG, nla->negoToken.pvBuffer, nla->negoToken.cbBuffer);
 
-		nla_send(nla);
+		if (!nla_send(nla))
+		{
+			nla_buffer_free(nla);
+			return -1;
+		}
 		nla_buffer_free(nla);
 
 		nla->state = NLA_STATE_PUB_KEY_AUTH;
@@ -395,7 +405,11 @@ int nla_client_recv(rdpNla* nla)
 			return -1;
 		}
 
-		nla_send(nla);
+		if (!nla_send(nla))
+		{
+			nla_buffer_free(nla);
+			return -1;
+		}
 		nla_buffer_free(nla);
 
 		nla->table->FreeCredentialsHandle(&nla->credentials);
@@ -414,6 +428,12 @@ int nla_client_authenticate(rdpNla* nla)
 	int status;
 
 	s = Stream_New(NULL, 4096);
+
+	if (!s)
+	{
+		WLog_ERR(TAG, "Stream_New failed!");
+		return -1;
+	}
 
 	if (nla_client_begin(nla) < 1)
 		return -1;
@@ -624,7 +644,11 @@ int nla_server_authenticate(rdpNla* nla)
 		WLog_DBG(TAG, "Sending Authentication Token");
 		nla_buffer_print(nla);
 
-		nla_send(nla);
+		if (!nla_send(nla))
+		{
+			nla_buffer_free(nla);
+			return -1;
+		}
 		nla_buffer_free(nla);
 
 		if (nla->status != SEC_I_CONTINUE_NEEDED)
@@ -898,13 +922,20 @@ int nla_sizeof_ts_credentials(rdpNla* nla)
 	return size;
 }
 
-void nla_read_ts_credentials(rdpNla* nla, PSecBuffer ts_credentials)
+BOOL nla_read_ts_credentials(rdpNla* nla, PSecBuffer ts_credentials)
 {
 	wStream* s;
 	int length;
 	int ts_password_creds_length;
 
 	s = Stream_New(ts_credentials->pvBuffer, ts_credentials->cbBuffer);
+
+	if (!s)
+	{
+		WLog_ERR(TAG, "Stream_New failed!");
+		return FALSE;
+	}
+
 
 	/* TSCredentials (SEQUENCE) */
 	ber_read_sequence_tag(s, &length);
@@ -920,6 +951,7 @@ void nla_read_ts_credentials(rdpNla* nla, PSecBuffer ts_credentials)
 	nla_read_ts_password_creds(nla, s);
 
 	Stream_Free(s, FALSE);
+	return TRUE;
 }
 
 int nla_write_ts_credentials(rdpNla* nla, wStream* s)
@@ -949,7 +981,7 @@ int nla_write_ts_credentials(rdpNla* nla, wStream* s)
  * @param credssp
  */
 
-void nla_encode_ts_credentials(rdpNla* nla)
+BOOL nla_encode_ts_credentials(rdpNla* nla)
 {
 	wStream* s;
 	int length;
@@ -970,8 +1002,19 @@ void nla_encode_ts_credentials(rdpNla* nla)
 
 	length = ber_sizeof_sequence(nla_sizeof_ts_credentials(nla));
 	if (!sspi_SecBufferAlloc(&nla->tsCredentials, length))
-		return;
+	{
+		WLog_ERR(TAG, "sspi_SecBufferAlloc failed!");
+		return FALSE;
+	}
 	s = Stream_New((BYTE*) nla->tsCredentials.pvBuffer, length);
+
+	if (!s)
+	{
+		sspi_SecBufferFree(&nla->tsCredentials);
+		WLog_ERR(TAG, "Stream_New failed!");
+		return FALSE;
+	}
+
 	nla_write_ts_credentials(nla, s);
 
 	if (nla->settings->DisableCredentialsDelegation)
@@ -982,6 +1025,7 @@ void nla_encode_ts_credentials(rdpNla* nla)
 	}
 
 	Stream_Free(s, FALSE);
+	return TRUE;
 }
 
 SECURITY_STATUS nla_encrypt_ts_credentials(rdpNla* nla)
@@ -990,7 +1034,8 @@ SECURITY_STATUS nla_encrypt_ts_credentials(rdpNla* nla)
 	SecBufferDesc Message;
 	SECURITY_STATUS status;
 
-	nla_encode_ts_credentials(nla);
+	if (!nla_encode_ts_credentials(nla))
+		return SEC_E_INSUFFICIENT_MEMORY;
 
 	if (!sspi_SecBufferAlloc(&nla->authInfo, nla->ContextSizes.cbMaxSignature + nla->tsCredentials.cbBuffer))
 		return SEC_E_INSUFFICIENT_MEMORY;
@@ -1051,7 +1096,11 @@ SECURITY_STATUS nla_decrypt_ts_credentials(rdpNla* nla)
 	if (status != SEC_E_OK)
 		return status;
 
-	nla_read_ts_credentials(nla, &Buffers[1]);
+	if(!nla_read_ts_credentials(nla, &Buffers[1]))
+	{
+		free(buffer);
+		return SEC_E_INSUFFICIENT_MEMORY;
+	}
 	free(buffer);
 
 	return SEC_E_OK;
@@ -1099,7 +1148,7 @@ int nla_sizeof_ts_request(int length)
  * @param credssp
  */
 
-void nla_send(rdpNla* nla)
+BOOL nla_send(rdpNla* nla)
 {
 	wStream* s;
 	int length;
@@ -1115,6 +1164,13 @@ void nla_send(rdpNla* nla)
 	ts_request_length = nla_sizeof_ts_request(length);
 
 	s = Stream_New(NULL, ber_sizeof_sequence(ts_request_length));
+
+	if (!s)
+	{
+		WLog_ERR(TAG, "Stream_New failed!");
+		return FALSE;
+	}
+
 
 	/* TSRequest */
 	ber_write_sequence_tag(s, ts_request_length); /* SEQUENCE */
@@ -1149,6 +1205,7 @@ void nla_send(rdpNla* nla)
 	Stream_SealLength(s);
 	transport_write(nla->transport, s);
 	Stream_Free(s, TRUE);
+	return TRUE;
 }
 
 int nla_decode_ts_request(rdpNla* nla, wStream* s)
@@ -1245,6 +1302,12 @@ int nla_recv(rdpNla* nla)
 	int status;
 
 	s = Stream_New(NULL, 4096);
+
+	if (!s)
+	{
+		WLog_ERR(TAG, "Stream_New failed!");
+		return -1;
+	}
 
 	status = transport_read_pdu(nla->transport, s);
 

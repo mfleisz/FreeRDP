@@ -4,6 +4,8 @@
  *
  * Copyright 2011 Marc-Andre Moreau <marcandre.moreau@gmail.com>
  * Copyright 2014 Norbert Federa <norbert.federa@thincast.com>
+ * Copyright 2015 Thincast Technologies GmbH
+ * Copyright 2015 DI (FH) Martin Haimberger <martin.haimberger@thincast.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -327,6 +329,11 @@ BOOL nego_send_preconnection_pdu(rdpNego* nego)
 	}
 
 	s = Stream_New(NULL, cbSize);
+	if (!s)
+	{
+		WLog_ERR(TAG, "Stream_New failed!");
+		return FALSE;
+	}
 
 	Stream_Write_UINT32(s, cbSize); /* cbSize */
 	Stream_Write_UINT32(s, 0); /* Flags */
@@ -526,7 +533,10 @@ BOOL nego_recv_response(rdpNego* nego)
 	s = Stream_New(NULL, 1024);
 
 	if (!s)
+	{
+		WLog_ERR(TAG, "Stream_New failed!");
 		return FALSE;
+	}
 
 	status = transport_read_pdu(nego->transport, s);
 
@@ -796,6 +806,11 @@ BOOL nego_send_negotiation_request(rdpNego* nego)
 	int cookie_length;
 
 	s = Stream_New(NULL, 512);
+	if (!s)
+	{
+		WLog_ERR(TAG, "Stream_New failed!");
+		return FALSE;
+	}
 
 	length = TPDU_CONNECTION_REQUEST_LENGTH;
 	bm = Stream_GetPosition(s);
@@ -986,7 +1001,10 @@ BOOL nego_send_negotiation_response(rdpNego* nego)
 
 	s = Stream_New(NULL, 512);
 	if (!s)
+	{
+		WLog_ERR(TAG, "Stream_New failed!");
 		return FALSE;
+	}
 
 	length = TPDU_CONNECTION_CONFIRM_LENGTH;
 	bm = Stream_GetPosition(s);
@@ -1139,9 +1157,12 @@ rdpNego* nego_new(rdpTransport* transport)
 
 void nego_free(rdpNego* nego)
 {
-	free(nego->RoutingToken);
-	free(nego->cookie);
-	free(nego);
+	if (nego)
+	{
+		free(nego->RoutingToken);
+		free(nego->cookie);
+		free(nego);
+	}
 }
 
 /**
@@ -1268,7 +1289,7 @@ BOOL nego_set_cookie(rdpNego* nego, char* cookie)
 	if (nego->cookie)
 	{
 		free(nego->cookie);
-		nego->cookie = 0;
+		nego->cookie = NULL;
 	}
 
 	if (!cookie)

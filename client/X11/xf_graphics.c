@@ -64,10 +64,11 @@ BOOL xf_Bitmap_New(rdpContext* context, rdpBitmap* bitmap)
 
 		if (depth != xfc->depth)
 		{
-			data = _aligned_malloc(bitmap->width * bitmap->height * 4, 16);
-
-			if (!data)
+			if (!(data = _aligned_malloc(bitmap->width * bitmap->height * 4, 16)))
+			{
+				xf_unlock_x11(xfc, FALSE);
 				return FALSE;
+			}
 
 			SrcFormat = gdi_get_pixel_format(bitmap->bpp, TRUE);
 
@@ -162,14 +163,16 @@ BOOL xf_Bitmap_Decompress(rdpContext* context, rdpBitmap* bitmap,
 	{
 		if (bpp < 32)
 		{
-			freerdp_client_codecs_prepare(xfc->codecs, FREERDP_CODEC_INTERLEAVED);
+			if (!freerdp_client_codecs_prepare(xfc->codecs, FREERDP_CODEC_INTERLEAVED))
+				return FALSE;
 
 			status = interleaved_decompress(xfc->codecs->interleaved, pSrcData, SrcSize, bpp,
 					&pDstData, xfc->format, -1, 0, 0, width, height, xfc->palette);
 		}
 		else
 		{
-			freerdp_client_codecs_prepare(xfc->codecs, FREERDP_CODEC_PLANAR);
+			if (!freerdp_client_codecs_prepare(xfc->codecs, FREERDP_CODEC_PLANAR))
+				return FALSE;
 
 			status = planar_decompress(xfc->codecs->planar, pSrcData, SrcSize,
 					&pDstData, xfc->format, -1, 0, 0, width, height, TRUE);
@@ -228,10 +231,11 @@ BOOL xf_Pointer_New(rdpContext* context, rdpPointer* pointer)
 	ci.xhot = pointer->xPos;
 	ci.yhot = pointer->yPos;
 
-	ci.pixels = (XcursorPixel*) calloc(1, ci.width * ci.height * 4);
-
-	if (!ci.pixels)
+	if (!(ci.pixels = (XcursorPixel*) calloc(1, ci.width * ci.height * 4)))
+	{
+		xf_unlock_x11(xfc, FALSE);
 		return FALSE;
+	}
 
 	if ((pointer->andMaskData != 0) && (pointer->xorMaskData != 0))
 	{
@@ -465,19 +469,23 @@ BOOL xf_Glyph_EndDraw(rdpContext* context, int x, int y, int width, int height, 
 
 /* Graphics Module */
 
-void xf_register_graphics(rdpGraphics* graphics)
+BOOL xf_register_graphics(rdpGraphics* graphics)
 {
-	rdpBitmap* bitmap;
-	rdpPointer* pointer;
-	rdpGlyph* glyph;
+	rdpBitmap* bitmap = NULL;
+	rdpPointer* pointer = NULL;
+	rdpGlyph* glyph = NULL;
+	BOOL ret = FALSE;
 
-	bitmap = (rdpBitmap*) calloc(1, sizeof(rdpBitmap));
+	if (!(bitmap = (rdpBitmap*) calloc(1, sizeof(rdpBitmap))))
+		goto out;
 
-	if (!bitmap)
-		return;
+	if (!(pointer = (rdpPointer*) calloc(1, sizeof(rdpPointer))))
+		goto out;
+
+	if (!(glyph = (rdpGlyph*) calloc(1, sizeof(rdpGlyph))))
+		goto out;
 
 	bitmap->size = sizeof(xfBitmap);
-
 	bitmap->New = xf_Bitmap_New;
 	bitmap->Free = xf_Bitmap_Free;
 	bitmap->Paint = xf_Bitmap_Paint;
@@ -485,15 +493,8 @@ void xf_register_graphics(rdpGraphics* graphics)
 	bitmap->SetSurface = xf_Bitmap_SetSurface;
 
 	graphics_register_bitmap(graphics, bitmap);
-	free(bitmap);
-
-	pointer = (rdpPointer*) calloc(1, sizeof(rdpPointer));
-
-	if (!pointer)
-		return;
 
 	pointer->size = sizeof(xfPointer);
-
 	pointer->New = xf_Pointer_New;
 	pointer->Free = xf_Pointer_Free;
 	pointer->Set = xf_Pointer_Set;
@@ -502,15 +503,8 @@ void xf_register_graphics(rdpGraphics* graphics)
 	pointer->SetPosition = xf_Pointer_SetPosition;
 
 	graphics_register_pointer(graphics, pointer);
-	free(pointer);
-
-	glyph = (rdpGlyph*) calloc(1, sizeof(rdpGlyph));
-
-	if (!glyph)
-		return;
 
 	glyph->size = sizeof(xfGlyph);
-
 	glyph->New = xf_Glyph_New;
 	glyph->Free = xf_Glyph_Free;
 	glyph->Draw = xf_Glyph_Draw;
@@ -518,5 +512,13 @@ void xf_register_graphics(rdpGraphics* graphics)
 	glyph->EndDraw = xf_Glyph_EndDraw;
 
 	graphics_register_glyph(graphics, glyph);
+
+	ret = TRUE;
+
+out:
+	free(bitmap);
+	free(pointer);
 	free(glyph);
+
+	return ret;
 }
