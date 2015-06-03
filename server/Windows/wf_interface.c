@@ -38,6 +38,8 @@
 
 #include "wf_interface.h"
 
+#define REG_BASE_KEY "Software\\"FREERDP_VENDOR_STRING"\\"FREERDP_PRODUCT_STRING"\\Server"
+
 cbCallback cbEvent;
 
 int get_screen_info(int id, _TCHAR* name, int* width, int* height, int* bpp)
@@ -154,7 +156,7 @@ BOOL wfreerdp_server_start(wfServer* server)
 	server->instance->PeerAccepted = wf_peer_accepted;
 	instance = server->instance;
 
-	wf_settings_read_dword(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Server"), _T("DefaultPort"), &server->port);
+	wf_settings_read_dword(HKEY_LOCAL_MACHINE, _T(REG_BASE_KEY), _T("DefaultPort"), &server->port);
 
 	if (!instance->Open(instance, NULL, (UINT16) server->port))
 		return FALSE;

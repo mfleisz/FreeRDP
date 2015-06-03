@@ -44,6 +44,9 @@
 
 #define TAG FREERDP_TAG("core.nla")
 
+#define REG_BASE_KEY _T("Software\\") _T(FREERDP_VENDOR_STRING) _T("\\") \
+	_T(FREERDP_PRODUCT_STRING) _T("\\Server")
+
 /**
  * TSRequest ::= SEQUENCE {
  * 	version    [0] INTEGER,
@@ -1437,10 +1440,11 @@ rdpNla* nla_new(freerdp* instance, rdpTransport* transport, rdpSettings* setting
 		{
 			if (!settings->guestSSPIEnabled) {
 				nla->SspiModule = (LPTSTR) malloc((_tcslen(_T("secur32.dll"))  + 1)  * sizeof(TCHAR));
-				_tcscpy(nla->SspiModule,_T("secur32.dll"));				 
+				_tcscpy(nla->SspiModule,_T("secur32.dll"));
 			} else {
-				status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Server"),
-									  0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+				status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+						      REG_BASE_KEY,
+						      0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 				if (status == ERROR_SUCCESS)
 				{

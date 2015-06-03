@@ -38,6 +38,8 @@
 
 #include "wf_peer.h"
 
+#define REG_BASE_KEY "Software\\"FREERDP_VENDOR_STRING"\\"FREERDP_PRODUCT_STRING"\\Server"
+
 BOOL wf_peer_context_new(freerdp_peer* client, wfPeerContext* context)
 {
 	if (!(context->info = wf_info_get_instance()))
@@ -213,10 +215,10 @@ DWORD WINAPI wf_peer_socket_listener(LPVOID lpParam)
 
 void wf_peer_read_settings(freerdp_peer* client)
 {
-	if (!wf_settings_read_string_ascii(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Server"), _T("CertificateFile"), &(client->settings->CertificateFile)))
+	if (!wf_settings_read_string_ascii(HKEY_LOCAL_MACHINE, _T(REG_BASE_KET), _T("CertificateFile"), &(client->settings->CertificateFile)))
 		client->settings->CertificateFile = _strdup("server.crt");
 
-	if (!wf_settings_read_string_ascii(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Server"), _T("PrivateKeyFile"), &(client->settings->PrivateKeyFile)))
+	if (!wf_settings_read_string_ascii(HKEY_LOCAL_MACHINE, _T(REG_BASE_KEY), _T("PrivateKeyFile"), &(client->settings->PrivateKeyFile)))
 		client->settings->PrivateKeyFile = _strdup("server.key");
 }
 

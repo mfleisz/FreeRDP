@@ -53,6 +53,10 @@ static const char client_dll[] = "C:\\Windows\\System32\\mstscax.dll";
 	if (RegQueryValueEx(_key, _subkey, NULL, &_type, (BYTE*) &_value, &_size) == ERROR_SUCCESS) \
 		_result = _value ? TRUE : FALSE
 
+#define REG_BASE_KEY _T("Software\\") _T(FREERDP_VENDOR_STRING) \
+	_T("\\") _T(FREERDP_PRODUCT_STRING)
+#define REG_BASE_KEY_CLIENT REG_BASE_KEY _T("\\Client")
+
 void settings_client_load_hkey_local_machine(rdpSettings* settings)
 {
 	HKEY hKey;
@@ -61,7 +65,8 @@ void settings_client_load_hkey_local_machine(rdpSettings* settings)
 	DWORD dwSize;
 	DWORD dwValue;
 
-	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Client"), 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, REG_BASE_KEY_CLIENT,
+			      0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 	if (status == ERROR_SUCCESS)
 	{
@@ -93,7 +98,9 @@ void settings_client_load_hkey_local_machine(rdpSettings* settings)
 		RegCloseKey(hKey);
 	}
 
-	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Client\\BitmapCacheV2"), 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+			      REG_BASE_KEY_CLIENT _T("\\BitmapCacheV2"),
+			      0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 	if (status == ERROR_SUCCESS)
 	{
@@ -115,7 +122,9 @@ void settings_client_load_hkey_local_machine(rdpSettings* settings)
 		RegCloseKey(hKey);
 	}
 
-	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Client\\GlyphCache"), 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+			      REG_BASE_KEY_CLIENT _T("\\GlyphCache"),
+			      0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 	if (status == ERROR_SUCCESS)
 	{
@@ -148,7 +157,9 @@ void settings_client_load_hkey_local_machine(rdpSettings* settings)
 		RegCloseKey(hKey);
 	}
 
-	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Client\\PointerCache"), 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+			      REG_BASE_KEY_CLIENT _T("\\PointerCache"),
+			      0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 	if (status == ERROR_SUCCESS)
 	{
@@ -168,7 +179,9 @@ void settings_server_load_hkey_local_machine(rdpSettings* settings)
 	DWORD dwSize;
 	DWORD dwValue;
 
-	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Server"), 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+			      REG_BASE_KEY _T("\\Server"), 0,
+			      KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 	if (status != ERROR_SUCCESS)
 		return;
@@ -195,13 +208,14 @@ void settings_get_computer_name(rdpSettings* settings)
 
 	GetComputerNameExA(ComputerNameNetBIOS, NULL, &nSize);
 	settings->ComputerName = (char*) malloc(nSize);
-    if (!settings->ComputerName)
-        return;
+	if (!settings->ComputerName)
+		return;
 	GetComputerNameExA(ComputerNameNetBIOS, settings->ComputerName, &nSize);
 }
 
 rdpSettings* freerdp_settings_new(DWORD flags)
 {
+	char* base;
 	rdpSettings* settings;
 
 	settings = (rdpSettings*) calloc(1, sizeof(rdpSettings));
@@ -471,7 +485,34 @@ rdpSettings* freerdp_settings_new(DWORD flags)
 		settings->HomePath = GetKnownPath(KNOWN_PATH_HOME);
 		if (!settings->HomePath)
 				goto out_fail;
-		settings->ConfigPath = GetKnownSubPath(KNOWN_PATH_XDG_CONFIG_HOME, "freerdp");
+
+		/* For default FreeRDP continue using same config directory
+		 * as in old releases.
+		 * Custom builds use <Vendor>/<Product> as config folder. */
+		if (_stricmp(FREERDP_VENDOR_STRING, FREERDP_PRODUCT_STRING))
+		{
+			base = GetKnownSubPath(KNOWN_PATH_XDG_CONFIG_HOME,
+					       FREERDP_VENDOR_STRING);
+			if (base)
+			{
+				settings->ConfigPath = GetCombinedPath(
+							       base,
+							       FREERDP_PRODUCT_STRING);
+			}
+			free (base);
+		} else {
+			int i;
+			char product[sizeof(FREERDP_PRODUCT_STRING)];
+
+			memset(product, 0, sizeof(product));
+			for (i=0; i<sizeof(product); i++)
+				product[i] = tolower(FREERDP_PRODUCT_STRING[i]);
+
+			settings->ConfigPath = GetKnownSubPath(
+						       KNOWN_PATH_XDG_CONFIG_HOME,
+						       product);
+		}
+
 		if (!settings->ConfigPath)
 				goto out_fail;
 
@@ -778,7 +819,7 @@ out_fail:
 void freerdp_settings_free(rdpSettings* settings)
 {
     if (!settings)
-        return;
+	return;
     free(settings->ServerHostname);
     free(settings->Username);
     free(settings->Password);
