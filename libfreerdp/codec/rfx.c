@@ -296,7 +296,8 @@ RFX_CONTEXT* rfx_context_new(BOOL encoder)
 	priv->MinThreadCount = sysinfo.dwNumberOfProcessors;
 	priv->MaxThreadCount = 0;
 
-	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\RemoteFX"), 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\"FREERDP_VENDOR_STRING"\\"
+							FREERDP_PRODUCT_STRING"\\RemoteFX"), 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 	if (status == ERROR_SUCCESS)
 	{

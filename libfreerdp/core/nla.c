@@ -1439,8 +1439,9 @@ rdpNla* nla_new(freerdp* instance, rdpTransport* transport, rdpSettings* setting
 				nla->SspiModule = (LPTSTR) malloc((_tcslen(_T("secur32.dll"))  + 1)  * sizeof(TCHAR));
 				_tcscpy(nla->SspiModule,_T("secur32.dll"));				 
 			} else {
-				status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Server"),
-									  0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+				status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\"FREERDP_VENDOR_STRING"\\"
+										FREERDP_PRODUCT_STRING"\\Server"),
+										0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 				if (status == ERROR_SUCCESS)
 				{
