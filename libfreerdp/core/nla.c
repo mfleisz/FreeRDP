@@ -143,7 +143,6 @@ int nla_client_init(rdpNla* nla)
 
 	if (PromptPassword)
 	{
-/*
 		if (instance->Authenticate)
 		{
 			BOOL proceed = instance->Authenticate(instance,
@@ -155,7 +154,6 @@ int nla_client_init(rdpNla* nla)
 				return 0;
 			}
 		}
-*/
 	}
 
 	sspi_SetAuthIdentity(&(nla->identity), settings->Username, settings->Domain, settings->Password);
