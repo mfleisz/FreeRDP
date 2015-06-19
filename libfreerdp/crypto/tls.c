@@ -1146,7 +1146,7 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, char* hostname, int por
 
 			if (instance->VerifyCertificate)
 				accept_certificate = instance->VerifyCertificate(instance, common_name,
-																				 subject, issuer, fingerprint, hostname_match);
+																				 subject, issuer, fingerprint, !hostname_match);
 
 			switch(accept_certificate)
 			{
