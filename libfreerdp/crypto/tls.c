@@ -1117,45 +1117,10 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, char* hostname, int por
 
 	/* if the certificate is valid and the certificate name matches, verification succeeds */
 	if (certificate_status && hostname_match)
-	{
-		if (common_name)
-		{
-			free(common_name);
-			common_name = NULL;
-		}
-
 		verification_status = TRUE; /* success! */
-	}
 
-	/* if the certificate is valid but the certificate name does not match, warn user, do not accept */
-	if (certificate_status && !hostname_match)
-	{
-		tls_print_certificate_name_mismatch_error(hostname, port,
-							  common_name, alt_names,
-							  alt_names_count);
-
-		if (instance->VerifyCertificate)
-			accept_certificate = instance->VerifyCertificate(instance, common_name,
-																			 subject, issuer, fingerprint, hostname_match);
-
-		switch(accept_certificate)
-		{
-			case 1:
-				/* user accepted certificate, add entry in known_hosts file */
-				verification_status = certificate_data_print(tls->certificate_store, certificate_data);
-				break;
-			case 2:
-				/* user did accept temporaty, do not add to known hosts file */
-				verification_status = TRUE;
-				break;
-			default:
-				/* user did not accept, abort and do not add entry in known_hosts file */
-				verification_status = FALSE; /* failure! */
-				break;
-		}
-	}
 	/* verification could not succeed with OpenSSL, use known_hosts file and prompt user for manual verification */
-	else if (!certificate_status)
+	if (!certificate_status || !hostname_match)
 	{
 		char* issuer;
 		char* subject;
@@ -1218,7 +1183,7 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, char* hostname, int por
 			if (instance->VerifyChangedCertificate)
 			{
 				accept_certificate = instance->VerifyChangedCertificate(
-							     instance, subject, issuer,
+							     instance, common_name, subject, issuer,
 							     fingerprint, old_subject, old_issuer,
 							     old_fingerprint);
 			}
@@ -1256,9 +1221,7 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, char* hostname, int por
 		free(certificate_data);
 	}
 
-#ifndef _WIN32
 	free(common_name);
-#endif
 
 	if (alt_names)
 		crypto_cert_subject_alt_name_free(alt_names_count, alt_names_lengths,
