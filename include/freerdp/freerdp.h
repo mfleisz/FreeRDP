@@ -65,13 +65,25 @@ typedef void (*pContextFree)(freerdp* instance, rdpContext* context);
 typedef BOOL (*pPreConnect)(freerdp* instance);
 typedef BOOL (*pPostConnect)(freerdp* instance);
 typedef void (*pPostDisconnect)(freerdp* instance);
-typedef BOOL (*pAuthenticate)(freerdp* instance, char** username, char** password, char** domain);
-typedef BOOL (*pVerifyCertificate)(freerdp* instance, char* subject, char* issuer, char* fingerprint);
-typedef BOOL (*pVerifyChangedCertificate)(freerdp* instance, char* subject,
-                                          char* issuer, char* new_fingerprint,
-                                          char* old_subject, char* old_issuer,
-                                          char* old_fingerprint);
-typedef int (*pVerifyX509Certificate)(freerdp* instance, BYTE* data, int length, const char* hostname, int port, DWORD flags);
+typedef BOOL (*pAuthenticate)(freerdp* instance, char** username,
+			  char** password, char** domain);
+typedef DWORD (*pVerifyCertificate)(freerdp* instance,
+				const char* common_name,
+				const char* subject,
+				const char* issuer,
+				const char* fingerprint,
+				BOOL host_mismatch);
+typedef DWORD (*pVerifyChangedCertificate)(freerdp* instance,
+					const char* common_name,
+					const char* subject,
+					const char* issuer,
+					const char* new_fingerprint,
+					const char* old_subject,
+					const char* old_issuer,
+					const char* old_fingerprint);
+typedef int (*pVerifyX509Certificate)(freerdp* instance, BYTE* data,
+				int length, const char* hostname,
+				int port, DWORD flags);
 
 typedef int (*pLogonErrorInfo)(freerdp* instance, UINT32 data, UINT32 type);
 

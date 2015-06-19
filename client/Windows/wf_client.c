@@ -565,7 +565,9 @@ BOOL wf_authenticate(freerdp* instance, char** username, char** password, char**
 	return TRUE;
 }
 
-BOOL wf_verify_certificate(freerdp* instance, char* subject, char* issuer, char* fingerprint)
+static DWORD wf_verify_certificate(freerdp* instance, const char* common_name,
+				   const char* subject, const char* issuer,
+				   const char* fingerprint, BOOL host_mismatch)
 {
 #if 0
 	DWORD mode;
@@ -591,7 +593,7 @@ BOOL wf_verify_certificate(freerdp* instance, char* subject, char* issuer, char*
 	SetConsoleMode(input_handle, mode);
 #endif
 
-	return TRUE;
+	return 1;
 }
 
 static BOOL wf_auto_reconnect(freerdp* instance)
