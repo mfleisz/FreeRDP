@@ -1234,12 +1234,15 @@ BOOL xf_authenticate(freerdp* instance, char** username, char** password, char**
  *  This function will actually be called by tls_verify_certificate().
  *  @see rdp_client_connect() and tls_connect()
  *  @param instance - pointer to the rdp_freerdp structure that contains the connection settings
+ *  @param common_name
  *  @param subject
  *  @param issuer
  *  @param fingerprint
- *  @return TRUE if the certificate is trusted. FALSE otherwise.
+ *  @return 1 if the certificate is trusted, 2 if temporary trusted, 0 otherwise.
  */
-BOOL xf_verify_certificate(freerdp* instance, char* subject, char* issuer, char* fingerprint)
+static DWORD xf_verify_certificate(freerdp* instance, const char* common_name,
+				   const char* subject, const char* issuer,
+				   const char* fingerprint, BOOL host_mismatch)
 {
 	char answer;
 
@@ -1253,7 +1256,7 @@ BOOL xf_verify_certificate(freerdp* instance, char* subject, char* issuer, char*
 
 	while (1)
 	{
-		WLog_INFO(TAG, "Do you trust the above certificate? (Y/N) ");
+		WLog_INFO(TAG, "Do you trust the above certificate? (Y/T/N) ");
 		answer = fgetc(stdin);
 
 		if (feof(stdin))
@@ -1262,22 +1265,29 @@ BOOL xf_verify_certificate(freerdp* instance, char* subject, char* issuer, char*
 			if (instance->settings->CredentialsFromStdin)
 				WLog_INFO(TAG, " - Run without parameter \"--from-stdin\" to set trust.");
 			WLog_INFO(TAG, "");
-			return FALSE;
+			return 0;
 		}
 
+		switch(answer)
+		{
 		if (answer == 'y' || answer == 'Y')
-		{
-			return TRUE;
-		}
-		else if (answer == 'n' || answer == 'N')
-		{
-			break;
+			case 'y':
+			case 'Y':
+				return 1;
+			case 't':
+			case 'T':
+				return 2;
+			case 'n':
+			case 'N':
+				return 0;
+			default:
+				break;
 		}
 
 		WLog_INFO(TAG, "");
 	}
 
-	return FALSE;
+	return 0;
 }
 
 int xf_logon_error_info(freerdp* instance, UINT32 data, UINT32 type)

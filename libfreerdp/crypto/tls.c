@@ -1124,19 +1124,39 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, char* hostname, int por
 
 	/* if the certificate is valid but the certificate name does not match, warn user, do not accept */
 	if (certificate_status && !hostname_match)
+	{
 		tls_print_certificate_name_mismatch_error(hostname, port,
 							  common_name, alt_names,
 							  alt_names_count);
 
-	/* verification could not succeed with OpenSSL, use known_hosts file and prompt user for manual verification */
+		if (instance->VerifyCertificate)
+			accept_certificate = instance->VerifyCertificate(instance, common_name,
+																			 subject, issuer, fingerprint, hostname_match);
 
-	if (!certificate_status)
+		switch(accept_certificate)
+		{
+			case 1:
+				/* user accepted certificate, add entry in known_hosts file */
+				verification_status = certificate_data_print(tls->certificate_store, certificate_data);
+				break;
+			case 2:
+				/* user did accept temporaty, do not add to known hosts file */
+				verification_status = TRUE;
+				break;
+			default:
+				/* user did not accept, abort and do not add entry in known_hosts file */
+				verification_status = FALSE; /* failure! */
+				break;
+		}
+	}
+	/* verification could not succeed with OpenSSL, use known_hosts file and prompt user for manual verification */
+	else if (!certificate_status)
 	{
 		char* issuer;
 		char* subject;
 		char* fingerprint;
 		freerdp* instance = (freerdp*) tls->settings->instance;
-		BOOL accept_certificate = FALSE;
+		DWORD accept_certificate = 0;
 
 		issuer = crypto_cert_issuer(cert->px509);
 		subject = crypto_cert_subject(cert->px509);
@@ -1155,19 +1175,23 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, char* hostname, int por
 							alt_names_count);
 
 			if (instance->VerifyCertificate)
-			{
-				accept_certificate = instance->VerifyCertificate(instance, subject, issuer, fingerprint);
-			}
+				accept_certificate = instance->VerifyCertificate(instance, common_name,
+																				 subject, issuer, fingerprint, hostname_match);
 
-			if (!accept_certificate)
+			switch(accept_certificate)
 			{
-				/* user did not accept, abort and do not add entry in known_hosts file */
-				verification_status = FALSE; /* failure! */
-			}
-			else
-			{
-				/* user accepted certificate, add entry in known_hosts file */
-				verification_status = certificate_data_print(tls->certificate_store, certificate_data);
+				case 1:
+					/* user accepted certificate, add entry in known_hosts file */
+					verification_status = certificate_data_print(tls->certificate_store, certificate_data);
+					break;
+				case 2:
+					/* user did accept temporaty, do not add to known hosts file */
+					verification_status = TRUE;
+					break;
+				default:
+					/* user did not accept, abort and do not add entry in known_hosts file */
+					verification_status = FALSE; /* failure! */
+					break;
 			}
 		}
 		else if (match == -1)
@@ -1196,21 +1220,24 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, char* hostname, int por
 
 			free(old_fingerprint);
 
-			if (!accept_certificate)
+			switch(accept_certificate)
 			{
-				/* user did not accept, abort and do not change known_hosts file */
-				verification_status = FALSE;  /* failure! */
-			}
-			else
-			{
-				/* user accepted new certificate, add replace fingerprint for this host in known_hosts file */
-				verification_status = certificate_data_replace(tls->certificate_store, certificate_data);
+				case 1:
+					/* user accepted certificate, add entry in known_hosts file */
+					verification_status = certificate_data_replace(tls->certificate_store, certificate_data);
+					break;
+				case 2:
+					/* user did accept temporaty, do not add to known hosts file */
+					verification_status = TRUE;
+					break;
+				default:
+					/* user did not accept, abort and do not add entry in known_hosts file */
+					verification_status = FALSE; /* failure! */
+					break;
 			}
 		}
 		else if (match == 0)
-		{
 			verification_status = TRUE; /* success! */
-		}
 
 		free(issuer);
 		free(subject);

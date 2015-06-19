@@ -293,7 +293,12 @@ BOOL android_authenticate(freerdp* instance, char** username, char** password, c
 	return ((res == JNI_TRUE) ? TRUE : FALSE);
 }
 
-BOOL android_verify_certificate(freerdp* instance, char* subject, char* issuer, char* fingerprint)
+static DWORD android_verify_certificate(freerdp* instance,
+					const char* common_name,
+					const char* subject,
+					const char* issuer,
+					const char* fingerprint,
+					BOOL host_mismatch)
 {
 	DEBUG_ANDROID("Certificate details:");
 	DEBUG_ANDROID("\tSubject: %s", subject);
@@ -309,17 +314,22 @@ BOOL android_verify_certificate(freerdp* instance, char* subject, char* issuer, 
 	jstring jstr2 = (*env)->NewStringUTF(env, issuer);
 	jstring jstr3 = (*env)->NewStringUTF(env, fingerprint);
 
-	jboolean res = freerdp_callback_bool_result("OnVerifyCertificate", "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", instance, jstr1, jstr2, jstr3);
+	jint res = freerdp_callback_int_result("OnVerifyCertificate", "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", instance, jstr1, jstr2, jstr3);
 
 	if (attached == JNI_TRUE)
 		jni_detach_thread();
 
-	return ((res == JNI_TRUE) ? TRUE : FALSE);
+	return res;
 }
 
-BOOL android_verify_changed_certificate(freerdp* instance, char* subject, char* issuer, char* new_fingerprint, char* old_fingerprint)
+static DWORD android_verify_changed_certificate(freerdp* instance, const char* subject,
+						 const char* common_name,
+						 const char* issuer,
+						 const char* new_fingerprint,
+						 const char* old_fingerprint)
 {
-	return android_verify_certificate(instance, subject, issuer, new_fingerprint);
+	return android_verify_certificate(instance, common_name, subject, issuer,
+					new_fingerprint);
 }
 
 static void* jni_input_thread(void* arg)
@@ -331,7 +341,7 @@ static void* jni_input_thread(void* arg)
 	
 	assert(NULL != instance);
 	assert(NULL != aCtx);
-														  
+															
 	DEBUG_ANDROID("Start.");
 
 	if (!(queue = freerdp_get_message_queue(instance, FREERDP_INPUT_MESSAGE_QUEUE)))

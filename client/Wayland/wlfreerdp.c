@@ -172,7 +172,9 @@ static void wl_post_disconnect(freerdp* instance)
 		wlf_DestroyWindow(context, context->window);
 }
 
-static BOOL wl_verify_certificate(freerdp* instance, char* subject, char* issuer, char* fingerprint)
+static DWORD wl_verify_certificate(freerdp* instance, const char* common_name,
+				   const char* subject, const char* issuer,
+				   const char* fingerprint, BOOL host_mismatch)
 {
 	char answer;
 
@@ -186,7 +188,7 @@ static BOOL wl_verify_certificate(freerdp* instance, char* subject, char* issuer
 
 	while (1)
 	{
-		printf("Do you trust the above certificate? (Y/N) ");
+		printf("Do you trust the above certificate? (Y/T/N) ");
 		answer = fgetc(stdin);
 
 		if (feof(stdin))
@@ -195,21 +197,27 @@ static BOOL wl_verify_certificate(freerdp* instance, char* subject, char* issuer
 			if (instance->settings->CredentialsFromStdin)
 				printf(" - Run without parameter \"--from-stdin\" to set trust.");
 			printf("\n");
-			return FALSE;
+			return 0;
 		}
 
-		if (answer == 'y' || answer == 'Y')
+		switch(answer)
 		{
-			return TRUE;
-		}
-		else if (answer == 'n' || answer == 'N')
-		{
-			break;
+			case 'y':
+			case 'Y':
+				return 1;
+			case 't':
+			case 'T':
+				return 2;
+			case 'n':
+			case 'N':
+				return 0;
+			default:
+				break;
 		}
 		printf("\n");
 	}
 
-	return FALSE;
+	return 0;
 }
 
 static int wlfreerdp_run(freerdp* instance)
