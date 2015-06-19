@@ -328,8 +328,8 @@ static DWORD android_verify_changed_certificate(freerdp* instance, const char* s
 						 const char* new_fingerprint,
 						 const char* old_fingerprint)
 {
-	return android_verify_certificate(instance, common_name, subject, issuer,
-					new_fingerprint);
+	return android_verify_certificate(instance, common_name, subject,
+					issuer,	new_fingerprint, FALSE);
 }
 
 static void* jni_input_thread(void* arg)
