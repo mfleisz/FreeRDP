@@ -359,7 +359,6 @@ static int transport_bio_simple_init(BIO* bio, SOCKET socket, int shutdown)
 	bio->flags = BIO_FLAGS_SHOULD_RETRY;
 	bio->init = 1;
 
-#ifdef _WIN32
 	ptr->hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
 	if (!ptr->hEvent)
@@ -367,12 +366,6 @@ static int transport_bio_simple_init(BIO* bio, SOCKET socket, int shutdown)
 
 	/* WSAEventSelect automatically sets the socket in non-blocking mode */
 	WSAEventSelect(ptr->socket, ptr->hEvent, FD_READ | FD_WRITE | FD_CLOSE);
-#else
-	ptr->hEvent = CreateFileDescriptorEvent(NULL, FALSE, FALSE, (int) ptr->socket);
-
-	if (!ptr->hEvent)
-		return 0;
-#endif
 
 	return 1;
 }
@@ -749,15 +742,11 @@ static BOOL freerdp_tcp_connect_timeout(rdpContext* context, int sockfd,
 					socklen_t addrlen, int timeout)
 {
 	HANDLE handles[2];
-	int status;
-	DWORD tout = (timeout > 0) ? timeout * 1000 : INFINITE;
+	int status = 0;
 	int count = 0;
-#if !defined(WIN32)
-	u_long nonblock = 1;
-#endif
+	DWORD tout = (timeout) ? timeout * 1000 : INFINITE;
 
-#if defined(WIN32)
-	handles[count] = CreateEvent(NULL, FALSE, FALSE, NULL);
+	handles[count] = CreateEvent(NULL, TRUE, FALSE, NULL);
 	if (!handles[count])
 		return FALSE;
 
@@ -767,45 +756,33 @@ static BOOL freerdp_tcp_connect_timeout(rdpContext* context, int sockfd,
 		WLog_ERR(TAG, "WSAEventSelect failed with %lX", WSAGetLastError());
 		return FALSE;
 	}
-#else
-	status = _ioctlsocket(sockfd, FIONBIO, &nonblock);
-	if (status)
-		return FALSE;
-
-	handles[count++] = CreateFileDescriptorEvent(NULL, TRUE, FALSE, sockfd);
-#endif
 
 	handles[count++] = context->abortEvent;
 
 	status = _connect(sockfd, addr, addrlen);
 	if (status < 0)
 	{
-#if defined(WIN32)
 		status = WSAGetLastError();
 		switch(status)
 		{
+			case WSAEINPROGRESS:
 			case WSAEWOULDBLOCK:
 				break;
 			default:
 				return FALSE;
 		}
-#else
-		switch(errno)
-		{
-			case EINPROGRESS:
-				break;
-			default:
-				return FALSE;
-		}
-#endif
 	}
 
 	status = WaitForMultipleObjects(count, handles, FALSE, tout);
 	if (WAIT_OBJECT_0 != status)
+	{
+		if (status == WAIT_OBJECT_0 + 1)
+			freerdp_set_last_error(context, FREERDP_ERROR_CONNECT_CANCELLED);
+
 		return FALSE;
+	}
 
 	status = recv(sockfd, NULL, 0, 0);
-#if defined(WIN32)
 	if (status == SOCKET_ERROR)
 	{
 		if (WSAGetLastError() == WSAECONNRESET)
@@ -814,210 +791,15 @@ static BOOL freerdp_tcp_connect_timeout(rdpContext* context, int sockfd,
 
 	status = WSAEventSelect(sockfd, handles[0], 0);
 	CloseHandle(handles[0]);
+
 	if (status < 0)
 	{
 		WLog_ERR(TAG, "WSAEventSelect failed with %lX", WSAGetLastError());
 		return FALSE;
 	}
-#else
-	if (status < 0)
-	{
-		if (errno == ENOTCONN)
-			return FALSE;
-	}
-
-	nonblock = 0;
-	status = _ioctlsocket(sockfd, FIONBIO, &nonblock);
-	if (status)
-		return FALSE;
-#endif
 
 	return TRUE;
 }
-
-#ifndef _WIN32
-
-static int freerdp_tcp_connect_multi(rdpContext* context, char** hostnames,
-				     UINT32* ports, int count, int port, int timeout)
-{
-	int index;
-	int sindex;
-	int status;
-	int flags;
-	int maxfds;
-	fd_set cfds;
-	int sockfd = -1;
-	int* sockfds;
-	char port_str[16];
-	socklen_t optlen;
-	struct timeval tv;
-	struct addrinfo hints;
-	struct addrinfo* addr;
-	struct addrinfo* result;
-	struct addrinfo** addrs;
-	struct addrinfo** results;
-
-	sindex = -1;
-
-	sprintf_s(port_str, sizeof(port_str) - 1, "%u", port);
-
-	sockfds = (int*) calloc(count, sizeof(int));
-	addrs = (struct addrinfo**) calloc(count, sizeof(struct addrinfo*));
-	results = (struct addrinfo**) calloc(count, sizeof(struct addrinfo*));
-
-	for (index = 0; index < count; index++)
-	{
-		ZeroMemory(&hints, sizeof(hints));
-		hints.ai_family = AF_UNSPEC;
-		hints.ai_socktype = SOCK_STREAM;
-
-		if (ports)
-			sprintf_s(port_str, sizeof(port_str) - 1, "%u", ports[index]);
-
-		status = getaddrinfo(hostnames[index], port_str, &hints, &result);
-
-		if (status)
-		{
-			continue;
-		}
-
-		addr = result;
-
-		if ((addr->ai_family == AF_INET6) && (addr->ai_next != 0))
-		{
-			while ((addr = addr->ai_next))
-			{
-				if (addr->ai_family == AF_INET)
-					break;
-			}
-
-			if (!addr)
-				addr = result;
-		}
-
-		sockfds[index] = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
-
-		if (sockfds[index] < 0)
-		{
-			freeaddrinfo(result);
-			sockfds[index] = 0;
-			continue;
-		}
-
-		addrs[index] = addr;
-		results[index] = result;
-	}
-
-	maxfds = 0;
-	FD_ZERO(&cfds);
-
-	for (index = 0; index < count; index++)
-	{
-		if (!sockfds[index])
-			continue;
-
-		sockfd = sockfds[index];
-		addr = addrs[index];
-
-		/* set socket in non-blocking mode */
-
-		flags = fcntl(sockfd, F_GETFL);
-
-		if (flags < 0)
-		{
-			sockfds[index] = 0;
-			continue;
-		}
-
-		fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
-
-		/* non-blocking tcp connect */
-
-		status = connect(sockfd, addr->ai_addr, addr->ai_addrlen);
-
-		if (status >= 0)
-		{
-			/* connection success */
-			break;
-		}
-
-		if (errno != EINPROGRESS)
-		{
-			sockfds[index] = 0;
-			continue;
-		}
-
-		FD_SET(sockfd, &cfds);
-
-		if (sockfd > maxfds)
-			maxfds = sockfd;
-	}
-
-	tv.tv_sec = timeout;
-	tv.tv_usec = 0;
-
-	status = _select(maxfds + 1, NULL, &cfds, NULL, &tv);
-
-	for (index = 0; index < count; index++)
-	{
-		if (!sockfds[index])
-			continue;
-
-		sockfd = sockfds[index];
-
-		if (FD_ISSET(sockfd, &cfds))
-		{
-			status = 0;
-			optlen = sizeof(status);
-
-			if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, (void*) &status, &optlen) < 0)
-			{
-				sockfds[index] = 0;
-				continue;
-			}
-
-			if (status != 0)
-			{
-				sockfds[index] = 0;
-				continue;
-			}
-
-			/* set socket in blocking mode */
-
-			flags = fcntl(sockfd, F_GETFL);
-
-			if (flags < 0)
-			{
-				sockfds[index] = 0;
-				continue;
-			}
-
-			fcntl(sockfd, F_SETFL, flags & ~O_NONBLOCK);
-
-			sindex = index;
-			break;
-		}
-	}
-
-	if (sindex >= 0)
-	{
-		sockfd = sockfds[sindex];
-	}
-
-	for (index = 0; index < count; index++)
-	{
-		if (results[index])
-			freeaddrinfo(results[index]);
-	}
-
-	free(addrs);
-	free(results);
-	free(sockfds);
-
-	return sockfd;
-}
-
-#else
 
 static int freerdp_tcp_connect_multi(rdpContext* context, char** hostnames,
 				     UINT32* ports, int count, int port,
@@ -1026,7 +808,7 @@ static int freerdp_tcp_connect_multi(rdpContext* context, char** hostnames,
 	int index;
 	int sindex;
 	int status;
-	SOCKET sockfd;
+	SOCKET sockfd = -1;
 	SOCKET* sockfds;
 	HANDLE* events;
 	DWORD waitStatus;
@@ -1036,8 +818,6 @@ static int freerdp_tcp_connect_multi(rdpContext* context, char** hostnames,
 	struct addrinfo* result;
 	struct addrinfo** addrs;
 	struct addrinfo** results;
-
-	sindex = -1;
 
 	sprintf_s(port_str, sizeof(port_str) - 1, "%u", port);
 
@@ -1144,6 +924,9 @@ static int freerdp_tcp_connect_multi(rdpContext* context, char** hostnames,
 		sockfd = sockfds[sindex];
 	}
 
+	if (sindex == count)
+		freerdp_set_last_error(context, FREERDP_ERROR_CONNECT_CANCELLED);
+
 	for (index = 0; index < count; index++)
 	{
 		if (results[index])
@@ -1157,8 +940,6 @@ static int freerdp_tcp_connect_multi(rdpContext* context, char** hostnames,
 
 	return sockfd;
 }
-
-#endif
 
 BOOL freerdp_tcp_set_keep_alive_mode(int sockfd)
 {
