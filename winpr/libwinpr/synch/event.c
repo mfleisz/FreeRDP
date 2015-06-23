@@ -77,23 +77,22 @@ BOOL EventCloseHandle(HANDLE handle) {
 	if (!EventIsHandled(handle))
 		return FALSE;
 
-    if (!event->bAttached)
-    {
-        if (event->pipe_fd[0] != -1)
-        {
-        	close(event->pipe_fd[0]);
-        	event->pipe_fd[0] = -1;
-        }
+	if (!event->bAttached)
+	{
+		if (event->pipe_fd[0] != -1)
+		{
+			close(event->pipe_fd[0]);
+			event->pipe_fd[0] = -1;
+		}
+		if (event->pipe_fd[1] != -1)
+		{
+			close(event->pipe_fd[1]);
+			event->pipe_fd[1] = -1;
+		}
+	}
 
-        if (event->pipe_fd[1] != -1)
-        {
-        	close(event->pipe_fd[1]);
-        	event->pipe_fd[1] = -1;
-        }
-    }
-
-    free(event);
-    return TRUE;
+	free(event);
+	return TRUE;
 }
 
 static HANDLE_OPS ops = {
@@ -113,7 +112,7 @@ HANDLE CreateEventW(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL bManualReset, 
 	event->bAttached = FALSE;
 	event->bManualReset = bManualReset;
 	event->ops = &ops;
-	WINPR_HANDLE_SET_TYPE(event, HANDLE_TYPE_EVENT);
+	WINPR_HANDLE_SET_TYPE_AND_MODE(event, HANDLE_TYPE_EVENT, FD_READ);
 
 	if (!event->bManualReset)
 	{
@@ -199,7 +198,7 @@ static int eventfd_write(int fd, eventfd_t value)
 BOOL SetEvent(HANDLE hEvent)
 {
 	ULONG Type;
-	PVOID Object;
+	WINPR_HANDLE* Object;
 	int length;
 	BOOL status;
 	WINPR_EVENT* event;
@@ -241,7 +240,7 @@ BOOL SetEvent(HANDLE hEvent)
 BOOL ResetEvent(HANDLE hEvent)
 {
 	ULONG Type;
-	PVOID Object;
+	WINPR_HANDLE* Object;
 	int length;
 	BOOL status;
 	WINPR_EVENT* event;
@@ -281,7 +280,9 @@ BOOL ResetEvent(HANDLE hEvent)
 #endif
 
 
-HANDLE CreateFileDescriptorEventW(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL bManualReset, BOOL bInitialState, int FileDescriptor)
+HANDLE CreateFileDescriptorEventW(LPSECURITY_ATTRIBUTES lpEventAttributes,
+					BOOL bManualReset, BOOL bInitialState,
+					int FileDescriptor, ULONG mode)
 {
 #ifndef _WIN32
 	WINPR_EVENT* event;
@@ -295,7 +296,8 @@ HANDLE CreateFileDescriptorEventW(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL 
 		event->pipe_fd[0] = FileDescriptor;
 		event->pipe_fd[1] = -1;
 		event->ops = &ops;
-		WINPR_HANDLE_SET_TYPE(event, HANDLE_TYPE_EVENT);
+		event->Mode = mode;
+		WINPR_HANDLE_SET_TYPE_AND_MODE(event, HANDLE_TYPE_EVENT, mode);
 		handle = (HANDLE) event;
 	}
 
@@ -305,9 +307,12 @@ HANDLE CreateFileDescriptorEventW(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL 
 #endif
 }
 
-HANDLE CreateFileDescriptorEventA(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL bManualReset, BOOL bInitialState, int FileDescriptor)
+HANDLE CreateFileDescriptorEventA(LPSECURITY_ATTRIBUTES lpEventAttributes,
+				BOOL bManualReset, BOOL bInitialState,
+				int FileDescriptor, ULONG mode)
 {
-	return CreateFileDescriptorEventW(lpEventAttributes, bManualReset, bInitialState, FileDescriptor);
+	return CreateFileDescriptorEventW(lpEventAttributes, bManualReset,
+					bInitialState, FileDescriptor, mode);
 }
 
 /**
@@ -317,7 +322,8 @@ HANDLE CreateWaitObjectEvent(LPSECURITY_ATTRIBUTES lpEventAttributes,
 							 BOOL bManualReset, BOOL bInitialState, void* pObject)
 {
 #ifndef _WIN32
-	return CreateFileDescriptorEventW(lpEventAttributes, bManualReset, bInitialState, (int)(ULONG_PTR) pObject);
+	return CreateFileDescriptorEventW(lpEventAttributes, bManualReset,
+					bInitialState, (int)(ULONG_PTR) pObject, FD_READ);
 #else
 	HANDLE hEvent = NULL;
 	DuplicateHandle(GetCurrentProcess(), pObject, GetCurrentProcess(), &hEvent, 0, FALSE, DUPLICATE_SAME_ACCESS);
@@ -334,7 +340,7 @@ int GetEventFileDescriptor(HANDLE hEvent)
 {
 #ifndef _WIN32
 	ULONG Type;
-	PVOID Object;
+	WINPR_HANDLE* Object;
 	WINPR_EVENT* event;
 
 	if (!winpr_Handle_GetInfo(hEvent, &Type, &Object))
@@ -367,17 +373,19 @@ int GetEventFileDescriptor(HANDLE hEvent)
  * This file descriptor is not usable on Windows
  */
 
-int SetEventFileDescriptor(HANDLE hEvent, int FileDescriptor)
+int SetEventFileDescriptor(HANDLE hEvent, int FileDescriptor, ULONG mode)
 {
 #ifndef _WIN32
 	ULONG Type;
-	PVOID Object;
+	WINPR_HANDLE* Object;
 	WINPR_EVENT* event;
 
 	if (!winpr_Handle_GetInfo(hEvent, &Type, &Object))
 		return -1;
 
 	event = (WINPR_EVENT*) Object;
+	event->bAttached = TRUE;
+	event->Mode = mode;
 	event->pipe_fd[0] = FileDescriptor;
 	return 0;
 #else
