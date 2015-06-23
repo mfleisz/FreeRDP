@@ -172,20 +172,8 @@ static void wl_post_disconnect(freerdp* instance)
 		wlf_DestroyWindow(context, context->window);
 }
 
-static DWORD wl_verify_certificate(freerdp* instance, const char* common_name,
-				   const char* subject, const char* issuer,
-				   const char* fingerprint, BOOL host_mismatch)
+static DWORD wl_accept_certificate(rdpSettings* settings)
 {
-	char answer;
-
-	printf("Certificate details:\n");
-	printf("\tSubject: %s\n", subject);
-	printf("\tIssuer: %s\n", issuer);
-	printf("\tThumbprint: %s\n", fingerprint);
-	printf("The above X.509 certificate could not be verified, possibly because you do not have "
-		"the CA certificate in your certificate store, or the certificate has expired. "
-		"Please look at the documentation on how to create local certificate store for a private CA.\n");
-
 	while (1)
 	{
 		printf("Do you trust the above certificate? (Y/T/N) ");
@@ -218,6 +206,50 @@ static DWORD wl_verify_certificate(freerdp* instance, const char* common_name,
 	}
 
 	return 0;
+}
+
+static DWORD wl_verify_certificate(freerdp* instance, const char* common_name,
+				   const char* subject, const char* issuer,
+				   const char* fingerprint, BOOL host_mismatch)
+{
+	char answer;
+
+	printf("Certificate details:\n");
+	printf("\tSubject: %s\n", subject);
+	printf("\tIssuer: %s\n", issuer);
+	printf("\tThumbprint: %s\n", fingerprint);
+	printf("The above X.509 certificate could not be verified, possibly because you do not have\n"
+		"the CA certificate in your certificate store, or the certificate has expired.\n"
+		"Please look at the documentation on how to create local certificate store for a private CA.\n");
+
+	return wl_accept_certificate(instance->settings);
+}
+
+static DWORD wl_verify_changed_certificate(freerdp* instance, const char* common_name,
+					   const char* subject, const char* issuer,
+					   const char* fingerprint,
+					   const char* old_subject, const char* old_issuer,
+					   const char* old_fingerprint)
+{
+	char answer;
+
+	printf("!!! Certificate has changed !!!\n");
+	printf("\n");
+	printf("New Certificate details:\n");
+	printf("\tSubject: %s\n", subject);
+	printf("\tIssuer: %s\n", issuer);
+	printf("\tThumbprint: %s\n", fingerprint);
+	printf("\n");
+	printf("Old Certificate details:\n");
+	printf("\tSubject: %s\n", old_subject);
+	printf("\tIssuer: %s\n", old_issuer);
+	printf("\tThumbprint: %s\n", old_fingerprint);
+	printf("\n");
+	printf("The above X.509 certificate does not match the certificate used for previous connections.\n"
+		"This may indicate that the certificate has been tampered with.\n"
+		"Please contact the administrator of the RDP server and clarify.\n");
+
+	return wl_accept_certificate(instance->settings);
 }
 
 static int wlfreerdp_run(freerdp* instance)
@@ -271,6 +303,7 @@ int main(int argc, char* argv[])
 	instance->PostConnect = wl_post_connect;
 	instance->PostDisconnect = wl_post_disconnect;
 	instance->VerifyCertificate = wl_verify_certificate;
+	instance->VerifyChangedCertificate = wl_verify_changed_certificate;
 
 	instance->ContextSize = sizeof(wlfContext);
 	instance->ContextNew = wl_context_new;
