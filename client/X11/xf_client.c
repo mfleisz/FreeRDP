@@ -1242,6 +1242,8 @@ BOOL xf_authenticate(freerdp* instance, char** username, char** password, char**
 
 static DWORD xf_accept_certificate(rdpSettings* settings)
 {
+	char answer;
+
 	while (1)
 	{
 		printf("Do you trust the above certificate? (Y/T/N) ");
@@ -1250,7 +1252,7 @@ static DWORD xf_accept_certificate(rdpSettings* settings)
 		if (feof(stdin))
 		{
 			printf("\nError: Could not read answer from stdin.");
-			if (instance->settings->CredentialsFromStdin)
+			if (settings->CredentialsFromStdin)
 				printf(" - Run without parameter \"--from-stdin\" to set trust.");
 			printf("\n");
 			return 0;
@@ -1292,8 +1294,6 @@ static DWORD xf_verify_certificate(freerdp* instance, const char* common_name,
 				   const char* subject, const char* issuer,
 				   const char* fingerprint, BOOL host_mismatch)
 {
-	char answer;
-
 	printf("Certificate details:\n");
 	printf("\tSubject: %s\n", subject);
 	printf("\tIssuer: %s\n", issuer);
@@ -1325,8 +1325,6 @@ static DWORD xf_verify_changed_certificate(freerdp* instance, const char* common
 					   const char* old_subject, const char* old_issuer,
 					   const char* old_fingerprint)
 {
-	char answer;
-
 	printf("!!! Certificate has changed !!!\n");
 	printf("\n");
 	printf("New Certificate details:\n");
@@ -1343,7 +1341,7 @@ static DWORD xf_verify_changed_certificate(freerdp* instance, const char* common
 		"This may indicate that the certificate has been tampered with.\n"
 		"Please contact the administrator of the RDP server and clarify.\n");
 
-	return wl_accept_certificate(instance->settings);
+	return xf_accept_certificate(instance->settings);
 }
 
 int xf_logon_error_info(freerdp* instance, UINT32 data, UINT32 type)

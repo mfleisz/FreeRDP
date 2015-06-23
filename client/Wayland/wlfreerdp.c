@@ -174,6 +174,8 @@ static void wl_post_disconnect(freerdp* instance)
 
 static DWORD wl_accept_certificate(rdpSettings* settings)
 {
+	char answer;
+
 	while (1)
 	{
 		printf("Do you trust the above certificate? (Y/T/N) ");
@@ -182,7 +184,7 @@ static DWORD wl_accept_certificate(rdpSettings* settings)
 		if (feof(stdin))
 		{
 			printf("\nError: Could not read answer from stdin.");
-			if (instance->settings->CredentialsFromStdin)
+			if (settings->CredentialsFromStdin)
 				printf(" - Run without parameter \"--from-stdin\" to set trust.");
 			printf("\n");
 			return 0;
@@ -212,8 +214,6 @@ static DWORD wl_verify_certificate(freerdp* instance, const char* common_name,
 				   const char* subject, const char* issuer,
 				   const char* fingerprint, BOOL host_mismatch)
 {
-	char answer;
-
 	printf("Certificate details:\n");
 	printf("\tSubject: %s\n", subject);
 	printf("\tIssuer: %s\n", issuer);
@@ -231,8 +231,6 @@ static DWORD wl_verify_changed_certificate(freerdp* instance, const char* common
 					   const char* old_subject, const char* old_issuer,
 					   const char* old_fingerprint)
 {
-	char answer;
-
 	printf("!!! Certificate has changed !!!\n");
 	printf("\n");
 	printf("New Certificate details:\n");
