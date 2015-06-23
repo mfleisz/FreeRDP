@@ -5,8 +5,14 @@ set(MODULE_PREFIX "TEST_CORE")
 set(${MODULE_PREFIX}_DRIVER ${MODULE_NAME}.c)
 
 set(${MODULE_PREFIX}_TESTS
-    TestConnect.c
 	TestVersion.c)
+
+if(WITH_SAMPLE AND WITH_SERVER)
+set(${MODULE_PREFIX}_TESTS
+	TestConnect.c)
+else()
+	message("Skipping connection tests, requires WITH_SAMPLE and WITH_SERVER set!")
+endif()
 
 create_test_sourcelist(${MODULE_PREFIX}_SRCS
 	${${MODULE_PREFIX}_DRIVER}
