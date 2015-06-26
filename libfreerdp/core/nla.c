@@ -44,8 +44,8 @@
 
 #define TAG FREERDP_TAG("core.nla")
 
-#define REG_BASE_KEY _T("Software\\") _T(FREERDP_VENDOR_STRING) _T("\\") \
-	_T(FREERDP_PRODUCT_STRING) _T("\\Server")
+#define SERVER_KEY "Software\\"FREERDP_VENDOR_STRING"\\" \
+		     FREERDP_PRODUCT_STRING"\\Server"
 
 /**
  * TSRequest ::= SEQUENCE {
@@ -89,7 +89,7 @@
  *
  */
 
-#define NLA_PKG_NAME	NTLMSP_NAME
+#define NLA_PKG_NAME	NEGOSSP_NAME
 
 #define TERMSRV_SPN_PREFIX	"TERMSRV/"
 
@@ -102,9 +102,22 @@ static SECURITY_STATUS nla_decrypt_public_key_echo(rdpNla* nla);
 static SECURITY_STATUS nla_encrypt_ts_credentials(rdpNla* nla);
 static SECURITY_STATUS nla_decrypt_ts_credentials(rdpNla* nla);
 static BOOL nla_read_ts_password_creds(rdpNla* nla, wStream* s);
+static void nla_identity_free(SEC_WINNT_AUTH_IDENTITY* identity);
 
 #define ber_sizeof_sequence_octet_string(length) ber_sizeof_contextual_tag(ber_sizeof_octet_string(length)) + ber_sizeof_octet_string(length)
 #define ber_write_sequence_octet_string(stream, context, value, length) ber_write_contextual_tag(stream, context, ber_sizeof_octet_string(length), TRUE) + ber_write_octet_string(stream, value, length)
+
+void nla_identity_free(SEC_WINNT_AUTH_IDENTITY* identity)
+{
+	if (identity)
+	{
+		free(identity->User);
+		free(identity->Domain);
+		free(identity->Password);
+	}
+	free(identity);
+
+}
 
 /**
  * Initialize NTLMSSP authentication module (client).
@@ -159,7 +172,7 @@ int nla_client_init(rdpNla* nla)
 
 	if (!settings->Username)
 	{
-		free (nla->identity);
+		nla_identity_free(nla->identity);
 		nla->identity = NULL;
 	}
 	else
@@ -169,6 +182,12 @@ int nla_client_init(rdpNla* nla)
 #ifndef _WIN32
 	{
 		SEC_WINNT_AUTH_IDENTITY* identity = nla->identity;
+
+		if (!identity)
+		{
+			WLog_ERR(TAG, "NLA identity=%p", identity);
+			return -1;
+		}
 
 		if (settings->RestrictedAdminModeRequired)
 		{
@@ -222,7 +241,7 @@ int nla_client_init(rdpNla* nla)
 	nla->ServicePrincipalName = spn;
 #endif
 
-	nla->table = InitSecurityInterface();
+	nla->table = InitSecurityInterfaceEx(0);
 	nla->status = nla->table->QuerySecurityPackageInfo(NLA_PKG_NAME, &nla->pPackageInfo);
 
 	if (nla->status != SEC_E_OK)
@@ -510,7 +529,7 @@ int nla_server_init(rdpNla* nla)
 	}
 	else
 	{
-		nla->table = InitSecurityInterface();
+		nla->table = InitSecurityInterfaceEx(0);
 	}
 
 	nla->status = nla->table->QuerySecurityPackageInfo(NLA_PKG_NAME, &nla->pPackageInfo);
@@ -886,34 +905,65 @@ BOOL nla_read_ts_password_creds(rdpNla* nla, wStream* s)
 	}
 
 	/* TSPasswordCreds (SEQUENCE) */
-	ber_read_sequence_tag(s, &length);
+	if (!ber_read_sequence_tag(s, &length) ||
 
-	/* [0] domainName (OCTET STRING) */
-	ber_read_contextual_tag(s, 0, &length, TRUE);
-	ber_read_octet_string_tag(s, &length);
+		/* [0] domainName (OCTET STRING) */
+		!ber_read_contextual_tag(s, 0, &length, TRUE) ||
+		!ber_read_octet_string_tag(s, &length))
+	{
+		return FALSE;
+	}
 	nla->identity->DomainLength = (UINT32) length;
-	nla->identity->Domain = (UINT16*) malloc(length);
-	CopyMemory(nla->identity->Domain, Stream_Pointer(s), nla->identity->DomainLength);
-	Stream_Seek(s, nla->identity->DomainLength);
-	nla->identity->DomainLength /= 2;
+	if (nla->identity->DomainLength > 0)
+	{
+		nla->identity->Domain = (UINT16*) malloc(length);
+		if (!nla->identity->Domain)
+			return FALSE;
+		CopyMemory(nla->identity->Domain, Stream_Pointer(s), nla->identity->DomainLength);
+		Stream_Seek(s, nla->identity->DomainLength);
+		nla->identity->DomainLength /= 2;
+	}
+	else
+		nla->identity->Domain = NULL;
 
 	/* [1] userName (OCTET STRING) */
-	ber_read_contextual_tag(s, 1, &length, TRUE);
-	ber_read_octet_string_tag(s, &length);
+	if (!ber_read_contextual_tag(s, 1, &length, TRUE) ||
+		!ber_read_octet_string_tag(s, &length))
+	{
+		return FALSE;
+	}
 	nla->identity->UserLength = (UINT32) length;
-	nla->identity->User = (UINT16*) malloc(length);
-	CopyMemory(nla->identity->User, Stream_Pointer(s), nla->identity->UserLength);
-	Stream_Seek(s, nla->identity->UserLength);
-	nla->identity->UserLength /= 2;
+	if (nla->identity->PasswordLength > 0)
+	{
+		nla->identity->User = (UINT16 *) malloc(length);
+		if (!nla->identity->User)
+			return FALSE;
+		CopyMemory(nla->identity->User, Stream_Pointer(s), nla->identity->UserLength);
+		Stream_Seek(s, nla->identity->UserLength);
+		nla->identity->UserLength /= 2;
+	}
+	else
+		nla->identity->User = NULL;
 
 	/* [2] password (OCTET STRING) */
-	ber_read_contextual_tag(s, 2, &length, TRUE);
-	ber_read_octet_string_tag(s, &length);
+	if (!ber_read_contextual_tag(s, 2, &length, TRUE) ||
+		!ber_read_octet_string_tag(s, &length))
+	{
+		return FALSE;
+	}
 	nla->identity->PasswordLength = (UINT32) length;
-	nla->identity->Password = (UINT16*) malloc(length);
-	CopyMemory(nla->identity->Password, Stream_Pointer(s), nla->identity->PasswordLength);
-	Stream_Seek(s, nla->identity->PasswordLength);
-	nla->identity->PasswordLength /= 2;
+	if (nla->identity->PasswordLength > 0)
+	{
+		nla->identity->Password = (UINT16 *) malloc(length);
+		if (!nla->identity->Password)
+			return FALSE;
+		CopyMemory(nla->identity->Password, Stream_Pointer(s), nla->identity->PasswordLength);
+		Stream_Seek(s, nla->identity->PasswordLength);
+		nla->identity->PasswordLength /= 2;
+	}
+	else
+		nla->identity->Password = NULL;
+
 	nla->identity->Flags = SEC_WINNT_AUTH_IDENTITY_UNICODE;
 
 	return TRUE;
@@ -927,15 +977,15 @@ int nla_write_ts_password_creds(rdpNla* nla, wStream* s)
 	size += ber_write_sequence_tag(s, innerSize);
 	if (nla->identity)
 	{
-	/* [0] domainName (OCTET STRING) */
+		/* [0] domainName (OCTET STRING) */
 		size += ber_write_sequence_octet_string(
 				s, 0, (BYTE*) nla->identity->Domain,
 				nla->identity->DomainLength * 2);
-	/* [1] userName (OCTET STRING) */
+		/* [1] userName (OCTET STRING) */
 		size += ber_write_sequence_octet_string(
 				s, 1, (BYTE*) nla->identity->User,
 				nla->identity->UserLength * 2);
-	/* [2] password (OCTET STRING) */
+		/* [2] password (OCTET STRING) */
 		size += ber_write_sequence_octet_string(
 				s, 2, (BYTE*) nla->identity->Password,
 				nla->identity->PasswordLength * 2);
@@ -954,10 +1004,10 @@ int nla_sizeof_ts_credentials(rdpNla* nla)
 
 static BOOL nla_read_ts_credentials(rdpNla* nla, PSecBuffer ts_credentials)
 {
-	BOOL rc;
 	wStream* s;
 	int length;
 	int ts_password_creds_length;
+	BOOL ret;
 
 	s = Stream_New(ts_credentials->pvBuffer, ts_credentials->cbBuffer);
 
@@ -968,21 +1018,18 @@ static BOOL nla_read_ts_credentials(rdpNla* nla, PSecBuffer ts_credentials)
 	}
 
 
-	/* TSCredentials (SEQUENCE) */
-	ber_read_sequence_tag(s, &length);
-
-	/* [0] credType (INTEGER) */
-	ber_read_contextual_tag(s, 0, &length, TRUE);
-	ber_read_integer(s, NULL);
-
-	/* [1] credentials (OCTET STRING) */
-	ber_read_contextual_tag(s, 1, &length, TRUE);
-	ber_read_octet_string_tag(s, &ts_password_creds_length);
-
-	rc = nla_read_ts_password_creds(nla, s);
+		/* TSCredentials (SEQUENCE) */
+	ret = ber_read_sequence_tag(s, &length) &&
+		/* [0] credType (INTEGER) */
+		ber_read_contextual_tag(s, 0, &length, TRUE) &&
+		ber_read_integer(s, NULL) &&
+		/* [1] credentials (OCTET STRING) */
+		ber_read_contextual_tag(s, 1, &length, TRUE) &&
+		ber_read_octet_string_tag(s, &ts_password_creds_length) &&
+		nla_read_ts_password_creds(nla, s);
 
 	Stream_Free(s, FALSE);
-	return rc;
+	return ret;
 }
 
 int nla_write_ts_credentials(rdpNla* nla, wStream* s)
@@ -1401,6 +1448,12 @@ LPTSTR nla_make_spn(const char* ServiceClass, const char* hostname)
 	hostnameX = _strdup(hostname);
 	ServiceClassX = _strdup(ServiceClass);
 #endif
+	if (!hostnameX || !ServiceClassX)
+	{
+		free(hostnameX);
+		free(ServiceClassX);
+		return NULL;
+	}
 
 	if (!ServiceClass)
 	{
@@ -1448,10 +1501,6 @@ LPTSTR nla_make_spn(const char* ServiceClass, const char* hostname)
 
 rdpNla* nla_new(freerdp* instance, rdpTransport* transport, rdpSettings* settings)
 {
-	HKEY hKey;
-	LONG status;
-	DWORD dwType;
-	DWORD dwSize;
 
 	rdpNla* nla = (rdpNla*) calloc(1, sizeof(rdpNla));
 
@@ -1471,6 +1520,7 @@ rdpNla* nla_new(freerdp* instance, rdpTransport* transport, rdpSettings* setting
 	nla->transport = transport;
 	nla->sendSeqNum = 0;
 	nla->recvSeqNum = 0;
+
 	ZeroMemory(&nla->negoToken, sizeof(SecBuffer));
 	ZeroMemory(&nla->pubKeyAuth, sizeof(SecBuffer));
 	ZeroMemory(&nla->authInfo, sizeof(SecBuffer));
@@ -1478,31 +1528,43 @@ rdpNla* nla_new(freerdp* instance, rdpTransport* transport, rdpSettings* setting
 
 	if (nla->server)
 	{
+		LONG status;
+		HKEY hKey;
+		DWORD dwType;
+		DWORD dwSize;
+
 		if (!settings->guestSSPIEnabled) {
 			nla->SspiModule = (LPTSTR) malloc((_tcslen(_T("secur32.dll"))  + 1)  * sizeof(TCHAR));
 			_tcscpy(nla->SspiModule,_T("secur32.dll"));
 		} else {
-			status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
-						      REG_BASE_KEY,
-								  0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+			status = RegOpenKeyExA(HKEY_LOCAL_MACHINE, SERVER_KEY,
+						  0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+
+			if (status != ERROR_SUCCESS)
+				return nla;
+
+			status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType, NULL, &dwSize);
+			if (status != ERROR_SUCCESS)
+			{
+				RegCloseKey(hKey);
+				return nla;
+			}
+
+			nla->SspiModule = (LPTSTR) malloc(dwSize + sizeof(TCHAR));
+			if (!nla->SspiModule)
+			{
+				RegCloseKey(hKey);
+				free(nla);
+				return NULL;
+			}
+
+			status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType,
+									 (BYTE*) nla->SspiModule, &dwSize);
 
 			if (status == ERROR_SUCCESS)
-			{
-				status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType, NULL, &dwSize);
+				WLog_INFO(TAG, "Using SSPI Module: %s", nla->SspiModule);
 
-				if (status == ERROR_SUCCESS)
-				{
-					nla->SspiModule = (LPTSTR) malloc(dwSize + sizeof(TCHAR));
-					status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType,
-										 (BYTE*) nla->SspiModule, &dwSize);
-
-					if (status == ERROR_SUCCESS)
-					{
-						WLog_INFO(TAG, "Using SSPI Module: %s", nla->SspiModule);
-						RegCloseKey(hKey);
-					}
-				}
-			}
+			RegCloseKey(hKey);
 		}
 	}
 
@@ -1526,13 +1588,6 @@ void nla_free(rdpNla* nla)
 	sspi_SecBufferFree(&nla->tsCredentials);
 
 	free(nla->ServicePrincipalName);
-	if (nla->identity)
-	{
-		free(nla->identity->User);
-		free(nla->identity->Domain);
-		free(nla->identity->Password);
-	}
-	free(nla->identity);
-
+	nla_identity_free(nla->identity);
 	free(nla);
 }
