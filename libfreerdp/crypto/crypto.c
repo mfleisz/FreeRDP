@@ -487,6 +487,7 @@ char** crypto_cert_subject_alt_name(X509* xcert, int* count, int** lengths)
 		if (!*lengths)
 		{
 			free(strings);
+			strings = NULL;
 			goto out;
 		}
 	}
