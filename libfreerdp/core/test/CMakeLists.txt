@@ -5,7 +5,8 @@ set(MODULE_PREFIX "TEST_CORE")
 set(${MODULE_PREFIX}_DRIVER ${MODULE_NAME}.c)
 
 set(${MODULE_PREFIX}_TESTS
-	TestVersion.c)
+	TestVersion.c
+	TestSettings.c)
 
 if(WITH_SAMPLE AND WITH_SERVER)
 set(${MODULE_PREFIX}_TESTS
@@ -21,6 +22,7 @@ create_test_sourcelist(${MODULE_PREFIX}_SRCS
 add_executable(${MODULE_NAME} ${${MODULE_PREFIX}_SRCS})
 
 add_definitions(-DTESTING_OUTPUT_DIRECTORY="${CMAKE_BINARY_DIR}")
+add_definitions(-DTESTING_SRC_DIRECTORY="${CMAKE_SOURCE_DIR}")
 
 target_link_libraries(${MODULE_NAME} freerdp-client freerdp winpr)
 
