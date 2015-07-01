@@ -111,9 +111,21 @@ void nla_identity_free(SEC_WINNT_AUTH_IDENTITY* identity)
 {
 	if (identity)
 	{
-		free(identity->User);
-		free(identity->Domain);
-		free(identity->Password);
+		if (identity->User)
+		{
+			memset(identity->User, 0, identity->UserLength*2);
+			free(identity->User);
+		}
+		if (identity->Password)
+		{
+			memset(identity->Password, 0, identity->PasswordLength*2);
+			free(identity->Password);
+		}
+		if (identity->Domain)
+		{
+			memset(identity->Domain, 0, identity->DomainLength*2);
+			free(identity->Domain);
+		}
 	}
 	free(identity);
 
@@ -933,7 +945,7 @@ BOOL nla_read_ts_password_creds(rdpNla* nla, wStream* s)
 		return FALSE;
 	}
 	nla->identity->UserLength = (UINT32) length;
-	if (nla->identity->PasswordLength > 0)
+	if (nla->identity->UserLength > 0)
 	{
 		nla->identity->User = (UINT16 *) malloc(length);
 		if (!nla->identity->User)
