@@ -359,7 +359,7 @@ static int transport_bio_simple_init(BIO* bio, SOCKET socket, int shutdown)
 	bio->flags = BIO_FLAGS_SHOULD_RETRY;
 	bio->init = 1;
 
-	ptr->hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	ptr->hEvent = WSACreateEvent();
 
 	if (!ptr->hEvent)
 		return 0;
@@ -1095,8 +1095,9 @@ int freerdp_tcp_connect(rdpContext* context, rdpSettings* settings,
 
 			if (!freerdp_tcp_connect_timeout(context, sockfd, addr->ai_addr, addr->ai_addrlen, timeout))
 			{
-				fprintf(stderr, "failed to connect to %s\n", hostname);
 				freeaddrinfo(result);
+				close(sockfd);
+				WLog_ERR(TAG, "failed to connect to %s", hostname);
 				return -1;
 			}
 
@@ -1108,6 +1109,12 @@ int freerdp_tcp_connect(rdpContext* context, rdpSettings* settings,
 
 	free(settings->ClientAddress);
 	settings->ClientAddress = freerdp_tcp_get_ip_address(sockfd);
+	if (!settings->ClientAddress)
+	{
+		close(sockfd);
+		WLog_ERR(TAG, "Couldn't get socket ip address");
+		return -1;
+	}
 
 	optval = 1;
 	optlen = sizeof(optval);
@@ -1128,8 +1135,8 @@ int freerdp_tcp_connect(rdpContext* context, rdpSettings* settings,
 
 			if (setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (void*) &optval, optlen) < 0)
 			{
+				close(sockfd);
 				WLog_ERR(TAG, "unable to set receive buffer len");
-				closesocket(sockfd);
 				return -1;
 			}
 		}
@@ -1139,7 +1146,8 @@ int freerdp_tcp_connect(rdpContext* context, rdpSettings* settings,
 	{
 		if (!freerdp_tcp_set_keep_alive_mode(sockfd))
 		{
-			closesocket(sockfd);
+			close(sockfd);
+			WLog_ERR(TAG, "Couldn't set keep alive mode.");
 			return -1;
 		}
 	}
