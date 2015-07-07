@@ -745,9 +745,12 @@ int transport_check_fds(rdpTransport* transport)
 	int status;
 	int recv_status;
 	wStream* received;
+	HANDLE event;
 
 	if (!transport)
 		return -1;
+
+	BIO_get_event(transport->frontBio, &event);
 
 	/**
 	 * Loop through and read all available PDUs.  Since multiple
@@ -772,6 +775,7 @@ int transport_check_fds(rdpTransport* transport)
 			if (status < 0)
 				WLog_DBG(TAG, "transport_check_fds: transport_read_pdu() - %i", status);
 
+			ResetEvent(event);
 			return status;
 		}
 
@@ -800,6 +804,7 @@ int transport_check_fds(rdpTransport* transport)
 		}
 	}
 
+	ResetEvent(event);
 	return 0;
 }
 
@@ -967,7 +972,7 @@ out:
 rdpTransport* transport_new(rdpContext* context)
 {
 	rdpTransport* transport;
-	
+
 	transport = (rdpTransport*) calloc(1, sizeof(rdpTransport));
 
 	if (!transport)
