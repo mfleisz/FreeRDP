@@ -675,7 +675,8 @@ DWORD transport_get_event_handles(rdpTransport* transport, HANDLE* events, DWORD
 	{
 		if (events && (nCount < count))
 		{
-			BIO_get_event(transport->frontBio, &events[nCount]);
+			if (BIO_get_event(transport->frontBio, &events[nCount]) != 1)
+				return 0;
 			nCount++;
 		}
 	}
@@ -750,7 +751,8 @@ int transport_check_fds(rdpTransport* transport)
 	if (!transport)
 		return -1;
 
-	BIO_get_event(transport->frontBio, &event);
+	if (BIO_get_event(transport->frontBio, &event) != 1)
+		return -1;
 
 	/**
 	 * Loop through and read all available PDUs.  Since multiple
@@ -759,6 +761,7 @@ int transport_check_fds(rdpTransport* transport)
 	 * wait for a socket to get signaled that data is available
 	 * (which may never happen).
 	 */
+	ResetEvent(event);
 	for (;;)
 	{
 		/**
@@ -774,8 +777,6 @@ int transport_check_fds(rdpTransport* transport)
 		{
 			if (status < 0)
 				WLog_DBG(TAG, "transport_check_fds: transport_read_pdu() - %i", status);
-
-			ResetEvent(event);
 			return status;
 		}
 
@@ -804,7 +805,6 @@ int transport_check_fds(rdpTransport* transport)
 		}
 	}
 
-	ResetEvent(event);
 	return 0;
 }
 
