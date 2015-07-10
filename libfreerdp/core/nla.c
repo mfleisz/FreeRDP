@@ -89,7 +89,7 @@
  *
  */
 
-#define NLA_PKG_NAME	NEGOSSP_NAME
+#define NLA_PKG_NAME	NTLMSP_NAME
 
 #define TERMSRV_SPN_PREFIX	"TERMSRV/"
 
@@ -1232,7 +1232,7 @@ SECURITY_STATUS nla_encrypt_ts_credentials(rdpNla* nla)
 
 	if (!sspi_SecBufferAlloc(&nla->authInfo, nla->ContextSizes.cbSecurityTrailer + nla->tsCredentials.cbBuffer))
 		return SEC_E_INSUFFICIENT_MEMORY;
-	Buffers[0].BufferType = SECBUFFER_TOKEN; /* Signature */	
+	Buffers[0].BufferType = SECBUFFER_TOKEN; /* Signature */
 	Buffers[0].cbBuffer = nla->ContextSizes.cbSecurityTrailer;
 	Buffers[0].pvBuffer = nla->authInfo.pvBuffer;
 	ZeroMemory(Buffers[0].pvBuffer, Buffers[0].cbBuffer);
