@@ -59,12 +59,12 @@ pstatus_t general_YUV420ToRGB_8u_P3AC4R(const BYTE* pSrc[3], int srcStep[3],
 	pY = pSrc[0];
 	pU = pSrc[1];
 	pV = pSrc[2];
-	
+
 	lastCol = roi->width & 0x01;
 	lastRow = roi->height & 0x01;
-	
-	nWidth = (roi->width + 1) & ~0x0001;
-	nHeight = (roi->height + 1) & ~0x0001;
+
+	nWidth = roi->width & ~0x0001;
+	nHeight = roi->height & ~0x0001;
 
 	halfWidth = nWidth / 2;
 	halfHeight = nHeight / 2;
@@ -369,7 +369,7 @@ void primitives_init_YUV(primitives_t* prims)
 {
 	prims->YUV420ToRGB_8u_P3AC4R = general_YUV420ToRGB_8u_P3AC4R;
 	prims->RGBToYUV420_8u_P3AC4R = general_RGBToYUV420_8u_P3AC4R;
-	
+
 	primitives_init_YUV_opt(prims);
 }
 
