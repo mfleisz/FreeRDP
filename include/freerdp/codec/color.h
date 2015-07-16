@@ -375,14 +375,14 @@ extern "C" {
 /* Color Conversion */
 
 #define BGR16_RGB32(_r, _g, _b, _p) \
-	GetBGR16(_r, _g, _b, _p); \
- 	RGB_565_888(_r, _g, _b); \
-	_p = RGB32(_r, _g, _b);
+    GetBGR16(_r, _g, _b, _p); \
+    RGB_565_888(_r, _g, _b); \
+    _p = RGB32(_r, _g, _b);
 
 #define RGB32_RGB16(_r, _g, _b, _p) \
-	GetRGB32(_r, _g, _b, _p); \
- 	RGB_888_565(_r, _g, _b); \
-	_p = RGB565(_r, _g, _b);
+    GetRGB32(_r, _g, _b, _p); \
+    RGB_888_565(_r, _g, _b); \
+    _p = RGB565(_r, _g, _b);
 
 #define RGB15_RGB16(_r, _g, _b, _p) \
 	GetRGB_555(_r, _g, _b, _p); \
@@ -416,6 +416,32 @@ typedef CLRCONV* HCLRCONV;
 #define IBPP(_bpp) (((_bpp + 1)/ 8) % 5)
 
 typedef BYTE* (*p_freerdp_image_convert)(BYTE* srcData, BYTE* dstData, int width, int height, int srcBpp, int dstBpp, HCLRCONV clrconv);
+
+#define RGB32ToFormat(r, g, b, format) ARGB32ToFormat(0xFF, r, g, b, format)
+static INLINE UINT32 ARGB32ToFormat(BYTE a, BYTE r, BYTE g, BYTE b, int dstFormat)
+{
+	switch(dstFormat)
+	{
+	case PIXEL_FORMAT_ARGB32:
+		return ARGB32(a, r, g, b);
+	case PIXEL_FORMAT_RGB32:
+		return RGB32(r, g, b);
+	case PIXEL_FORMAT_ABGR32:
+		return ABGR32(a, r, g, b);
+	case PIXEL_FORMAT_BGR32:
+		return BGR32(r, g, b);
+	case PIXEL_FORMAT_RGB24:
+		return RGB24(r, g, b);
+	case PIXEL_FORMAT_BGR24:
+		return BGR24(r, g, b);
+	case PIXEL_FORMAT_RGB16:
+		return RGB16(r, g, b);
+	case PIXEL_FORMAT_BGR16:
+		return BGR16(r, g, b);
+	default:
+		return 0x00000000;
+	}
+}
 
 static INLINE UINT32 RGB32_to_BGR32(UINT32 pixel)
 {
@@ -472,7 +498,7 @@ FREERDP_API int freerdp_image_move(BYTE* pData, DWORD Format, int nStep, int nXD
 		int nWidth, int nHeight, int nXSrc, int nYSrc);
 FREERDP_API int freerdp_image_fill(BYTE* pDstData, DWORD DstFormat, int nDstStep, int nXDst, int nYDst,
 		int nWidth, int nHeight, UINT32 color);
-	
+
 FREERDP_API int freerdp_image_copy_from_retina(BYTE* pDstData, DWORD DstFormat, int nDstStep, int nXDst, int nYDst,
 		int nWidth, int nHeight, BYTE* pSrcData, int nSrcStep, int nXSrc, int nYSrc);
 
