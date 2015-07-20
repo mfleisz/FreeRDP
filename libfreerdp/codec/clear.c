@@ -57,7 +57,6 @@ int clear_decompress(CLEAR_CONTEXT* clear, BYTE* pSrcData, UINT32 SrcSize,
 		BYTE** ppDstData, DWORD DstFormat, int nDstStep, int nXDst, int nYDst, int nWidth, int nHeight)
 {
 	UINT32 i;
-	BOOL invert;
 	UINT32 x, y;
 	UINT32 count = 0;
 	UINT32 color;
@@ -95,8 +94,6 @@ int clear_decompress(CLEAR_CONTEXT* clear, BYTE* pSrcData, UINT32 SrcSize,
 
 	if ((nWidth > 0xFFFF) || (nHeight > 0xFFFF))
 		return -1004;
-
-	invert = FREERDP_PIXEL_FORMAT_IS_ABGR(DstFormat) ? TRUE : FALSE;
 
 	glyphFlags = pSrcData[0];
 	seqNumber = pSrcData[1];
@@ -150,7 +147,16 @@ int clear_decompress(CLEAR_CONTEXT* clear, BYTE* pSrcData, UINT32 SrcSize,
 
 			for (y = 0; y < (UINT32) nHeight; y++)
 			{
-				CopyMemory(pDstPixel8, pSrcPixel8, nSrcStep);
+				pDstPixel32 = (UINT32*)pDstPixel8;
+				for (i=0; i<nWidth; i++)
+				{
+					pDstPixel32[i] = ARGB32ToFormat(
+								 pSrcPixel8[4*i + 3],
+							pSrcPixel8[4*i + 2],
+							pSrcPixel8[4*i + 1],
+							pSrcPixel8[4*i + 0],
+							DstFormat);
+				}
 				pSrcPixel8 += nSrcStep;
 				pDstPixel8 += nDstStep;
 			}
@@ -201,10 +207,11 @@ int clear_decompress(CLEAR_CONTEXT* clear, BYTE* pSrcData, UINT32 SrcSize,
 			if ((residualByteCount - suboffset) < 4)
 				return -1015;
 
-			if (!invert)
-				color = RGB32(residualData[suboffset + 2], residualData[suboffset + 1], residualData[suboffset + 0]);
-			else
-				color = BGR32(residualData[suboffset + 2], residualData[suboffset + 1], residualData[suboffset + 0]);
+			color = RGB32ToFormat(
+					residualData[suboffset + 2],
+					residualData[suboffset + 1],
+					residualData[suboffset + 0],
+					DstFormat);
 
 			suboffset += 3;
 
@@ -250,7 +257,16 @@ int clear_decompress(CLEAR_CONTEXT* clear, BYTE* pSrcData, UINT32 SrcSize,
 
 		for (y = 0; y < (UINT32) nHeight; y++)
 		{
-			CopyMemory(pDstPixel8, pSrcPixel8, nSrcStep);
+			pDstPixel32 = (UINT32*)pDstPixel8;
+			for (i=0; i<nWidth; i++)
+			{
+				pDstPixel32[i] = ARGB32ToFormat(
+							 pSrcPixel8[4*i + 3],
+						pSrcPixel8[4*i + 2],
+						pSrcPixel8[4*i + 1],
+						pSrcPixel8[4*i + 0],
+						DstFormat);
+			}
 			pSrcPixel8 += nSrcStep;
 			pDstPixel8 += nDstStep;
 		}
@@ -298,10 +314,10 @@ int clear_decompress(CLEAR_CONTEXT* clear, BYTE* pSrcData, UINT32 SrcSize,
 			yEnd = *((UINT16*) &bandsData[suboffset + 6]);
 			suboffset += 8;
 
-			if (!invert)
-				colorBkg = RGB32(bandsData[suboffset + 2], bandsData[suboffset + 1], bandsData[suboffset + 0]);
-			else
-				colorBkg = BGR32(bandsData[suboffset + 2], bandsData[suboffset + 1], bandsData[suboffset + 0]);
+			colorBkg = RGB32ToFormat(bandsData[suboffset + 2],
+					bandsData[suboffset + 1],
+					bandsData[suboffset + 0],
+					DstFormat);
 
 			suboffset += 3;
 
@@ -391,23 +407,15 @@ int clear_decompress(CLEAR_CONTEXT* clear, BYTE* pSrcData, UINT32 SrcSize,
 
 					pDstPixel32 = vBarShortEntry->pixels;
 
-					if (!invert)
+					for (y = 0; y < vBarShortPixelCount; y++)
 					{
-						for (y = 0; y < vBarShortPixelCount; y++)
-						{
-							*pDstPixel32 = RGB32(pSrcPixel8[2], pSrcPixel8[1], pSrcPixel8[0]);
-							pSrcPixel8 += 3;
-							pDstPixel32++;
-						}
-					}
-					else
-					{
-						for (y = 0; y < vBarShortPixelCount; y++)
-						{
-							*pDstPixel32 = BGR32(pSrcPixel8[2], pSrcPixel8[1], pSrcPixel8[0]);
-							pSrcPixel8 += 3;
-							pDstPixel32++;
-						}
+						*pDstPixel32 = RGB32ToFormat(
+								       pSrcPixel8[2],
+								pSrcPixel8[1],
+								pSrcPixel8[0],
+								DstFormat);
+						pSrcPixel8 += 3;
+						pDstPixel32++;
 					}
 
 					suboffset += (vBarShortPixelCount * 3);
@@ -589,32 +597,19 @@ int clear_decompress(CLEAR_CONTEXT* clear, BYTE* pSrcData, UINT32 SrcSize,
 
 				pSrcPixel8 = bitmapData;
 
-				if (!invert)
+				for (y = 0; y < height; y++)
 				{
-					for (y = 0; y < height; y++)
-					{
-						pDstPixel32 = (UINT32*) &pDstData[((nYDstRel + y) * nDstStep) + (nXDstRel * 4)];
+					pDstPixel32 = (UINT32*) &pDstData[((nYDstRel + y) * nDstStep) + (nXDstRel * 4)];
 
-						for (x = 0; x < width; x++)
-						{
-							*pDstPixel32 = RGB32(pSrcPixel8[2], pSrcPixel8[1], pSrcPixel8[0]);
-							pSrcPixel8 += 3;
-							pDstPixel32++;
-						}
-					}
-				}
-				else
-				{
-					for (y = 0; y < height; y++)
+					for (x = 0; x < width; x++)
 					{
-						pDstPixel32 = (UINT32*) &pDstData[((nYDstRel + y) * nDstStep) + (nXDstRel * 4)];
-
-						for (x = 0; x < width; x++)
-						{
-							*pDstPixel32 = BGR32(pSrcPixel8[2], pSrcPixel8[1], pSrcPixel8[0]);
-							pSrcPixel8 += 3;
-							pDstPixel32++;
-						}
+						*pDstPixel32 = RGB32ToFormat(
+								       pSrcPixel8[2],
+								pSrcPixel8[1],
+								pSrcPixel8[0],
+								DstFormat);
+						pSrcPixel8 += 3;
+						pDstPixel32++;
 					}
 				}
 			}
@@ -627,33 +622,25 @@ int clear_decompress(CLEAR_CONTEXT* clear, BYTE* pSrcData, UINT32 SrcSize,
 				pSrcPixel8 = clear->nsc->BitmapData;
 				pDstPixel8 = &pDstData[(nYDstRel * nDstStep) + (nXDstRel * 4)];
 
-				if (!invert)
+				for (y = 0; y < height; y++)
 				{
-					for (y = 0; y < height; y++)
-					{
-						CopyMemory(pDstPixel8, pSrcPixel8, nSrcStep);
-						pSrcPixel8 += nSrcStep;
-						pDstPixel8 += nDstStep;
-					}
-				}
-				else
-				{
-					for (y = 0; y < height; y++)
-					{
-						for (x = 0; x < width; x++)
-						{
-							pDstPixel8[0] = pSrcPixel8[2];
-							pDstPixel8[1] = pSrcPixel8[1];
-							pDstPixel8[2] = pSrcPixel8[0];
-							pDstPixel8[3] = 0xFF;
+					pDstPixel32 = (UINT32*)pDstPixel8;
 
-							pSrcPixel8 += 4;
-							pDstPixel8 += 4;
-						}
+					for (x = 0; x < width; x++)
+					{
+						*pDstPixel32 = ARGB32ToFormat(
+								       pSrcPixel8[3],
+								pSrcPixel8[2],
+								pSrcPixel8[1],
+								pSrcPixel8[0],
+								DstFormat);
 
-						pSrcPixel8 += (nSrcStep - (width * 4));
-						pDstPixel8 += (nDstStep - (width * 4));
+						pSrcPixel8 += 4;
+						pDstPixel32++;
 					}
+
+					pSrcPixel8 += nSrcStep - (width * 4);
+					pDstPixel8 += nDstStep;
 				}
 			}
 			else if (subcodecId == 2) /* CLEARCODEC_SUBCODEC_RLEX */
@@ -673,21 +660,16 @@ int clear_decompress(CLEAR_CONTEXT* clear, BYTE* pSrcData, UINT32 SrcSize,
 				if (paletteCount > 127)
 					return -1047;
 
-				if (!invert)
+				if (paletteCount < 1)
+					return -1047;
+
+				for (i = 0; i < paletteCount; i++)
 				{
-					for (i = 0; i < paletteCount; i++)
-					{
-						palette[i] = RGB32(pSrcPixel8[2], pSrcPixel8[1], pSrcPixel8[0]);
-						pSrcPixel8 += 3;
-					}
-				}
-				else
-				{
-					for (i = 0; i < paletteCount; i++)
-					{
-						palette[i] = BGR32(pSrcPixel8[2], pSrcPixel8[1], pSrcPixel8[0]);
-						pSrcPixel8 += 3;
-					}
+					palette[i] = RGB32ToFormat(pSrcPixel8[2],
+							pSrcPixel8[1],
+							pSrcPixel8[0],
+							DstFormat);
+					pSrcPixel8 += 3;
 				}
 
 				pixelIndex = 0;
@@ -768,7 +750,16 @@ int clear_decompress(CLEAR_CONTEXT* clear, BYTE* pSrcData, UINT32 SrcSize,
 
 				for (y = 0; y < height; y++)
 				{
-					CopyMemory(pDstPixel8, pSrcPixel8, nSrcStep);
+					pDstPixel32 = (UINT32*)pDstPixel8;
+					for (i=0; i<width; i++)
+					{
+						pDstPixel32[i] = ARGB32ToFormat(
+									 pSrcPixel8[4*i + 3],
+								pSrcPixel8[4*i + 2],
+								pSrcPixel8[4*i + 1],
+								pSrcPixel8[4*i + 0],
+								DstFormat);
+					}
 					pSrcPixel8 += nSrcStep;
 					pDstPixel8 += nDstStep;
 					pixelCount -= count;
