@@ -182,7 +182,7 @@ if(TARGET_ARCH MATCHES "x64|x86")
 	endif()
 	if(${WITH_RFX_RLGR_OPTION_INDEX} GREATER 0)
 		enable_language(ASM_NASM)
-		
+
 		if(WIN32)
 			set(CMAKE_ASM_NASM_FLAGS ${CMAKE_ASM_NASM_FLAGS} -DWIN32)
 		endif()
@@ -313,7 +313,7 @@ if(WITH_SSE2)
 	endif()
 elseif(WITH_NEON)
 	if(CMAKE_COMPILER_IS_GNUCC)
-	    set(OPTIMIZATION "${OPTIMIZATION} -mfpu=neon")
+		set(OPTIMIZATION "${OPTIMIZATION} -mfpu=neon")
 	endif()
 	# TODO: Add MSVC equivalent
 endif()
@@ -370,17 +370,21 @@ endif()
 
 add_library(${MODULE_NAME} ${LIBFREERDP_SRCS})
 if (${LIBFREERDP_DEPS})
-	add_dependencies(${MODULE_NAME} ${LIBFREERDP_DEPS})
+    add_dependencies(${MODULE_NAME} ${LIBFREERDP_DEPS})
 endif()
 add_definitions(${LIBFREERDP_DEFINITIONS})
 
 set_target_properties(${MODULE_NAME} PROPERTIES LINKER_LANGUAGE C)
 
 if (WITH_LIBRARY_VERSIONING)
-	set_target_properties(${MODULE_NAME} PROPERTIES VERSION ${FREERDP_VERSION} SOVERSION ${FREERDP_API_VERSION})
+    set_target_properties(${MODULE_NAME} PROPERTIES VERSION ${FREERDP_VERSION} SOVERSION ${FREERDP_API_VERSION})
 endif()
 
 
 target_link_libraries(${MODULE_NAME} ${LIBFREERDP_LIBS} winpr)
 install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT libraries EXPORT FreeRDPTargets)
+if (MSVC AND BUILD_SHARED_LIBS)
+    install(FILES ${CMAKE_BINARY_DIR}/${MODULE_NAME}.pdb DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT symbols)
+endif()
+
 set_property(TARGET ${MODULE_NAME} PROPERTY FOLDER "FreeRDP/libfreerdp")

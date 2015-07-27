@@ -61,7 +61,7 @@ endif()
 add_library(${MODULE_NAME} ${${MODULE_PREFIX}_SRCS})
 # This is necessary to fix http://public.kitware.com/Bug/view.php?id=11240 with VS2010 64 bit builds.
 if( WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 )
-	set_target_properties(${MODULE_NAME} PROPERTIES STATIC_LIBRARY_FLAGS "/machine:x64")
+    set_target_properties(${MODULE_NAME} PROPERTIES STATIC_LIBRARY_FLAGS "/machine:x64")
 endif()
 
 include_directories(${OPENSSL_INCLUDE_DIR})
@@ -74,10 +74,10 @@ endif()
 
 set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS}
 	${FREERDP_CHANNELS_CLIENT_LIBS})
-	
+
 set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS}
 	${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES})
-	
+
 set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} winpr freerdp)
 
 if(OPENBSD)
@@ -87,7 +87,9 @@ else()
 endif()
 
 install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT libraries EXPORT FreeRDPTargets)
-
+if (MSVC AND BUILD_SHARED_LIBS)
+	install(FILES ${CMAKE_BINARY_DIR}/${MODULE_NAME}.pdb DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT symbols)
+endif()
 set_property(TARGET ${MODULE_NAME} PROPERTY FOLDER "Client/Common")
 
 if(BUILD_TESTING)
