@@ -887,6 +887,12 @@ static int freerdp_tcp_connect_multi(rdpContext* context, char** hostnames,
 		addr = addrs[index];
 
 		/* set socket in non-blocking mode */
+		events[index] = WSACreateEvent();
+		if (!events[index])
+		{
+			WLog_ERR(TAG, "WSACreateEvent returned %08X", WSAGetLastError());
+			continue;
+		}
 
 		WSAEventSelect(sockfd, events[index], FD_READ | FD_WRITE | FD_CONNECT | FD_CLOSE);
 
@@ -931,6 +937,7 @@ static int freerdp_tcp_connect_multi(rdpContext* context, char** hostnames,
 	{
 		if (results[index])
 			freeaddrinfo(results[index]);
+		CloseHandle(events[index]);
 	}
 
 	free(addrs);
