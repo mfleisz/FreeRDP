@@ -191,6 +191,9 @@ BOOL freerdp_abort_connect(freerdp* instance)
 	if (!instance || !instance->context)
 		return FALSE;
 
+	if (instance->context->rdp)
+		instance->context->rdp->disconnect = TRUE;
+
 	return SetEvent(instance->context->abortEvent);
 }
 
