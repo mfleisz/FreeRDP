@@ -887,8 +887,25 @@ BOOL FlushFileBuffers(HANDLE hFile)
 
 BOOL SetEndOfFile(HANDLE hFile)
 {
-	if (SetFilePointer(hFile, 0, NULL, FILE_END) == INVALID_SET_FILE_POINTER)
+	WINPR_FILE* pFile = (WINPR_FILE*) hFile;
+	DWORD lowSize, highSize;
+	off_t size;
+
+	if (!IsFileHandle(hFile))
 		return FALSE;
+
+	lowSize = GetFileSize(hFile, &highSize);
+	if (lowSize == INVALID_FILE_SIZE)
+		return FALSE;
+
+	size = lowSize | ((off_t)highSize << 32);
+	if (truncate(pFile->fp, size) < 0)
+	{
+		WLog_ERR(TAG, "truncate %s failed with %s [%08X]",
+			pFile->lpFileName, strerror(errno), errno);
+		return FALSE;
+	}
+
 	return TRUE;
 }
 
