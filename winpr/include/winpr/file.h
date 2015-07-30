@@ -266,6 +266,8 @@ WINPR_API BOOL FlushFileBuffers(HANDLE hFile);
 
 WINPR_API BOOL SetEndOfFile(HANDLE hFile);
 
+WINPR_API DWORD WINAPI GetFileSize(HANDLE hFile, LPDWORD lpFileSizeHigh);
+
 WINPR_API DWORD SetFilePointer(HANDLE hFile, LONG lDistanceToMove,
 		PLONG lpDistanceToMoveHigh, DWORD dwMoveMethod);
 

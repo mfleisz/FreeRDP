@@ -215,7 +215,6 @@ static int NamedPipeGetFd(HANDLE handle);
 static BOOL IsFileHandle(HANDLE handle);
 static BOOL FileCloseHandle(HANDLE handle);
 static int FileGetFd(HANDLE handle);
-static BOOL FileIsHandled(HANDLE handle);
 
 static BOOL FileReadFile(PVOID Object, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 			  LPDWORD lpNumberOfBytesRead, LPOVERLAPPED lpOverlapped);
@@ -264,17 +263,6 @@ BOOL IsFileHandle(HANDLE handle)
 	}
 
 	return TRUE;
-}
-
-BOOL FileIsHandled(HANDLE handle)
-{
-	if (IsNamedPipeHandle(handle))
-		return TRUE;
-
-	if (IsFileHandle(handle))
-		return TRUE;
-
-	return FALSE;
 }
 
 BOOL FileReadFile(PVOID Object, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
@@ -899,9 +887,9 @@ BOOL SetEndOfFile(HANDLE hFile)
 		return FALSE;
 
 	size = lowSize | ((off_t)highSize << 32);
-	if (truncate(pFile->fp, size) < 0)
+	if (ftruncate(fileno(pFile->fp), size) < 0)
 	{
-		WLog_ERR(TAG, "truncate %s failed with %s [%08X]",
+		WLog_ERR(TAG, "ftruncate %s failed with %s [%08X]",
 			pFile->lpFileName, strerror(errno), errno);
 		return FALSE;
 	}
@@ -954,7 +942,7 @@ DWORD SetFilePointer(HANDLE hFile, LONG lDistanceToMove,
 	return ftell(fp);
 }
 
-WINPR_API DWORD WINAPI GetFileSize(HANDLE hFile, LPDWORD lpFileSizeHigh)
+DWORD WINAPI GetFileSize(HANDLE hFile, LPDWORD lpFileSizeHigh)
 {
 	WINPR_FILE* pFile = (WINPR_FILE*) hFile;
 	long cur, size;
