@@ -404,6 +404,14 @@ BOOL certificate_data_replace(rdpCertificateStore* certificate_store,
 		return FALSE;
 	}
 
+	if (!SetEndOfFile(fp))
+	{
+		WLog_ERR(TAG, "SetEndOfFile(%s) returned %s [%08X]",
+			 certificate_store->file, strerror(errno), GetLastError());
+		CloseHandle(fp);
+		return FALSE;
+	}
+
 	/* Write the file back out, with appropriate fingerprint substitutions */
 	data[size] = '\n';
 	data[size + 1] = '\0';
@@ -454,7 +462,7 @@ BOOL certificate_data_replace(rdpCertificateStore* certificate_store,
 					CloseHandle(fp);
 					return FALSE;
 				}
-				if (!WriteFile(fp, tdata, size + 1, &written, NULL) || (written != size + 1))
+				if (!WriteFile(fp, tdata, size, &written, NULL) || (written != size))
 				{
 					WLog_ERR(TAG, "WriteFile(%s) returned %s [%08X]",
 						 certificate_store->file, strerror(errno), errno);
@@ -560,7 +568,7 @@ BOOL certificate_data_print(rdpCertificateStore* certificate_store, rdpCertifica
 		CloseHandle(fp);
 		return FALSE;
 	}
-	if (!WriteFile(fp, tdata, size + 1, &written, NULL) || (written != size + 1))
+	if (!WriteFile(fp, tdata, size, &written, NULL) || (written != size))
 	{
 		WLog_ERR(TAG, "WriteFile(%s) returned %s [%08X]",
 			 certificate_store->file, strerror(errno), errno);
