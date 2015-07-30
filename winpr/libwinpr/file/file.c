@@ -405,23 +405,29 @@ BOOL FileCloseHandle(HANDLE handle) {
 	return FALSE;
 }
 
-static const char* FileGetMode(DWORD dwDesiredAccess, DWORD dwCreationDisposition)
+static const char* FileGetMode(DWORD dwDesiredAccess, DWORD dwCreationDisposition, BOOL* create)
 {
 	BOOL writeable = dwDesiredAccess & GENERIC_WRITE;
 
 	switch(dwCreationDisposition)
 	{
 	case CREATE_ALWAYS:
+		*create = TRUE;
 		return (writeable) ? "wb+" : "rwb";
 	case CREATE_NEW:
+		*create = TRUE;
 		return "wb+";
 	case OPEN_ALWAYS:
+		*create = TRUE;
 		return "rb+";
 	case OPEN_EXISTING:
+		*create = FALSE;
 		return "rb+";
 	case TRUNCATE_EXISTING:
+		*create = FALSE;
 		return "wb+";
 	default:
+		*create = FALSE;
 		return "";
 	}
 }
@@ -430,7 +436,8 @@ static HANDLE FileCreateFile(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwS
 				  DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile)
 {
 	WINPR_FILE* pFile;
-	const char* mode = FileGetMode(dwDesiredAccess, dwCreationDisposition);
+	BOOL create;
+	const char* mode = FileGetMode(dwDesiredAccess, dwCreationDisposition, &create);
 	int lock;
 
 	pFile = (WINPR_FILE*) calloc(1, sizeof(WINPR_FILE));
@@ -456,6 +463,18 @@ static HANDLE FileCreateFile(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwS
 	pFile->lpSecurityAttributes = lpSecurityAttributes;
 	pFile->dwCreationDisposition = dwCreationDisposition;
 	pFile->hTemplateFile = hTemplateFile;
+
+	if (create)
+	{
+		FILE* fp = fopen(pFile->lpFileName, "ab");
+		if (!fp)
+		{
+			free(pFile->lpFileName);
+			free(pFile);
+			return INVALID_HANDLE_VALUE;
+		}
+		fclose(fp);
+	}
 
 	pFile->fp = fopen(pFile->lpFileName, mode);
 	if (!pFile->fp)
