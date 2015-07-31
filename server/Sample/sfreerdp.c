@@ -28,6 +28,7 @@
 
 #include <winpr/crt.h>
 #include <winpr/synch.h>
+#include <winpr/string.h>
 #include <winpr/path.h>
 #include <winpr/winsock.h>
 
@@ -875,6 +876,7 @@ int main(int argc, char* argv[])
 	WSADATA wsaData;
 	freerdp_listener* instance;
 	char* file;
+	char name[MAX_PATH];
 	int port = 3389, i;
 
 	for (i=1; i<argc; i++)
@@ -904,7 +906,6 @@ int main(int argc, char* argv[])
 
 	instance->PeerAccepted = test_peer_accepted;
 
-
 	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
 	{
 		freerdp_listener_free(instance);
@@ -912,7 +913,8 @@ int main(int argc, char* argv[])
 	}
 
 	/* Open the server socket and start listening. */
-	file = GetKnownSubPath(KNOWN_PATH_TEMP, "tfreerdp-server.0");
+	sprintf_s(name, sizeof(name), "tfreerdp-server.%d", port);
+	file = GetKnownSubPath(KNOWN_PATH_TEMP, name);
 	if (!file)
 	{
 		freerdp_listener_free(instance);

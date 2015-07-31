@@ -761,7 +761,9 @@ int transport_check_fds(rdpTransport* transport)
 	 * wait for a socket to get signaled that data is available
 	 * (which may never happen).
 	 */
+#ifdef _WIN32
 	ResetEvent(event);
+#endif
 	for (;;)
 	{
 		/**
@@ -972,7 +974,7 @@ out:
 rdpTransport* transport_new(rdpContext* context)
 {
 	rdpTransport* transport;
-
+	
 	transport = (rdpTransport*) calloc(1, sizeof(rdpTransport));
 
 	if (!transport)
