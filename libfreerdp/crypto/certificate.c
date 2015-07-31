@@ -127,7 +127,9 @@ static int certificate_data_match_legacy(rdpCertificateStore* certificate_store,
 	size_t length;
 	DWORD read;
 
-	fp = CreateFile(certificate_store->legacy_file, GENERIC_READ, FILE_SHARE_READ,
+	/* Assure POSIX style paths, CreateFile expects either '/' or '\\' */
+	PathCchConvertStyleA(certificate_store->legacy_file, strlen(certificate_store->legacy_file), PATH_STYLE_UNIX);
+	fp = CreateFileA(certificate_store->legacy_file, GENERIC_READ, FILE_SHARE_READ,
 					NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (fp == INVALID_HANDLE_VALUE)
 		return match;
@@ -248,8 +250,10 @@ static int certificate_data_match_raw(rdpCertificateStore* certificate_store,
 	unsigned short port = 0;
 	DWORD read;
 
-	fp = CreateFile(certificate_store->file, GENERIC_READ, FILE_SHARE_READ,
-					NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	/* Assure POSIX style paths, CreateFile expects either '/' or '\\' */
+	PathCchConvertStyleA(certificate_store->file, strlen(certificate_store->file), PATH_STYLE_UNIX);
+	fp = CreateFileA(certificate_store->file, GENERIC_READ, FILE_SHARE_READ,
+					NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_NORMAL, NULL);
 
 	if (fp == INVALID_HANDLE_VALUE)
 		return match;
@@ -361,7 +365,9 @@ BOOL certificate_data_replace(rdpCertificateStore* certificate_store,
 	DWORD read, written;
 	DWORD lowSize, highSize;
 
-	fp = CreateFile(certificate_store->file, GENERIC_READ | GENERIC_WRITE, 0,
+	/* Assure POSIX style paths, CreateFile expects either '/' or '\\' */
+	PathCchConvertStyleA(certificate_store->file, strlen(certificate_store->file), PATH_STYLE_UNIX);
+	fp = CreateFileA(certificate_store->file, GENERIC_READ | GENERIC_WRITE, 0,
 					NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
 	if (fp == INVALID_HANDLE_VALUE)
@@ -533,7 +539,9 @@ BOOL certificate_data_print(rdpCertificateStore* certificate_store, rdpCertifica
 	DWORD written;
 
 	/* reopen in append mode */
-	fp = CreateFile(certificate_store->file, GENERIC_WRITE, 0,
+	/* Assure POSIX style paths, CreateFile expects either '/' or '\\' */
+	PathCchConvertStyleA(certificate_store->file, strlen(certificate_store->file), PATH_STYLE_UNIX);
+	fp = CreateFileA(certificate_store->file, GENERIC_WRITE, 0,
 					NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
 	if (fp == INVALID_HANDLE_VALUE)
