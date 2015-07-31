@@ -165,8 +165,11 @@
 
 #include <fcntl.h>
 #include <sys/un.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
+
+#include "file.h"
 
 #ifdef HAVE_AIO_H
 #undef HAVE_AIO_H /* disable for now, incomplete */
@@ -191,6 +194,7 @@
 #include "../handle/handle.h"
 
 #include "../pipe/pipe.h"
+#include "file.h"
 
 /* TODO: FIXME: use of a wArrayList and split winpr-utils with
  * winpr-collections to avoid a circular dependency
@@ -202,10 +206,40 @@ static HANDLE_CREATOR** _HandleCreators = NULL;
 static CRITICAL_SECTION _HandleCreatorsLock;
 
 static pthread_once_t _HandleCreatorsInitialized = PTHREAD_ONCE_INIT;
+static pthread_once_t _HandleCreatorsRegistered = PTHREAD_ONCE_INIT;
 
+static BOOL IsNamedPipeHandle(HANDLE handle);
+static BOOL NamedPipeCloseHandle(HANDLE handle);
+static int NamedPipeGetFd(HANDLE handle);
+
+static BOOL IsFileHandle(HANDLE handle);
 static BOOL FileCloseHandle(HANDLE handle);
+static int FileGetFd(HANDLE handle);
 
-static BOOL FileIsHandled(HANDLE handle)
+static BOOL FileReadFile(PVOID Object, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
+			  LPDWORD lpNumberOfBytesRead, LPOVERLAPPED lpOverlapped);
+static BOOL FileWriteFile(PVOID Object, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
+			   LPDWORD lpNumberOfBytesWritten, LPOVERLAPPED lpOverlapped);
+
+static HANDLE_OPS namedPipeOps = {
+		IsNamedPipeHandle,
+		NamedPipeCloseHandle,
+		NamedPipeGetFd,
+		NULL, /* CleanupHandle */
+		NamedPipeRead,
+		NamedPipeWrite
+};
+
+static HANDLE_OPS fileOps = {
+	IsFileHandle,
+	FileCloseHandle,
+	FileGetFd,
+	NULL,
+	FileReadFile,
+	FileWriteFile
+};
+
+BOOL IsNamedPipeHandle(HANDLE handle)
 {
 	WINPR_NAMED_PIPE* pFile = (WINPR_NAMED_PIPE*) handle;
 
@@ -218,50 +252,387 @@ static BOOL FileIsHandled(HANDLE handle)
 	return TRUE;
 }
 
-BOOL FileCloseHandle(HANDLE handle) {
-	WINPR_NAMED_PIPE* pNamedPipe = (WINPR_NAMED_PIPE*) handle;
+BOOL IsFileHandle(HANDLE handle)
+{
+	WINPR_FILE* pFile = (WINPR_FILE*) handle;
 
-
-	if (!FileIsHandled(handle))
+	if (!pFile || (pFile->Type != HANDLE_TYPE_FILE) || (pFile == INVALID_HANDLE_VALUE))
+	{
+		SetLastError(ERROR_INVALID_HANDLE);
 		return FALSE;
-
-	if (pNamedPipe->clientfd != -1)
-	{
-		//WLOG_DBG(TAG, "closing clientfd %d", pNamedPipe->clientfd);
-		close(pNamedPipe->clientfd);
 	}
-
-	if (pNamedPipe->serverfd != -1)
-	{
-		//WLOG_DBG(TAG, "closing serverfd %d", pNamedPipe->serverfd);
-		close(pNamedPipe->serverfd);
-	}
-
-	if (pNamedPipe->pfnUnrefNamedPipe)
-		pNamedPipe->pfnUnrefNamedPipe(pNamedPipe);
-
-	free(pNamedPipe->lpFileName);
-	free(pNamedPipe->lpFilePath);
-	free(pNamedPipe->name);
-	free(pNamedPipe);
 
 	return TRUE;
 }
 
-static int FileGetFd(HANDLE handle)
+BOOL FileReadFile(PVOID Object, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
+			  LPDWORD lpNumberOfBytesRead, LPOVERLAPPED lpOverlapped)
 {
-	WINPR_NAMED_PIPE *file = (WINPR_NAMED_PIPE *)handle;
+	size_t size;
+	WINPR_FILE* pFile = (WINPR_FILE*)Object;
 
-	if (!FileIsHandled(handle))
-		return -1;
+	if (lpNumberOfBytesRead)
+		*lpNumberOfBytesRead = 0;
 
-	if (file->ServerMode)
-		return file->serverfd;
-	else
-		return file->clientfd;
+	if (!IsFileHandle(pFile))
+		return FALSE;
+
+	if (nNumberOfBytesToRead == 0)
+		return TRUE;
+
+	if (!lpBuffer)
+		return FALSE;
+
+	if (!pFile->fp)
+		return FALSE;
+
+	if (lpOverlapped)
+		return FALSE;
+
+	size = fread(lpBuffer, 1, nNumberOfBytesToRead, pFile->fp);
+
+	if (ferror(pFile->fp))
+		return FALSE;
+
+	if (lpNumberOfBytesRead)
+		*lpNumberOfBytesRead = size;
+
+	return TRUE;
 }
 
-static void _HandleCreatorsInit()
+BOOL FileWriteFile(PVOID Object, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
+			   LPDWORD lpNumberOfBytesWritten, LPOVERLAPPED lpOverlapped)
+{
+	size_t size;
+	WINPR_FILE* pFile = (WINPR_FILE*)Object;
+
+	if (lpNumberOfBytesWritten)
+		*lpNumberOfBytesWritten = 0;
+
+	if (!IsFileHandle(pFile))
+		return FALSE;
+
+	if (nNumberOfBytesToWrite == 0)
+		return TRUE;
+
+	if (!lpBuffer)
+		return FALSE;
+
+	if (!pFile->fp)
+		return FALSE;
+
+	if (lpOverlapped)
+		return FALSE;
+
+	size = fwrite(lpBuffer, 1, nNumberOfBytesToWrite, pFile->fp);
+
+	if (ferror(pFile->fp))
+		return FALSE;
+
+	if (lpNumberOfBytesWritten)
+		*lpNumberOfBytesWritten = size;
+
+	return TRUE;
+}
+
+BOOL NamedPipeCloseHandle(HANDLE handle)
+{
+	if (IsNamedPipeHandle(handle))
+	{
+		WINPR_NAMED_PIPE* pNamedPipe = (WINPR_NAMED_PIPE*) handle;
+
+		if (pNamedPipe->clientfd != -1)
+		{
+			//WLOG_DBG(TAG, "closing clientfd %d", pNamedPipe->clientfd);
+			close(pNamedPipe->clientfd);
+		}
+
+		if (pNamedPipe->serverfd != -1)
+		{
+			//WLOG_DBG(TAG, "closing serverfd %d", pNamedPipe->serverfd);
+			close(pNamedPipe->serverfd);
+		}
+
+		if (pNamedPipe->pfnUnrefNamedPipe)
+			pNamedPipe->pfnUnrefNamedPipe(pNamedPipe);
+
+		free(pNamedPipe->lpFileName);
+		free(pNamedPipe->lpFilePath);
+		free(pNamedPipe->name);
+		free(pNamedPipe);
+
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+BOOL FileCloseHandle(HANDLE handle) {
+	if (IsFileHandle(handle))
+	{
+		WINPR_FILE* pFile = (WINPR_FILE*)handle;
+
+		if (pFile->bLocked)
+		{
+			if (flock(fileno(pFile->fp), LOCK_UN) < 0)
+			{
+				WLog_ERR(TAG, "flock %s failed with %s [%08X]",
+					 pFile->lpFileName, strerror(errno),
+					 errno);
+			}
+		}
+		if (pFile->fp)
+			fclose(pFile->fp);
+
+		free(pFile->lpFileName);
+		free(pFile);
+
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+static const char* FileGetMode(DWORD dwDesiredAccess, DWORD dwCreationDisposition, BOOL* create)
+{
+	BOOL writeable = dwDesiredAccess & GENERIC_WRITE;
+
+	switch(dwCreationDisposition)
+	{
+	case CREATE_ALWAYS:
+		*create = TRUE;
+		return (writeable) ? "wb+" : "rwb";
+	case CREATE_NEW:
+		*create = TRUE;
+		return "wb+";
+	case OPEN_ALWAYS:
+		*create = TRUE;
+		return "rb+";
+	case OPEN_EXISTING:
+		*create = FALSE;
+		return "rb+";
+	case TRUNCATE_EXISTING:
+		*create = FALSE;
+		return "wb+";
+	default:
+		*create = FALSE;
+		return "";
+	}
+}
+
+static HANDLE FileCreateFile(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+				  DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile)
+{
+	WINPR_FILE* pFile;
+	BOOL create;
+	const char* mode = FileGetMode(dwDesiredAccess, dwCreationDisposition, &create);
+	int lock;
+
+	pFile = (WINPR_FILE*) calloc(1, sizeof(WINPR_FILE));
+	if (!pFile)
+	{
+		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+		return INVALID_HANDLE_VALUE;
+	}
+
+	WINPR_HANDLE_SET_TYPE_AND_MODE(pFile, HANDLE_TYPE_FILE, WINPR_FD_READ);
+	pFile->ops = &fileOps;
+
+	pFile->lpFileName = _strdup(lpFileName);
+	if (!pFile->lpFileName)
+	{
+		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+		free(pFile);
+		return INVALID_HANDLE_VALUE;
+	}
+	pFile->dwOpenMode = dwDesiredAccess;
+	pFile->dwShareMode = dwShareMode;
+	pFile->dwFlagsAndAttributes = dwFlagsAndAttributes;
+	pFile->lpSecurityAttributes = lpSecurityAttributes;
+	pFile->dwCreationDisposition = dwCreationDisposition;
+	pFile->hTemplateFile = hTemplateFile;
+
+	if (create)
+	{
+		FILE* fp = fopen(pFile->lpFileName, "ab");
+		if (!fp)
+		{
+			free(pFile->lpFileName);
+			free(pFile);
+			return INVALID_HANDLE_VALUE;
+		}
+		fclose(fp);
+	}
+
+	pFile->fp = fopen(pFile->lpFileName, mode);
+	if (!pFile->fp)
+	{
+		WLog_ERR(TAG, "Failed to open file %s with mode %s",
+			 pFile->lpFileName, mode);
+
+		free(pFile->lpFileName);
+		free(pFile);
+		return INVALID_HANDLE_VALUE;
+	}
+
+	if (dwShareMode & FILE_SHARE_READ)
+		lock = LOCK_SH;
+	if (dwShareMode & FILE_SHARE_WRITE)
+		lock = LOCK_EX;
+
+	if (dwShareMode & (FILE_SHARE_READ | FILE_SHARE_WRITE))
+	{
+		if (flock(fileno(pFile->fp), lock) < 0)
+		{
+			WLog_ERR(TAG, "flock failed with %s [%08X]",
+				 strerror(errno), errno);
+			fclose(pFile->fp);
+			free(pFile->lpFileName);
+			free(pFile);
+			return INVALID_HANDLE_VALUE;
+		}
+
+		pFile->bLocked = TRUE;
+	}
+
+	return pFile;
+}
+
+static HANDLE CreateFileNamedPipe(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+				  DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile)
+{
+	WINPR_NAMED_PIPE* pNamedPipe;
+	char* name;
+	int status;
+	HANDLE hNamedPipe;
+	struct sockaddr_un s;
+
+	name = GetNamedPipeNameWithoutPrefixA(lpFileName);
+
+	if (!name)
+		return INVALID_HANDLE_VALUE;
+
+	free(name);
+	pNamedPipe = (WINPR_NAMED_PIPE*) calloc(1, sizeof(WINPR_NAMED_PIPE));
+	if (!pNamedPipe)
+	{
+		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+		return INVALID_HANDLE_VALUE;
+	}
+
+	hNamedPipe = (HANDLE) pNamedPipe;
+	WINPR_HANDLE_SET_TYPE_AND_MODE(pNamedPipe, HANDLE_TYPE_NAMED_PIPE, WINPR_FD_READ);
+	pNamedPipe->name = _strdup(lpFileName);
+	if (!pNamedPipe->name)
+	{
+		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+		free(pNamedPipe);
+		return INVALID_HANDLE_VALUE;
+	}
+	pNamedPipe->dwOpenMode = 0;
+	pNamedPipe->dwPipeMode = 0;
+	pNamedPipe->nMaxInstances = 0;
+	pNamedPipe->nOutBufferSize = 0;
+	pNamedPipe->nInBufferSize = 0;
+	pNamedPipe->nDefaultTimeOut = 0;
+	pNamedPipe->dwFlagsAndAttributes = dwFlagsAndAttributes;
+	pNamedPipe->lpFileName = GetNamedPipeNameWithoutPrefixA(lpFileName);
+	if (!pNamedPipe->lpFileName)
+	{
+		free((void *)pNamedPipe->name);
+		free(pNamedPipe);
+		return INVALID_HANDLE_VALUE;
+
+	}
+	pNamedPipe->lpFilePath = GetNamedPipeUnixDomainSocketFilePathA(lpFileName);
+	if (!pNamedPipe->lpFilePath)
+	{
+		free((void *)pNamedPipe->lpFileName);
+		free((void *)pNamedPipe->name);
+		free(pNamedPipe);
+		return INVALID_HANDLE_VALUE;
+
+	}
+	pNamedPipe->clientfd = socket(PF_LOCAL, SOCK_STREAM, 0);
+	pNamedPipe->serverfd = -1;
+	pNamedPipe->ServerMode = FALSE;
+	ZeroMemory(&s, sizeof(struct sockaddr_un));
+	s.sun_family = AF_UNIX;
+	strcpy(s.sun_path, pNamedPipe->lpFilePath);
+	status = connect(pNamedPipe->clientfd, (struct sockaddr*) &s, sizeof(struct sockaddr_un));
+
+	pNamedPipe->ops = &namedPipeOps;
+
+	if (status != 0)
+	{
+		close(pNamedPipe->clientfd);
+		free((char*) pNamedPipe->name);
+		free((char*) pNamedPipe->lpFileName);
+		free((char*) pNamedPipe->lpFilePath);
+		free(pNamedPipe);
+		return INVALID_HANDLE_VALUE;
+	}
+
+	if (dwFlagsAndAttributes & FILE_FLAG_OVERLAPPED)
+	{
+#if 0
+		int flags = fcntl(pNamedPipe->clientfd, F_GETFL);
+
+		if (flags != -1)
+			fcntl(pNamedPipe->clientfd, F_SETFL, flags | O_NONBLOCK);
+
+#endif
+	}
+
+	return hNamedPipe;
+}
+
+static void NamedPipeHandleCreatorInit(void)
+{
+
+	HANDLE_CREATOR* PipeCreator = (HANDLE_CREATOR*)malloc(sizeof(HANDLE_CREATOR));
+	if (!PipeCreator)
+		return;
+
+	PipeCreator->IsHandled = IsNamedPipeFileNameA;
+	PipeCreator->CreateFileA = CreateFileNamedPipe;
+
+	if (!RegisterHandleCreator(PipeCreator))
+	{
+		free(PipeCreator);
+		PipeCreator = NULL;
+		return;
+	}
+}
+
+int NamedPipeGetFd(HANDLE handle)
+{
+	if (IsNamedPipeHandle(handle))
+	{
+		WINPR_NAMED_PIPE *file = (WINPR_NAMED_PIPE *)handle;
+
+		if (file->ServerMode)
+			return file->serverfd;
+		else
+			return file->clientfd;
+	}
+
+	return -1;
+}
+
+int FileGetFd(HANDLE handle)
+{
+	if (IsFileHandle(handle))
+	{
+		WINPR_FILE* file = (WINPR_FILE*)handle;
+
+		return fileno(file->fp);
+	}
+
+	return -1;
+}
+
+static void _HandleCreatorsInit(void)
 {
 	/* NB: error management to be done outside of this function */
 	assert(_HandleCreators == NULL);
@@ -274,6 +645,11 @@ static void _HandleCreatorsInit()
 		free(_HandleCreators);
 		_HandleCreators = NULL;
 	}
+}
+
+static void _RegisterHandleCreators(void)
+{
+	NamedPipeHandleCreatorInit();
 }
 
 /**
@@ -344,30 +720,15 @@ int InstallAioSignalHandler()
 
 #endif /* HAVE_AIO_H */
 
-
-static HANDLE_OPS ops = {
-		FileIsHandled,
-		FileCloseHandle,
-		FileGetFd,
-		NULL, /* CleanupHandle */
-		NamedPipeRead,
-		NamedPipeWrite
-};
-
 HANDLE CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes,
 				   DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile)
 {
 	int i;
-	char* name;
-	int status;
-	HANDLE hNamedPipe;
-	struct sockaddr_un s;
-	WINPR_NAMED_PIPE* pNamedPipe;
 
 	if (!lpFileName)
 		return INVALID_HANDLE_VALUE;
 
-	if (pthread_once(&_HandleCreatorsInitialized, _HandleCreatorsInit) != 0)
+	if (pthread_once(&_HandleCreatorsRegistered, _RegisterHandleCreators) != 0)
 	{
 		SetLastError(ERROR_DLL_INIT_FAILED);
 		return INVALID_HANDLE_VALUE;
@@ -396,94 +757,16 @@ HANDLE CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, 
 
 	LeaveCriticalSection(&_HandleCreatorsLock);
 
-	/* TODO: use of a HANDLE_CREATOR for named pipes as well */
-
-	if (!IsNamedPipeFileNameA(lpFileName))
-		return INVALID_HANDLE_VALUE;
-
-	name = GetNamedPipeNameWithoutPrefixA(lpFileName);
-
-	if (!name)
-		return INVALID_HANDLE_VALUE;
-
-	free(name);
-	pNamedPipe = (WINPR_NAMED_PIPE*) calloc(1, sizeof(WINPR_NAMED_PIPE));
-	if (!pNamedPipe)
-	{
-		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-		return INVALID_HANDLE_VALUE;
-	}
-
-	hNamedPipe = (HANDLE) pNamedPipe;
-	WINPR_HANDLE_SET_TYPE_AND_MODE(pNamedPipe, HANDLE_TYPE_NAMED_PIPE, WINPR_FD_READ);
-	pNamedPipe->name = _strdup(lpFileName);
-	if (!pNamedPipe->name)
-	{
-		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-		free(pNamedPipe);
-		return INVALID_HANDLE_VALUE;
-	}
-	pNamedPipe->dwOpenMode = 0;
-	pNamedPipe->dwPipeMode = 0;
-	pNamedPipe->nMaxInstances = 0;
-	pNamedPipe->nOutBufferSize = 0;
-	pNamedPipe->nInBufferSize = 0;
-	pNamedPipe->nDefaultTimeOut = 0;
-	pNamedPipe->dwFlagsAndAttributes = dwFlagsAndAttributes;
-	pNamedPipe->lpFileName = GetNamedPipeNameWithoutPrefixA(lpFileName);
-	if (!pNamedPipe->lpFileName)
-	{
-		free((void *)pNamedPipe->name);
-		free(pNamedPipe);
-		return INVALID_HANDLE_VALUE;
-
-	}
-	pNamedPipe->lpFilePath = GetNamedPipeUnixDomainSocketFilePathA(lpFileName);
-	if (!pNamedPipe->lpFilePath)
-	{
-		free((void *)pNamedPipe->lpFileName);
-		free((void *)pNamedPipe->name);
-		free(pNamedPipe);
-		return INVALID_HANDLE_VALUE;
-
-	}
-	pNamedPipe->clientfd = socket(PF_LOCAL, SOCK_STREAM, 0);
-	pNamedPipe->serverfd = -1;
-	pNamedPipe->ServerMode = FALSE;
-	ZeroMemory(&s, sizeof(struct sockaddr_un));
-	s.sun_family = AF_UNIX;
-	strcpy(s.sun_path, pNamedPipe->lpFilePath);
-	status = connect(pNamedPipe->clientfd, (struct sockaddr*) &s, sizeof(struct sockaddr_un));
-
-	pNamedPipe->ops = &ops;
-
-	if (status != 0)
-	{
-		close(pNamedPipe->clientfd);
-		free((char*) pNamedPipe->name);
-		free((char*) pNamedPipe->lpFileName);
-		free((char*) pNamedPipe->lpFilePath);
-		free(pNamedPipe);
-		return INVALID_HANDLE_VALUE;
-	}
-
-	if (dwFlagsAndAttributes & FILE_FLAG_OVERLAPPED)
-	{
-#if 0
-		int flags = fcntl(pNamedPipe->clientfd, F_GETFL);
-
-		if (flags != -1)
-			fcntl(pNamedPipe->clientfd, F_SETFL, flags | O_NONBLOCK);
-
-#endif
-	}
-
-	return hNamedPipe;
+	/* Assume this is a normal file in the file system.
+	 * Try to create / open it. */
+	return FileCreateFile(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes,
+			      dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
 }
 
 HANDLE CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes,
 				   DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile)
 {
+	WLog_ERR(TAG, "%s not implemented!", __FUNCTION__);
 	return NULL;
 }
 
@@ -496,7 +779,8 @@ BOOL DeleteFileA(LPCSTR lpFileName)
 
 BOOL DeleteFileW(LPCWSTR lpFileName)
 {
-	return TRUE;
+	WLog_ERR(TAG, "%s not implemented!", __FUNCTION__);
+	return FALSE;
 }
 
 BOOL ReadFile(HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
@@ -530,13 +814,15 @@ BOOL ReadFile(HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 BOOL ReadFileEx(HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 				LPOVERLAPPED lpOverlapped, LPOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine)
 {
-	return TRUE;
+	WLog_ERR(TAG, "%s not implemented!", __FUNCTION__);
+	return FALSE;
 }
 
 BOOL ReadFileScatter(HANDLE hFile, FILE_SEGMENT_ELEMENT aSegmentArray[],
 					 DWORD nNumberOfBytesToRead, LPDWORD lpReserved, LPOVERLAPPED lpOverlapped)
 {
-	return TRUE;
+	WLog_ERR(TAG, "%s not implemented!", __FUNCTION__);
+	return FALSE;
 }
 
 BOOL WriteFile(HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
@@ -551,69 +837,282 @@ BOOL WriteFile(HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
 	if (!winpr_Handle_GetInfo(hFile, &Type, &handle))
 		return FALSE;
 
+	/*
+	 * from https://msdn.microsoft.com/en-us/library/windows/desktop/aa365747%28v=vs.85%29.aspx
+	 * lpNumberOfBytesWritten can be NULL only when the lpOverlapped parameter is not NULL.
+	 */
+
+	if (!lpNumberOfBytesWritten && !lpOverlapped)
+		return FALSE;
+
 	handle = (WINPR_HANDLE *)hFile;
 	if (handle->ops->WriteFile)
 		return handle->ops->WriteFile(handle, lpBuffer, nNumberOfBytesToWrite, lpNumberOfBytesWritten, lpOverlapped);
 
-	WLog_ERR(TAG, "ReadFile operation not implemented");
+	WLog_ERR(TAG, "WriteFile operation not implemented");
 	return FALSE;
 }
 
 BOOL WriteFileEx(HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
 				 LPOVERLAPPED lpOverlapped, LPOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine)
 {
-	return TRUE;
+	WLog_ERR(TAG, "%s not implemented!", __FUNCTION__);
+	return FALSE;
 }
 
 BOOL WriteFileGather(HANDLE hFile, FILE_SEGMENT_ELEMENT aSegmentArray[],
 					 DWORD nNumberOfBytesToWrite, LPDWORD lpReserved, LPOVERLAPPED lpOverlapped)
 {
-	return TRUE;
+	WLog_ERR(TAG, "%s not implemented!", __FUNCTION__);
+	return FALSE;
 }
 
 BOOL FlushFileBuffers(HANDLE hFile)
 {
-	return TRUE;
+	WLog_ERR(TAG, "%s not implemented!", __FUNCTION__);
+	return FALSE;
 }
 
 BOOL SetEndOfFile(HANDLE hFile)
 {
+	WINPR_FILE* pFile = (WINPR_FILE*) hFile;
+	DWORD lowSize, highSize;
+	off_t size;
+
+	if (!IsFileHandle(hFile))
+		return FALSE;
+
+	lowSize = GetFileSize(hFile, &highSize);
+	if (lowSize == INVALID_FILE_SIZE)
+		return FALSE;
+
+	size = lowSize | ((off_t)highSize << 32);
+	if (ftruncate(fileno(pFile->fp), size) < 0)
+	{
+		WLog_ERR(TAG, "ftruncate %s failed with %s [%08X]",
+			pFile->lpFileName, strerror(errno), errno);
+		return FALSE;
+	}
+
 	return TRUE;
 }
 
 DWORD SetFilePointer(HANDLE hFile, LONG lDistanceToMove,
 					 PLONG lpDistanceToMoveHigh, DWORD dwMoveMethod)
 {
-	return TRUE;
+	WINPR_FILE* pFile = (WINPR_FILE*) hFile;
+	long offset = lDistanceToMove;
+	int whence;
+	FILE* fp;
+
+	if (!IsFileHandle(hFile))
+		return INVALID_SET_FILE_POINTER;
+
+	fp = pFile->fp;
+
+	if (!fp)
+	{
+		WLog_ERR(TAG, "fdopen(%s) failed with %s [%08X]", pFile->lpFileName,
+			 strerror(errno), errno);
+		return INVALID_SET_FILE_POINTER;
+	}
+
+	switch(dwMoveMethod)
+	{
+	case FILE_BEGIN:
+		whence = SEEK_SET;
+		break;
+	case FILE_END:
+		whence = SEEK_END;
+		break;
+	case FILE_CURRENT:
+		whence = SEEK_CUR;
+		break;
+	default:
+		return INVALID_SET_FILE_POINTER;
+	}
+
+	if (fseek(fp, offset, whence))
+	{
+		WLog_ERR(TAG, "fseek(%s) failed with %s [%08X]", pFile->lpFileName,
+			 strerror(errno), errno);
+		return INVALID_SET_FILE_POINTER;
+	}
+
+	return ftell(fp);
+}
+
+DWORD WINAPI GetFileSize(HANDLE hFile, LPDWORD lpFileSizeHigh)
+{
+	WINPR_FILE* pFile = (WINPR_FILE*) hFile;
+	long cur, size;
+	FILE* fp;
+
+	if (!IsFileHandle(hFile))
+		return INVALID_FILE_SIZE;
+
+	fp = pFile->fp;
+
+	if (!fp)
+	{
+		WLog_ERR(TAG, "fdopen(%s) failed with %s [%08X]", pFile->lpFileName,
+			 strerror(errno), errno);
+		return INVALID_FILE_SIZE;
+	}
+
+	cur = ftell(fp);
+
+	if (cur < 0)
+	{
+		WLog_ERR(TAG, "ftell(%s) failed with %s [%08X]", pFile->lpFileName,
+			 strerror(errno), errno);
+		return INVALID_FILE_SIZE;
+	}
+
+	if (fseek(fp, 0, SEEK_END) != 0)
+	{
+		WLog_ERR(TAG, "fseek(%s) failed with %s [%08X]", pFile->lpFileName,
+			 strerror(errno), errno);
+		return INVALID_FILE_SIZE;
+	}
+
+	size = ftell(fp);
+
+	if (size < 0)
+	{
+		WLog_ERR(TAG, "ftell(%s) failed with %s [%08X]", pFile->lpFileName,
+			 strerror(errno), errno);
+		return INVALID_FILE_SIZE;
+	}
+
+	if (fseek(fp, cur, SEEK_SET) != 0)
+	{
+		WLog_ERR(TAG, "ftell(%s) failed with %s [%08X]", pFile->lpFileName,
+			 strerror(errno), errno);
+		return INVALID_FILE_SIZE;
+	}
+
+	if (lpFileSizeHigh)
+		*lpFileSizeHigh = 0;
+
+	return size;
 }
 
 BOOL SetFilePointerEx(HANDLE hFile, LARGE_INTEGER liDistanceToMove,
 					  PLARGE_INTEGER lpNewFilePointer, DWORD dwMoveMethod)
 {
-	return TRUE;
+	if (!IsFileHandle(hFile))
+		return FALSE;
+
+	WLog_ERR(TAG, "%s not implemented!", __FUNCTION__);
+	return FALSE;
 }
 
 BOOL LockFile(HANDLE hFile, DWORD dwFileOffsetLow, DWORD dwFileOffsetHigh,
 			  DWORD nNumberOfBytesToLockLow, DWORD nNumberOfBytesToLockHigh)
 {
-	return TRUE;
+	WINPR_FILE* pFile = (WINPR_FILE*)hFile;
+
+	if (!IsFileHandle(hFile))
+		return FALSE;
+
+	WLog_ERR(TAG, "%s not implemented!", __FUNCTION__);
+	return FALSE;
 }
 
 BOOL LockFileEx(HANDLE hFile, DWORD dwFlags, DWORD dwReserved,
 				DWORD nNumberOfBytesToLockLow, DWORD nNumberOfBytesToLockHigh, LPOVERLAPPED lpOverlapped)
 {
-	return TRUE;
+	int lock;
+	WINPR_FILE* pFile = (WINPR_FILE*)hFile;
+
+	if (!IsFileHandle(hFile))
+		return FALSE;
+
+	if (pFile->bLocked)
+	{
+		WLog_ERR(TAG, "File %s already locked!", pFile->lpFileName);
+		return FALSE;
+	}
+
+	if (lpOverlapped)
+	{
+		WLog_ERR(TAG, "lpOverlapped not implemented!");
+		return FALSE;
+	}
+
+	if (dwFlags & LOCKFILE_EXCLUSIVE_LOCK)
+		lock = LOCK_EX;
+	else
+		lock = LOCK_SH;
+
+	if (dwFlags & LOCKFILE_FAIL_IMMEDIATELY)
+		lock |= LOCK_NB;
+
+	if (flock(fileno(pFile->fp), lock) < 0)
+	{
+		WLog_ERR(TAG, "flock failed with %s [%08X]",
+			 strerror(errno), errno);
+		return FALSE;
+	}
+
+	pFile->bLocked = TRUE;
+
+	WLog_ERR(TAG, "%s not implemented!", __FUNCTION__);
+	return FALSE;
 }
 
 BOOL UnlockFile(HANDLE hFile, DWORD dwFileOffsetLow, DWORD dwFileOffsetHigh,
 				DWORD nNumberOfBytesToUnlockLow, DWORD nNumberOfBytesToUnlockHigh)
 {
+	WINPR_FILE* pFile = (WINPR_FILE*)hFile;
+
+	if (!IsFileHandle(hFile))
+		return FALSE;
+
+	if (!pFile->bLocked)
+	{
+		WLog_ERR(TAG, "File %s is not locked!", pFile->lpFileName);
+		return FALSE;
+	}
+
+	if (flock(fileno(pFile->fp), LOCK_UN) < 0)
+	{
+		WLog_ERR(TAG, "flock(LOCK_UN) %s failed with %s [%08X]",
+			 pFile->lpFileName, strerror(errno), errno);
+		return FALSE;
+	}
+
 	return TRUE;
 }
 
 BOOL UnlockFileEx(HANDLE hFile, DWORD dwReserved, DWORD nNumberOfBytesToUnlockLow,
 				  DWORD nNumberOfBytesToUnlockHigh, LPOVERLAPPED lpOverlapped)
 {
+	WINPR_FILE* pFile = (WINPR_FILE*)hFile;
+
+	if (!IsFileHandle(hFile))
+		return FALSE;
+
+	if (!pFile->bLocked)
+	{
+		WLog_ERR(TAG, "File %s is not locked!", pFile->lpFileName);
+		return FALSE;
+	}
+
+	if (lpOverlapped)
+	{
+		WLog_ERR(TAG, "lpOverlapped not implemented!");
+		return FALSE;
+	}
+
+	if (flock(fileno(pFile->fp), LOCK_UN) < 0)
+	{
+		WLog_ERR(TAG, "flock(LOCK_UN) %s failed with %s [%08X]",
+			 pFile->lpFileName, strerror(errno), errno);
+		return FALSE;
+	}
+
 	return TRUE;
 }
 
