@@ -29,6 +29,8 @@
 
 #ifndef _WIN32
 
+#include <stdio.h>
+
 #ifndef MAX_PATH
 #define MAX_PATH				260
 #endif
@@ -161,6 +163,13 @@
 #define FIND_FIRST_EX_CASE_SENSITIVE		0x1
 #define FIND_FIRST_EX_LARGE_FETCH		0x2
 
+#define FILE_BEGIN   0
+#define FILE_CURRENT 1
+#define FILE_END     2
+
+#define LOCKFILE_FAIL_IMMEDIATELY 1
+#define LOCKFILE_EXCLUSIVE_LOCK   2
+
 typedef union _FILE_SEGMENT_ELEMENT
 {
 	PVOID64 Buffer;
@@ -256,6 +265,8 @@ WINPR_API BOOL WriteFileGather(HANDLE hFile, FILE_SEGMENT_ELEMENT aSegmentArray[
 WINPR_API BOOL FlushFileBuffers(HANDLE hFile);
 
 WINPR_API BOOL SetEndOfFile(HANDLE hFile);
+
+WINPR_API DWORD WINAPI GetFileSize(HANDLE hFile, LPDWORD lpFileSizeHigh);
 
 WINPR_API DWORD SetFilePointer(HANDLE hFile, LONG lDistanceToMove,
 		PLONG lpDistanceToMoveHigh, DWORD dwMoveMethod);

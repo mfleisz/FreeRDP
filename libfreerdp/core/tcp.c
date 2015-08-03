@@ -121,7 +121,7 @@ static int transport_bio_simple_write(BIO* bio, const char* buf, int size)
 		error = WSAGetLastError();
 
 		if ((error == WSAEWOULDBLOCK) || (error == WSAEINTR) ||
-				(error == WSAEINPROGRESS) || (error == WSAEALREADY))
+			(error == WSAEINPROGRESS) || (error == WSAEALREADY))
 		{
 			BIO_set_flags(bio, (BIO_FLAGS_WRITE | BIO_FLAGS_SHOULD_RETRY));
 		}
@@ -161,7 +161,7 @@ static int transport_bio_simple_read(BIO* bio, char* buf, int size)
 	error = WSAGetLastError();
 
 	if ((error == WSAEWOULDBLOCK) || (error == WSAEINTR) ||
-			(error == WSAEINPROGRESS) || (error == WSAEALREADY))
+		(error == WSAEINPROGRESS) || (error == WSAEALREADY))
 	{
 		BIO_set_flags(bio, (BIO_FLAGS_READ | BIO_FLAGS_SHOULD_RETRY));
 	}
@@ -479,8 +479,8 @@ static int transport_bio_buffered_write(BIO* bio, const char* buf, int num)
 	BIO_clear_flags(bio, BIO_FLAGS_WRITE);
 
 	/* we directly append extra bytes in the xmit buffer, this could be prevented
-     * but for now it makes the code more simple.
-     */
+	 * but for now it makes the code more simple.
+	 */
 	if (buf && num && !ringbuffer_write(&ptr->xmitBuffer, (const BYTE*) buf, num))
 	{
 		WLog_ERR(TAG, "an error occured when writing (num: %d)", num);
@@ -775,7 +775,7 @@ static BOOL freerdp_tcp_connect_timeout(rdpContext* context, int sockfd,
 
 	status = WaitForMultipleObjects(count, handles, FALSE, tout);
 	if (WAIT_OBJECT_0 != status)
-	{
+		{
 		if (status == WAIT_OBJECT_0 + 1)
 			freerdp_set_last_error(context, FREERDP_ERROR_CONNECT_CANCELLED);
 

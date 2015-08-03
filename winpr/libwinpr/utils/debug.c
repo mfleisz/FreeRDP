@@ -24,6 +24,7 @@
 
 #include <stdio.h>
 #include <fcntl.h>
+#include <winpr/string.h>
 
 #if defined(HAVE_EXECINFO_H)
 #include <execinfo.h>
@@ -394,10 +395,10 @@ char** winpr_backtrace_symbols(void* buffer, size_t* used)
 
 			if (SymGetLineFromAddr64(process, address, &displacement, line))
 			{
-				_snprintf(vlines[i], line_len, "%08lX: %s in %s:%lu", symbol->Address, symbol->Name, line->FileName, line->LineNumber);
+				sprintf_s(vlines[i], line_len, "%08lX: %s in %s:%lu", symbol->Address, symbol->Name, line->FileName, line->LineNumber);
 			}
 			else
-				_snprintf(vlines[i], line_len, "%08lX: %s", symbol->Address, symbol->Name);
+				sprintf_s(vlines[i], line_len, "%08lX: %s", symbol->Address, symbol->Name);
 			}
 
 			if (used)
@@ -470,3 +471,29 @@ void winpr_log_backtrace(const char* tag, DWORD level, DWORD size)
 	winpr_backtrace_free(stack);
 }
 
+char* winpr_strerror(DWORD dw, char* dmsg, size_t size) {
+	LPTSTR msg = NULL;
+	DWORD rc;
+
+#if defined(_WIN32)
+	rc = FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+			FORMAT_MESSAGE_FROM_SYSTEM |
+			FORMAT_MESSAGE_IGNORE_INSERTS,
+			NULL, dw, 0, (LPTSTR)&msg, 0, NULL);
+	if (rc) {
+#if defined(UNICODE)
+		WideCharToMultiByte(CP_ACP, 0, msg, rc, dmsg, size - 1, NULL, NULL);
+#else
+		memcpy(dmsg, msg, min(rc, size - 1));
+#endif
+		dmsg[min(rc, size - 1)] = 0;
+		LocalFree(msg);
+	} else {
+		_snprintf(dmsg, size, "FAILURE: %08X", GetLastError());
+	}
+#else
+	_snprintf(dmsg, size, "%s", strerror(dw));
+#endif
+
+	return dmsg;
+}

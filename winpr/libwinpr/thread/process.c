@@ -28,9 +28,6 @@
 #include <winpr/thread.h>
 #include <fcntl.h>
 
-#include "../log.h"
-#define TAG WINPR_TAG("process")
-
 /**
  * CreateProcessA
  * CreateProcessW
@@ -82,6 +79,14 @@
 
 #include "../handle/handle.h"
 #include "../security/security.h"
+
+#ifndef NSIG
+#ifdef SIGMAX
+#define NSIG SIGMAX
+#else
+#define NSIG 64
+#endif
+#endif
 
 char** EnvironmentBlockToEnvpA(LPCH lpszEnvironmentBlock)
 {
@@ -213,6 +218,9 @@ BOOL _CreateProcessExA(HANDLE hToken, DWORD dwLogonFlags,
 	WINPR_ACCESS_TOKEN* token;
 	LPTCH lpszEnvironmentBlock;
 	BOOL ret = FALSE;
+	sigset_t oldSigMask;
+	sigset_t newSigMask;
+	BOOL restoreSigMask = FALSE;
 
 	pid = 0;
 	numArgs = 0;
@@ -244,6 +252,10 @@ BOOL _CreateProcessExA(HANDLE hToken, DWORD dwLogonFlags,
 	if (NULL == filename)
 		goto finish;
 
+	/* block all signals so that the child can safely reset the caller's handlers */
+	sigfillset(&newSigMask);
+	restoreSigMask = !pthread_sigmask(SIG_SETMASK, &newSigMask, &oldSigMask);
+
 	/* fork and exec */
 
 	pid = fork();
@@ -257,16 +269,33 @@ BOOL _CreateProcessExA(HANDLE hToken, DWORD dwLogonFlags,
 	if (pid == 0)
 	{
 		/* child process */
+#ifndef __sun
+		int maxfd;
+#endif
+		int fd;
+		int sig;
+		sigset_t set;
+		struct sigaction act;
+
+		/* set default signal handlers */
+		memset(&act, 0, sizeof(act));
+		act.sa_handler = SIG_DFL;
+		act.sa_flags = 0;
+		sigemptyset(&act.sa_mask);
+		for (sig = 1; sig < NSIG; sig++)
+			sigaction(sig, &act, NULL);
+		/* unblock all signals */
+		sigfillset(&set);
+		pthread_sigmask(SIG_UNBLOCK, &set, NULL);
+
 #ifdef __sun
 	closefrom(3);
 #else
-	int maxfd;
 #ifdef F_MAXFD // on some BSD derivates
 	maxfd = fcntl(0, F_MAXFD);
 #else
 	maxfd = sysconf(_SC_OPEN_MAX);
 #endif
-	int fd;
 	for(fd=3; fd<maxfd; fd++)
 		close(fd);
 #endif // __sun
@@ -287,18 +316,12 @@ BOOL _CreateProcessExA(HANDLE hToken, DWORD dwLogonFlags,
 
 			if (token->UserId)
 				setuid((uid_t) token->UserId);
+
 		}
 
+		/* TODO: add better cwd handling and error checking */
 		if (lpCurrentDirectory && strlen(lpCurrentDirectory) > 0)
-        {
-			int rc = chdir(lpCurrentDirectory);
-            if (rc)
-            {
-                WLog_ERR(TAG, "chdir(%s) failed with %s [%d]",
-                        lpCurrentDirectory, strerror(errno), errno); 
-                goto finish;
-            }
-        }
+			chdir(lpCurrentDirectory);
 
 		if (execve(filename, pArgs, envp) < 0)
 		{
@@ -334,6 +357,12 @@ BOOL _CreateProcessExA(HANDLE hToken, DWORD dwLogonFlags,
 	ret = TRUE;
 
 finish:
+
+	/* restore caller's original signal mask */
+	if (restoreSigMask)
+		pthread_sigmask(SIG_SETMASK, &oldSigMask, NULL);
+
+
 	free(filename);
 
 	if (pArgs)
