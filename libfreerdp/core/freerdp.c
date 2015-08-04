@@ -72,6 +72,12 @@ BOOL freerdp_connect(freerdp* instance)
 
 	rdp = instance->context->rdp;
 	settings = instance->settings;
+
+	if (rdp)
+		rdp->disconnect = FALSE;
+
+	ResetEvent(instance->context->abortEvent);
+
 	instance->context->codecs = codecs_new(instance->context);
 	IFCALLRET(instance->PreConnect, status, instance);
 
@@ -184,6 +190,9 @@ BOOL freerdp_abort_connect(freerdp* instance)
 {
 	if (!instance || !instance->context)
 		return FALSE;
+
+	if (instance->context->rdp)
+		instance->context->rdp->disconnect = TRUE;
 
 	return SetEvent(instance->context->abortEvent);
 }
@@ -374,6 +383,8 @@ BOOL freerdp_reconnect(freerdp* instance)
 
 BOOL freerdp_shall_disconnect(freerdp* instance)
 {
+	if (!instance || !instance->context || !instance->context->rdp)
+		return FALSE;
 	return instance->context->rdp->disconnect;
 }
 
