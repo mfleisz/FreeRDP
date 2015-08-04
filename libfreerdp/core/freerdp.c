@@ -72,6 +72,12 @@ BOOL freerdp_connect(freerdp* instance)
 
 	rdp = instance->context->rdp;
 	settings = instance->settings;
+
+	if (rdp)
+		rdp->disconnect = FALSE;
+
+	ResetEvent(instance->context->abortEvent);
+
 	instance->context->codecs = codecs_new(instance->context);
 	IFCALLRET(instance->PreConnect, status, instance);
 
