@@ -1431,7 +1431,6 @@ int freerdp_image_copy_from_pointer_data(BYTE* pDstData, UINT32 DstFormat, int n
 {
 	int x, y;
 	BOOL vFlip;
-	BOOL invert;
 	int srcFlip;
 	int dstFlip;
 	int nDstPad;
@@ -1458,7 +1457,6 @@ int freerdp_image_copy_from_pointer_data(BYTE* pDstData, UINT32 DstFormat, int n
 	srcFlip = (xorBpp == 1) ? FREERDP_PIXEL_FLIP_NONE : FREERDP_PIXEL_FLIP_VERTICAL;
 
 	vFlip = (srcFlip != dstFlip) ? TRUE : FALSE;
-	invert = (FREERDP_PIXEL_FORMAT_IS_ABGR(DstFormat)) ? TRUE : FALSE;
 
 	andStep = (nWidth + 7) / 8;
 	andStep += (andStep % 2);
@@ -1527,18 +1525,10 @@ int freerdp_image_copy_from_pointer_data(BYTE* pDstData, UINT32 DstFormat, int n
 
 			for (y = 0; y < nHeight; y++)
 			{
-				andBit = 0x80;
-
 				if (!vFlip)
-				{
-					andBits = &andMask[andStep * y];
 					xorBits = &xorMask[xorStep * y];
-				}
 				else
-				{
-					andBits = &andMask[andStep * (nHeight - y - 1)];
 					xorBits = &xorMask[xorStep * (nHeight - y - 1)];
-				}
 
 				for (x = 0; x < nWidth; x++)
 				{
@@ -1563,22 +1553,7 @@ int freerdp_image_copy_from_pointer_data(BYTE* pDstData, UINT32 DstFormat, int n
 
 					xorBits += xorBytesPerPixel;
 
-					andPixel = (*andBits & andBit) ? 1 : 0;
-					if (!(andBit >>= 1)) { andBits++; andBit = 0x80; }
-
-					if (andPixel)
-					{
-						if (xorPixel == 0xFF000000) /* black */
-							*pDstPixel++ = 0x00000000; /* transparent */
-						else if (xorPixel == 0xFFFFFFFF) /* white */
-							*pDstPixel++ = 0xFF000000; /* inverted (set as black) */
-						else
-							*pDstPixel++ = xorPixel;
-					}
-					else
-					{
-						*pDstPixel++ = xorPixel;
-					}
+					*pDstPixel++ = xorPixel;
 				}
 
 				pDstPixel = (UINT32*) &((BYTE*) pDstPixel)[nDstPad];
