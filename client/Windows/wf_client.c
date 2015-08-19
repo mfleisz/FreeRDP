@@ -27,6 +27,7 @@
 
 #include <winpr/crt.h>
 #include <winpr/credui.h>
+#include <winpr/string.h>
 
 #include <errno.h>
 #include <stdio.h>
@@ -576,7 +577,7 @@ static BOOL wf_gw_authenticate(freerdp* instance,
 {
 	char tmp[MAX_PATH];
 
-	sprintf(tmp, sizeof(tmp), "Gateway %s", instance->settings->GatewayHostname);
+	_snprintf(tmp, sizeof(tmp), "Gateway %s", instance->settings->GatewayHostname);
 	return wf_authenticate_raw(instance, tmp, username, password, domain);
 }
 
@@ -617,8 +618,6 @@ static DWORD wf_verify_changed_certificate(freerdp* instance, const char* common
 					   const char* old_subject, const char* old_issuer,
 					   const char* old_fingerprint)
 {
-	char answer;
-
 	WLog_ERR(TAG, "!!! Certificate has changed !!!");
 	WLog_ERR(TAG, "New Certificate details:");
 	WLog_ERR(TAG, "\tSubject: %s", subject);
