@@ -1426,8 +1426,12 @@ void freerdp_alpha_cursor_convert(BYTE* alphaData, BYTE* xorMask, BYTE* andMask,
  * http://msdn.microsoft.com/en-us/library/windows/hardware/ff556138/
  */
 
-int freerdp_image_copy_from_pointer_data(BYTE* pDstData, UINT32 DstFormat, int nDstStep, int nXDst, int nYDst,
-		int nWidth, int nHeight, BYTE* xorMask, BYTE* andMask, UINT32 xorBpp, BYTE* palette)
+int freerdp_image_copy_from_pointer_data(BYTE* pDstData, UINT32 DstFormat,
+					 int nDstStep, int nXDst, int nYDst,
+					 int nWidth, int nHeight, BYTE* xorMask,
+					 UINT32 xorMaskLength, BYTE* andMask,
+					 UINT32 andMaskLength, UINT32 xorBpp,
+					 BYTE* palette)
 {
 	int x, y;
 	BOOL vFlip;
@@ -1463,7 +1467,7 @@ int freerdp_image_copy_from_pointer_data(BYTE* pDstData, UINT32 DstFormat, int n
 	andStep = (nWidth + 7) / 8;
 	andStep += (andStep % 2);
 
-	if (!xorMask)
+	if (!xorMask || (xorMaskLength == 0))
 		return -1;
 
 	if (dstBytesPerPixel == 4)
@@ -1472,11 +1476,17 @@ int freerdp_image_copy_from_pointer_data(BYTE* pDstData, UINT32 DstFormat, int n
 
 		if (xorBpp == 1)
 		{
-			if (!andMask)
+			if (!andMask || (andMaskLength == 0))
 				return -1;
 
 			xorStep = (nWidth + 7) / 8;
 			xorStep += (xorStep % 2);
+
+			if (xorStep * nHeight > xorMaskLength)
+				return -1;
+
+			if (andStep * nHeight > andMaskLength)
+				return -1;
 
 			pDstPixel = (UINT32*) &pDstData[(nYDst * nDstStep) + (nXDst * 4)];
 
@@ -1531,6 +1541,15 @@ int freerdp_image_copy_from_pointer_data(BYTE* pDstData, UINT32 DstFormat, int n
 				return -1;
 			}
 
+			if (xorStep * nHeight > xorMaskLength)
+				return -1;
+
+			if (andMask)
+			{
+				if (andStep * nHeight > andMaskLength)
+					return -1;
+			}
+
 			for (y = 0; y < nHeight; y++)
 			{
 				andBit = 0x80;
@@ -1538,13 +1557,13 @@ int freerdp_image_copy_from_pointer_data(BYTE* pDstData, UINT32 DstFormat, int n
 				if (!vFlip)
 				{
 					if (andMask)
-						andBits = &andMask[andStep * y];
+					andBits = &andMask[andStep * y];
 					xorBits = &xorMask[xorStep * y];
 				}
 				else
 				{
 					if (andMask)
-						andBits = &andMask[andStep * (nHeight - y - 1)];
+					andBits = &andMask[andStep * (nHeight - y - 1)];
 					xorBits = &xorMask[xorStep * (nHeight - y - 1)];
 				}
 
