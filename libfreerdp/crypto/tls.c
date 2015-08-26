@@ -33,6 +33,8 @@
 
 #include <freerdp/log.h>
 #include <freerdp/crypto/tls.h>
+
+#include "../core/rdp.h"
 #include "../core/tcp.h"
 
 #ifdef HAVE_POLL_H
@@ -979,6 +981,8 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, char* hostname, int por
 	BOOL hostname_match = FALSE;
 	BOOL verification_status = FALSE;
 	rdpCertificateData* certificate_data;
+	freerdp* instance = (freerdp*) tls->settings->instance;
+	rdpRdp* rdp = instance->context->rdp;
 
 	if (tls->settings->ExternalCertificateManagement)
 	{
@@ -986,8 +990,7 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, char* hostname, int por
 		int status;
 		int length;
 		int offset;
-		BYTE* pemCert;
-		freerdp* instance = (freerdp*) tls->settings->instance;
+		BYTE* pemCert;		
 
 		/**
 		 * Don't manage certificates internally, leave it up entirely to the external client implementation
@@ -1116,17 +1119,27 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, char* hostname, int por
 		}
 	}
 
+	if (rdp->acceptedCert)
+	{
+		if (0 == strcmp(rdp->acceptedCert->fingerprint, certificate_data->fingerprint))
+			verification_status = TRUE;
+
+		certificate_data_free(rdp->acceptedCert);
+		rdp->acceptedCert = NULL;
+	}
+
 	/* if the certificate is valid and the certificate name matches, verification succeeds */
 	if (certificate_status && hostname_match)
 		verification_status = TRUE; /* success! */
 
 	/* verification could not succeed with OpenSSL, use known_hosts file and prompt user for manual verification */
-	if (!certificate_status || !hostname_match)
+	if (!verification_status && (!certificate_status || !hostname_match))
 	{
 		char* issuer;
 		char* subject;
 		char* fingerprint;
 		freerdp* instance = (freerdp*) tls->settings->instance;
+		rdpContext* context = instance->context;
 		DWORD accept_certificate = 0;
 
 		issuer = crypto_cert_issuer(cert->px509);
@@ -1154,10 +1167,16 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, char* hostname, int por
 				case 1:
 					/* user accepted certificate, add entry in known_hosts file */
 					verification_status = certificate_data_print(tls->certificate_store, certificate_data);
+					rdp->acceptedCert = certificate_data;
+					certificate_data = NULL;
+					freerdp_set_last_error(context, FREERDP_ERROR_SECURITY_NEGO_RETRY);
 					break;
 				case 2:
 					/* user did accept temporaty, do not add to known hosts file */
 					verification_status = TRUE;
+					rdp->acceptedCert = certificate_data;
+					certificate_data = NULL;
+					freerdp_set_last_error(context, FREERDP_ERROR_SECURITY_NEGO_RETRY);
 					break;
 				default:
 					/* user did not accept, abort and do not add entry in known_hosts file */
@@ -1196,10 +1215,16 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, char* hostname, int por
 				case 1:
 					/* user accepted certificate, add entry in known_hosts file */
 					verification_status = certificate_data_replace(tls->certificate_store, certificate_data);
+					rdp->acceptedCert = certificate_data;
+					certificate_data = NULL;
+					freerdp_set_last_error(context, FREERDP_ERROR_SECURITY_NEGO_RETRY);
 					break;
 				case 2:
 					/* user did accept temporaty, do not add to known hosts file */
 					verification_status = TRUE;
+					rdp->acceptedCert = certificate_data;
+					certificate_data = NULL;
+					freerdp_set_last_error(context, FREERDP_ERROR_SECURITY_NEGO_RETRY);
 					break;
 				default:
 					/* user did not accept, abort and do not add entry in known_hosts file */

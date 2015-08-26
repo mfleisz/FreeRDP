@@ -73,8 +73,10 @@ BOOL freerdp_connect(freerdp* instance)
 	rdp = instance->context->rdp;
 	settings = instance->settings;
 
-	if (rdp)
-		rdp->disconnect = FALSE;
+	if (!rdp)
+		return FALSE;
+
+	rdp->disconnect = FALSE;
 
 	ResetEvent(instance->context->abortEvent);
 
@@ -98,6 +100,13 @@ BOOL freerdp_connect(freerdp* instance)
 	}
 
 	status = rdp_client_connect(rdp);
+	if (!status)
+	{
+		/* Check, if connection failed after manual fingerprint verification.
+		 * In that case retry the connection. */
+		if (freerdp_get_last_error(rdp->context) == FREERDP_ERROR_SECURITY_NEGO_RETRY)
+			status = rdp_client_reconnect(rdp);
+	}
 
 	/* --authonly tests the connection without a UI */
 	if (instance->settings->AuthenticationOnly)
