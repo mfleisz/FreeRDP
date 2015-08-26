@@ -1682,6 +1682,7 @@ void rdp_free(rdpRdp* rdp)
 		heartbeat_free(rdp->heartbeat);
 		multitransport_free(rdp->multitransport);
 		bulk_free(rdp->bulk);
+		certificate_data_free(rdp->acceptedCert);
 		free(rdp);
 	}
 }

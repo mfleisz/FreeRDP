@@ -176,6 +176,7 @@ struct rdp_rdp
 	BOOL deactivation_reactivation;
 	BOOL AwaitCapabilities;
 	rdpSettings* settingsCopy;
+	rdpCertificateData* acceptedCert;
 };
 
 BOOL rdp_read_security_header(wStream* s, UINT16* flags);
