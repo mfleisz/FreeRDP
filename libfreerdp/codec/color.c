@@ -1036,23 +1036,23 @@ BYTE* freerdp_icon_convert(BYTE* srcData, BYTE* dstData, BYTE* mask, int width, 
 		/* Server sends 16 bpp field, but data is usually 15-bit 555 */
 		bpp = 15;
 	}
-	
+
 	data = freerdp_image_flip(srcData, dstData, width, height, bpp);
 	dstData = freerdp_image_convert(data, NULL, width, height, bpp, 32, clrconv);
 	_aligned_free(data);
 
-	/* Read the AND alpha plane */ 
+	/* Read the AND alpha plane */
 	if (bpp < 32)
 	{
 		maskIndex = 0;
 		icon = (UINT32*) dstData;
-		
+
 		for (y = 0; y < height; y++)
 		{
 			for (x = 0; x < width-7; x+=8)
 			{
 				bmask = mask[maskIndex++];
-				
+
 				for (bit = 0; bit < 8; bit++)
 					if ((bmask & (0x80 >> bit)) == 0)
 					{
@@ -1061,11 +1061,11 @@ BYTE* freerdp_icon_convert(BYTE* srcData, BYTE* dstData, BYTE* mask, int width, 
 							*tmp |= 0xFF000000;
 					}
 			}
-			
+
 			if ((width % 8) != 0)
 			{
 				bmask = mask[maskIndex++];
-				
+
 				for (bit = 0; bit < width % 8; bit++)
 					if ((bmask & (0x80 >> bit)) == 0)
 					{
@@ -1074,7 +1074,7 @@ BYTE* freerdp_icon_convert(BYTE* srcData, BYTE* dstData, BYTE* mask, int width, 
 							*tmp |= 0xFF000000;
 					}
 			}
-		
+
 			/* Skip padding */
 			if ((width % 32) != 0)
 				maskIndex += (32 - (width % 32)) / 8;
@@ -1557,21 +1557,25 @@ int freerdp_image_copy_from_pointer_data(BYTE* pDstData, UINT32 DstFormat,
 				if (!vFlip)
 				{
 					if (andMask)
-					andBits = &andMask[andStep * y];
+						andBits = &andMask[andStep * y];
 					xorBits = &xorMask[xorStep * y];
 				}
 				else
 				{
 					if (andMask)
-					andBits = &andMask[andStep * (nHeight - y - 1)];
+						andBits = &andMask[andStep * (nHeight - y - 1)];
 					xorBits = &xorMask[xorStep * (nHeight - y - 1)];
 				}
 
 				for (x = 0; x < nWidth; x++)
 				{
+					BOOL ignoreAndMask = FALSE;
+
 					if (xorBpp == 32)
 					{
 						xorPixel = *((UINT32*) xorBits);
+						if (xorPixel & 0xFF000000)
+							ignoreAndMask = TRUE;
 					}
 					else if (xorBpp == 16)
 					{
@@ -1598,7 +1602,7 @@ int freerdp_image_copy_from_pointer_data(BYTE* pDstData, UINT32 DstFormat,
 					}
 
 					/* Ignore the AND mask, if the color format already supplies alpha data. */
-					if (andPixel && (xorBpp < 32))
+					if (andPixel && !ignoreAndMask)
 					{
 						const UINT32 xorPixelMasked = xorPixel | 0xFF000000;
 
@@ -3704,52 +3708,52 @@ int freerdp_image_copy_from_retina(BYTE* pDstData, DWORD DstFormat, int nDstStep
 	int srcBytesPerPixel;
 	int dstBitsPerPixel;
 	int dstBytesPerPixel;
-	
+
 	srcBitsPerPixel = 24;
 	srcBytesPerPixel = 8;
-	
+
 	if (nSrcStep < 0)
 		nSrcStep = srcBytesPerPixel * nWidth;
-	
+
 	dstBitsPerPixel = FREERDP_PIXEL_FORMAT_DEPTH(DstFormat);
 	dstBytesPerPixel = (FREERDP_PIXEL_FORMAT_BPP(DstFormat) / 8);
-	
+
 	if (nDstStep < 0)
 		nDstStep = dstBytesPerPixel * nWidth;
-	
+
 	nSrcPad = (nSrcStep - (nWidth * srcBytesPerPixel));
 	nDstPad = (nDstStep - (nWidth * dstBytesPerPixel));
-	
+
 	if (dstBytesPerPixel == 4)
 	{
 		UINT32 R, G, B;
 		BYTE* pSrcPixel;
 		BYTE* pDstPixel;
-		
+
 		pSrcPixel = &pSrcData[(nYSrc * nSrcStep) + (nXSrc * 4)];
 		pDstPixel = &pDstData[(nYDst * nDstStep) + (nXDst * 4)];
-		
+
 		for (y = 0; y < nHeight; y++)
 		{
 			for (x = 0; x < nWidth; x++)
 			{
 				/* simple box filter scaling, could be improved with better algorithm */
-				
+
 				B = pSrcPixel[0] + pSrcPixel[4] + pSrcPixel[nSrcStep + 0] + pSrcPixel[nSrcStep + 4];
 				G = pSrcPixel[1] + pSrcPixel[5] + pSrcPixel[nSrcStep + 1] + pSrcPixel[nSrcStep + 5];
 				R = pSrcPixel[2] + pSrcPixel[6] + pSrcPixel[nSrcStep + 2] + pSrcPixel[nSrcStep + 6];
 				pSrcPixel += 8;
-				
+
 				*pDstPixel++ = (BYTE) (B >> 2);
 				*pDstPixel++ = (BYTE) (G >> 2);
 				*pDstPixel++ = (BYTE) (R >> 2);
 				*pDstPixel++ = 0xFF;
 			}
-			
+
 			pSrcPixel = &pSrcPixel[nSrcPad + nSrcStep];
 			pDstPixel = &pDstPixel[nDstPad];
 		}
 	}
-	
+
 	return 1;
 }
