@@ -1597,11 +1597,14 @@ int freerdp_image_copy_from_pointer_data(BYTE* pDstData, UINT32 DstFormat,
 						if (!(andBit >>= 1)) { andBits++; andBit = 0x80; }
 					}
 
-					if (andPixel)
+					/* Ignore the AND mask, if the color format already supplies alpha data. */
+					if (andPixel && (xorBpp < 32))
 					{
-						if (xorPixel == 0xFF000000) /* black */
+						const UINT32 xorPixelMasked = xorPixel | 0xFF000000;
+
+						if (xorPixelMasked == 0xFF000000) /* black */
 							*pDstPixel++ = 0x00000000; /* transparent */
-						else if (xorPixel == 0xFFFFFFFF) /* white */
+						else if (xorPixelMasked == 0xFFFFFFFF) /* white */
 							*pDstPixel++ = 0xFF000000; /* inverted (set as black) */
 						else
 							*pDstPixel++ = xorPixel;
