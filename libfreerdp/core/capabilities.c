@@ -1309,6 +1309,10 @@ static BOOL rdp_read_input_capability_set(wStream* s, rdpSettings* settings)
 
 		if (inputFlags & INPUT_FLAG_MOUSEX)
 			settings->HasExtendedMouseEvent = TRUE;
+
+		/* Thincast extension - relative mouse support */
+		if (inputFlags & 0x0040)
+			settings->RelativeMouseInput = TRUE;
 	}
 
 	return TRUE;
@@ -1348,6 +1352,10 @@ static BOOL rdp_write_input_capability_set(wStream* s, const rdpSettings* settin
 
 	if (settings->HasExtendedMouseEvent)
 		inputFlags |= INPUT_FLAG_MOUSEX;
+
+	/* Thincast extension - relative mouse support */
+	if (settings->RelativeMouseInput)
+		inputFlags |= 0x0040;
 
 	Stream_Write_UINT16(s, inputFlags);                    /* inputFlags (2 bytes) */
 	Stream_Write_UINT16(s, 0);                             /* pad2OctetsA (2 bytes) */

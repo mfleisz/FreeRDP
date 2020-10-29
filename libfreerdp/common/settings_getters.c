@@ -360,6 +360,9 @@ BOOL freerdp_settings_get_bool(const rdpSettings* settings, size_t id)
 		case FreeRDP_RefreshRect:
 			return settings->RefreshRect;
 
+		case FreeRDP_RelativeMouseInput:
+			return settings->RelativeMouseInput;
+
 		case FreeRDP_RemdeskVirtualChannel:
 			return settings->RemdeskVirtualChannel;
 
@@ -976,6 +979,10 @@ BOOL freerdp_settings_set_bool(rdpSettings* settings, size_t id, BOOL val)
 
 		case FreeRDP_RefreshRect:
 			settings->RefreshRect = val;
+			break;
+
+		case FreeRDP_RelativeMouseInput:
+			settings->RelativeMouseInput = val;
 			break;
 
 		case FreeRDP_RemdeskVirtualChannel:

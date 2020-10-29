@@ -130,6 +130,7 @@ static const struct settings_str_entry settings_map[] = {
 	{ FreeRDP_RedirectSerialPorts, 0, "FreeRDP_RedirectSerialPorts" },
 	{ FreeRDP_RedirectSmartCards, 0, "FreeRDP_RedirectSmartCards" },
 	{ FreeRDP_RefreshRect, 0, "FreeRDP_RefreshRect" },
+	{ FreeRDP_RelativeMouseInput, 0, "FreeRDP_RelativeMouseInput" },
 	{ FreeRDP_RemdeskVirtualChannel, 0, "FreeRDP_RemdeskVirtualChannel" },
 	{ FreeRDP_RemoteAppLanguageBarSupported, 0, "FreeRDP_RemoteAppLanguageBarSupported" },
 	{ FreeRDP_RemoteApplicationMode, 0, "FreeRDP_RemoteApplicationMode" },

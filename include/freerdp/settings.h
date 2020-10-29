@@ -889,6 +889,7 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_TcpKeepAliveDelay (5192)
 #define FreeRDP_TcpKeepAliveInterval (5193)
 #define FreeRDP_TcpAckTimeout (5194)
+#define FreeRDP_RelativeMouseInput (5195)
 
 /**
  * FreeRDP Settings Data Structure
@@ -1538,7 +1539,9 @@ struct rdp_settings
 	ALIGN64 UINT32 TcpKeepAliveDelay;     /* 5192 */
 	ALIGN64 UINT32 TcpKeepAliveInterval;  /* 5193 */
 	ALIGN64 UINT32 TcpAckTimeout;         /* 5194 */
-	UINT64 padding5312[5312 - 5195];      /* 5195 */
+	/* Thincast Extensions */
+	ALIGN64 BOOL RelativeMouseInput;      /* 5195 */
+	UINT64 padding5312[5312 - 5196];      /* 5196 */
 
 	/**
 	 * WARNING: End of ABI stable zone!
