@@ -260,10 +260,39 @@ fail:
 	return FALSE;
 }
 
+static BOOL transport_prompt_for_password(rdpTransport* transport)
+{
+	rdpSettings* settings = transport->settings;
+	freerdp* instance = transport->context->instance;
+
+	/* Ask for auth data if no or an empty username was specified or no password was given */
+	if ((settings->Username == NULL || strlen(settings->Username) == 0) ||
+	    (settings->Password == NULL && settings->RedirectionPassword == NULL))
+	{
+		/* If no callback is specified still continue connection */
+		if (!instance->Authenticate)
+			return TRUE;
+
+		if (!instance->Authenticate(instance, &settings->Username, &settings->Password,
+		                            &settings->Domain))
+		{
+			freerdp_set_last_error_log(instance->context,
+			                           FREERDP_ERROR_CONNECT_NO_OR_MISSING_CREDENTIALS);
+			return FALSE;
+		}
+	}
+
+	return TRUE;
+}
+
 BOOL transport_connect_rdp(rdpTransport* transport)
 {
 	if (!transport)
 		return FALSE;
+
+	if (!transport_prompt_for_password(transport))
+		return FALSE;
+
 	/* RDP encryption */
 	return TRUE;
 }
@@ -272,6 +301,14 @@ BOOL transport_connect_tls(rdpTransport* transport)
 {
 	if (!transport)
 		return FALSE;
+
+	/* Only prompt for password if we use TLS (NLA also calls this function) */
+	if (transport->settings->SelectedProtocol == PROTOCOL_SSL)
+	{
+		if (!transport_prompt_for_password(transport))
+			return FALSE;
+	}
+
 	return IFCALLRESULT(FALSE, transport->io.TLSConnect, transport);
 }
 

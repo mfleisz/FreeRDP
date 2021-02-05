@@ -42,6 +42,8 @@ struct wlf_context
 	UwacSeat* seat;
 
 	BOOL fullscreen;
+	BOOL closed;
+	BOOL focusing;
 
 	/* Channels */
 	RdpeiClientContext* rdpei;

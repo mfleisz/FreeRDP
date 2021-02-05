@@ -1,7 +1,9 @@
 /**
  * FreeRDP: A Remote Desktop Protocol Implementation
+ * Apple Core Foundation Keyboard Mapping
  *
- * Copyright 2013-2014 Marc-Andre Moreau <marcandre.moreau@gmail.com>
+ * Copyright 2021 Thincast Technologies GmbH
+ * Copyright 2021 Martin Fleisz <martin.fleisz@thincast.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +18,11 @@
  * limitations under the License.
  */
 
-#ifndef FREERDP_CLIENT_WIN_RAIL_H
-#define FREERDP_CLIENT_WIN_RAIL_H
+#ifndef FREERDP_LOCALE_KEYBOARD_APPLE_H
+#define FREERDP_LOCALE_KEYBOARD_APPLE_H
 
-typedef struct wf_rail_window wfRailWindow;
+#include <freerdp/api.h>
 
-#include "wf_client.h"
+FREERDP_LOCAL int freerdp_detect_keyboard_layout_from_cf(DWORD* keyboardLayoutId);
 
-#include <freerdp/client/rail.h>
-
-BOOL wf_rail_init(wfContext* wfc, RailClientContext* rail);
-void wf_rail_uninit(wfContext* wfc, RailClientContext* rail);
-
-void wf_rail_invalidate_region(wfContext* wfc, REGION16* invalidRegion);
-
-#endif /* FREERDP_CLIENT_WIN_RAIL_H */
+#endif /* FREERDP_LOCALE_KEYBOARD_APPLE_H */

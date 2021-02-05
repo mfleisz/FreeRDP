@@ -188,19 +188,76 @@ out:
 	return ret;
 }
 
-static BOOL saveCal(rdpSettings* settings, const BYTE* data, int length, char* hostname)
+static FILE* fopen_wrap(const char* path, const char* mode)
+{
+#if defined(_WIN32)
+	{
+		errno_t err;
+		FILE* fp;
+		WCHAR* wCalPath = NULL;
+		WCHAR* wMode = NULL;
+		int status = ConvertToUnicode(CP_UTF8, 0, path, -1, &wCalPath, 0);
+		if (status <= 0)
+			return NULL;
+		status = ConvertToUnicode(CP_UTF8, 0, mode, -1, &wMode, 0);
+		if (status <= 0)
+		{
+			free(wCalPath);
+			return NULL;
+		}
+		err = _wfopen_s(&fp, wCalPath, wMode);
+		free(wCalPath);
+		free(wMode);
+		if (err != 0)
+			return NULL;
+		return fp;
+	}
+#else
+	return fopen(path, mode);
+#endif
+}
+
+static BOOL path_exists(const char* path)
+{
+	BOOL rc = FALSE;
+	WCHAR* wpath = NULL;
+	if (!path)
+		return FALSE;
+	if (ConvertToUnicode(CP_UTF8, 0, path, -1, &wpath, 0) <= 0)
+		return FALSE;
+	rc = PathFileExistsW(wpath);
+	free(wpath);
+	return rc;
+}
+
+static BOOL path_make(const char* path, LPSECURITY_ATTRIBUTES lpAttributes)
+{
+	BOOL rc = FALSE;
+	WCHAR* wpath = NULL;
+	if (!path)
+		return FALSE;
+	if (ConvertToUnicode(CP_UTF8, 0, path, -1, &wpath, 0) <= 0)
+		return FALSE;
+	rc = PathMakePathW(wpath, lpAttributes);
+	free(wpath);
+	return rc;
+}
+
+static BOOL saveCal(rdpSettings* settings, const BYTE* data, size_t length, char* hostname)
 {
 	char hash[41];
 	FILE* fp;
 	char* licenseStorePath = NULL;
 	char filename[MAX_PATH], filenameNew[MAX_PATH];
 	char *filepath = NULL, *filepathNew = NULL;
+	WCHAR* wFilepathNew = NULL;
+	WCHAR* wFilepath = NULL;
 	size_t written;
 	BOOL ret = FALSE;
 
-	if (!PathFileExistsA(settings->ConfigPath))
+	if (!path_exists(settings->ConfigPath))
 	{
-		if (!PathMakePathA(settings->ConfigPath, 0))
+		if (!path_make(settings->ConfigPath, 0))
 		{
 			WLog_ERR(TAG, "error creating directory '%s'", settings->ConfigPath);
 			goto out;
@@ -211,9 +268,9 @@ static BOOL saveCal(rdpSettings* settings, const BYTE* data, int length, char* h
 	if (!(licenseStorePath = GetCombinedPath(settings->ConfigPath, licenseStore)))
 		goto out;
 
-	if (!PathFileExistsA(licenseStorePath))
+	if (!path_exists(licenseStorePath))
 	{
-		if (!PathMakePathA(licenseStorePath, 0))
+		if (!path_make(licenseStorePath, 0))
 		{
 			WLog_ERR(TAG, "error creating directory '%s'", licenseStorePath);
 			goto out;
@@ -231,8 +288,12 @@ static BOOL saveCal(rdpSettings* settings, const BYTE* data, int length, char* h
 
 	if (!(filepathNew = GetCombinedPath(licenseStorePath, filenameNew)))
 		goto out;
+	if (ConvertToUnicode(CP_UTF8, 0, filepathNew, -1, &wFilepathNew, 0) <= 0)
+		goto out;
+	if (ConvertToUnicode(CP_UTF8, 0, filepath, -1, &wFilepath, 0) <= 0)
+		goto out;
 
-	fp = fopen(filepathNew, "wb");
+	fp = fopen_wrap(filepathNew, "wb");
 	if (!fp)
 		goto out;
 
@@ -241,20 +302,22 @@ static BOOL saveCal(rdpSettings* settings, const BYTE* data, int length, char* h
 
 	if (written != 1)
 	{
-		DeleteFile(filepathNew);
+		DeleteFileW(wFilepathNew);
 		goto out;
 	}
 
-	ret = MoveFileEx(filepathNew, filepath, MOVEFILE_REPLACE_EXISTING);
+	ret = MoveFileExW(wFilepathNew, wFilepath, MOVEFILE_REPLACE_EXISTING);
 
 out:
+	free(wFilepathNew);
 	free(filepathNew);
+	free(wFilepath);
 	free(filepath);
 	free(licenseStorePath);
 	return ret;
 }
 
-static BYTE* loadCalFile(rdpSettings* settings, const char* hostname, int* dataLen)
+static BYTE* loadCalFile(rdpSettings* settings, const char* hostname, size_t* dataLen)
 {
 	char *licenseStorePath = NULL, *calPath = NULL;
 	char calFilename[MAX_PATH];
@@ -277,7 +340,7 @@ static BYTE* loadCalFile(rdpSettings* settings, const char* hostname, int* dataL
 	if (!(calPath = GetCombinedPath(licenseStorePath, calFilename)))
 		goto error_path;
 
-	fp = fopen(calPath, "rb");
+	fp = fopen_wrap(calPath, "rb");
 	if (!fp)
 		goto error_open;
 

@@ -36,6 +36,8 @@
 #define CB_FORMAT_JPEG 0xD012
 #define CB_FORMAT_GIF 0xD013
 #define CB_FORMAT_TEXTURILIST 0xD014
+#define CB_FORMAT_GNOMECOPIEDFILES 0xD015
+#define CB_FORMAT_MATECOPIEDFILES 0xD016
 
 /* CLIPRDR_HEADER.msgType */
 #define CB_MONITOR_READY 0x0001
@@ -99,6 +101,10 @@ extern "C"
 	FREERDP_API UINT cliprdr_serialize_file_list(const FILEDESCRIPTORW* file_descriptor_array,
 	                                             UINT32 file_descriptor_count, BYTE** format_data,
 	                                             UINT32* format_data_length);
+	FREERDP_API UINT cliprdr_serialize_file_list_ex(UINT32 flags,
+	                                                const FILEDESCRIPTORW* file_descriptor_array,
+	                                                UINT32 file_descriptor_count,
+	                                                BYTE** format_data, UINT32* format_data_length);
 
 #ifdef __cplusplus
 }
