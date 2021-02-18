@@ -299,8 +299,8 @@ static BOOL xf_desktop_resize(rdpContext* context)
 		XSetFunction(xfc->display, xfc->gc, GXcopy);
 		XSetFillStyle(xfc->display, xfc->gc, FillSolid);
 		XSetForeground(xfc->display, xfc->gc, 0);
-		XFillRectangle(xfc->display, xfc->drawable, xfc->gc, 0, 0, xfc->window->width,
-		               xfc->window->height);
+		XFillRectangle(xfc->display, xfc->drawable, xfc->gc, 0, 0, settings->DesktopWidth,
+		               settings->DesktopHeight);
 	}
 
 	return TRUE;
@@ -1076,8 +1076,9 @@ static const button_map xf_button_flags[NUM_BUTTONS_MAPPED] = {
 	{ Button2, PTR_FLAGS_BUTTON3 },
 	{ Button3, PTR_FLAGS_BUTTON2 },
 	{ Button4, PTR_FLAGS_WHEEL | 0x78 },
-	{ Button5, PTR_FLAGS_WHEEL | PTR_FLAGS_WHEEL_NEGATIVE | 0x78 },
-	{ 6, PTR_FLAGS_HWHEEL | PTR_FLAGS_WHEEL_NEGATIVE | 0x78 },
+	/* Negative value is 9bit twos complement */
+	{ Button5, PTR_FLAGS_WHEEL | PTR_FLAGS_WHEEL_NEGATIVE | (0x100 - 0x78) },
+	{ 6, PTR_FLAGS_HWHEEL | PTR_FLAGS_WHEEL_NEGATIVE | (0x100 - 0x78) },
 	{ 7, PTR_FLAGS_HWHEEL | 0x78 },
 	{ 8, PTR_XFLAGS_BUTTON1 },
 	{ 9, PTR_XFLAGS_BUTTON2 },
