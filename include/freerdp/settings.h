@@ -502,6 +502,8 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define PROXY_TYPE_SOCKS 2
 #define PROXY_TYPE_IGNORE 0xFFFF
 
+/* ThreadingFlags */
+#define THREADING_FLAGS_DISABLE_THREADS 0x00000001
 /* Settings */
 
 #ifdef __GNUC__
@@ -533,6 +535,7 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_MaxTimeInCheckLoop (26)
 #define FreeRDP_AcceptedCert (27)
 #define FreeRDP_AcceptedCertLength (28)
+#define FreeRDP_ThreadingFlags (64)
 #define FreeRDP_RdpVersion (128)
 #define FreeRDP_DesktopWidth (129)
 #define FreeRDP_DesktopHeight (130)
@@ -892,7 +895,10 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_TcpKeepAliveDelay (5192)
 #define FreeRDP_TcpKeepAliveInterval (5193)
 #define FreeRDP_TcpAckTimeout (5194)
-#define FreeRDP_RelativeMouseInput (5195)
+#define FreeRDP_ActionScript (5195)
+#define FreeRDP_Floatbar (5196)
+
+#define FreeRDP_RelativeMouseInput (5197)
 
 /**
  * FreeRDP Settings Data Structure
@@ -927,7 +933,10 @@ struct rdp_settings
 	ALIGN64 char* AcceptedCert;            /* 27 */
 	ALIGN64 UINT32 AcceptedCertLength;     /* 28 */
 	UINT64 padding0064[64 - 29];           /* 29 */
-	UINT64 padding0128[128 - 64];          /* 64 */
+	/* resource management related options */
+	ALIGN64 UINT32 ThreadingFlags; /* 64 */
+
+	UINT64 padding0128[128 - 65]; /* 65 */
 
 	/**
 	 * GCC User Data Blocks
@@ -1341,20 +1350,20 @@ struct rdp_settings
 
 	/* Input Capabilities */
 	ALIGN64 char* KeyboardRemappingList; /* 2622 */
-	ALIGN64 UINT32 KeyboardCodePage;    /* 2623 */
-	ALIGN64 UINT32 KeyboardLayout;      /* 2624 */
-	ALIGN64 UINT32 KeyboardType;        /* 2625 */
-	ALIGN64 UINT32 KeyboardSubType;     /* 2626 */
-	ALIGN64 UINT32 KeyboardFunctionKey; /* 2627 */
-	ALIGN64 char* ImeFileName;          /* 2628 */
-	ALIGN64 BOOL UnicodeInput;          /* 2629 */
-	ALIGN64 BOOL FastPathInput;         /* 2630 */
-	ALIGN64 BOOL MultiTouchInput;       /* 2631 */
-	ALIGN64 BOOL MultiTouchGestures;    /* 2632 */
-	ALIGN64 UINT32 KeyboardHook;        /* 2633 */
-	ALIGN64 BOOL HasHorizontalWheel;    /* 2634 */
-	ALIGN64 BOOL HasExtendedMouseEvent; /* 2635 */
-	UINT64 padding2688[2688 - 2636];    /* 2636 */
+	ALIGN64 UINT32 KeyboardCodePage;     /* 2623 */
+	ALIGN64 UINT32 KeyboardLayout;       /* 2624 */
+	ALIGN64 UINT32 KeyboardType;         /* 2625 */
+	ALIGN64 UINT32 KeyboardSubType;      /* 2626 */
+	ALIGN64 UINT32 KeyboardFunctionKey;  /* 2627 */
+	ALIGN64 char* ImeFileName;           /* 2628 */
+	ALIGN64 BOOL UnicodeInput;           /* 2629 */
+	ALIGN64 BOOL FastPathInput;          /* 2630 */
+	ALIGN64 BOOL MultiTouchInput;        /* 2631 */
+	ALIGN64 BOOL MultiTouchGestures;     /* 2632 */
+	ALIGN64 UINT32 KeyboardHook;         /* 2633 */
+	ALIGN64 BOOL HasHorizontalWheel;     /* 2634 */
+	ALIGN64 BOOL HasExtendedMouseEvent;  /* 2635 */
+	UINT64 padding2688[2688 - 2636];     /* 2636 */
 
 	/* Brush Capabilities */
 	ALIGN64 UINT32 BrushSupportLevel; /* 2688 */
@@ -1544,9 +1553,10 @@ struct rdp_settings
 	ALIGN64 UINT32 TcpKeepAliveDelay;     /* 5192 */
 	ALIGN64 UINT32 TcpKeepAliveInterval;  /* 5193 */
 	ALIGN64 UINT32 TcpAckTimeout;         /* 5194 */
-	/* Thincast Extensions */
-	ALIGN64 BOOL RelativeMouseInput;      /* 5195 */
-	UINT64 padding5312[5312 - 5196];      /* 5196 */
+	ALIGN64 char* ActionScript;           /* 5195 */
+	ALIGN64 UINT32 Floatbar;              /* 5196 */
+	ALIGN64 BOOL RelativeMouseInput;      /* 5197 */
+	UINT64 padding5312[5312 - 5198];      /* 5198 */
 
 	/**
 	 * WARNING: End of ABI stable zone!
@@ -1565,8 +1575,6 @@ struct rdp_settings
 
 	ALIGN64 BYTE* SettingsModified; /* byte array marking fields that have been modified from their
 	                                   default value - currently UNUSED! */
-	ALIGN64 char* ActionScript;
-	ALIGN64 DWORD Floatbar;
 	ALIGN64 char* XSelectionAtom;
 };
 typedef struct rdp_settings rdpSettings;
@@ -1690,10 +1698,24 @@ extern "C"
 	FREERDP_API BOOL freerdp_settings_set_uint64(rdpSettings* settings, size_t id, UINT64 param);
 
 	FREERDP_API const char* freerdp_settings_get_string(const rdpSettings* settings, size_t id);
+	FREERDP_API BOOL freerdp_settings_set_string_len(rdpSettings* settings, size_t id,
+	                                                 const char* param, size_t len);
 	FREERDP_API BOOL freerdp_settings_set_string(rdpSettings* settings, size_t id,
 	                                             const char* param);
 
 	FREERDP_API const void* freerdp_settings_get_pointer(const rdpSettings* settings, size_t id);
+	FREERDP_API void* freerdp_settings_get_pointer_writable(const rdpSettings* settings, size_t id);
+	FREERDP_API BOOL freerdp_settings_set_pointer(rdpSettings* settings, size_t id,
+	                                              const void* data);
+	FREERDP_API BOOL freerdp_settings_set_pointer_len(rdpSettings* settings, size_t id,
+	                                                  const void* data, size_t len);
+
+	FREERDP_API const void* freerdp_settings_get_pointer_array(const rdpSettings* settings,
+	                                                           size_t id, size_t offset);
+	FREERDP_API void* freerdp_settings_get_pointer_array_writable(const rdpSettings* settings,
+	                                                              size_t id, size_t offset);
+	FREERDP_API BOOL freerdp_settings_set_pointer_array(rdpSettings* settings, size_t id,
+	                                                    size_t offset, const void* data);
 
 	FREERDP_API BOOL freerdp_settings_set_value_for_name(rdpSettings* settings, const char* name,
 	                                                     const char* value);
@@ -1702,6 +1724,7 @@ extern "C"
 	FREERDP_API SSIZE_T freerdp_settings_get_type_for_name(const char* value);
 	FREERDP_API SSIZE_T freerdp_settings_get_type_for_key(size_t key);
 	FREERDP_API const char* freerdp_settings_get_name_for_key(size_t key);
+	FREERDP_API UINT32 freerdp_settings_get_codecs_flags(const rdpSettings* settings);
 
 #ifdef __cplusplus
 }

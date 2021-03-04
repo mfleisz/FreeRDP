@@ -96,8 +96,12 @@ static UINT gdi_ResetGraphics(RdpgfxClientContext* context,
 
 	free(pSurfaceIds);
 
-	if (!freerdp_client_codecs_reset(context->codecs, FREERDP_CODEC_ALL, gdi->width, gdi->height))
+	if (!freerdp_client_codecs_reset(gdi->context->codecs,
+	                                 freerdp_settings_get_codecs_flags(settings), gdi->width,
+	                                 gdi->height))
+	{
 		goto fail;
+	}
 
 	rc = CHANNEL_RC_OK;
 fail:
@@ -692,7 +696,7 @@ static UINT gdi_SurfaceCommand_Alpha(rdpGdi* gdi, RdpgfxClientContext* context,
 	{
 		UINT32 x, y;
 
-		if (Stream_GetRemainingLength(&s) < cmd->height * cmd->width)
+		if (Stream_GetRemainingLength(&s) < cmd->height * cmd->width * 1ULL)
 			return ERROR_INVALID_DATA;
 
 		for (y = cmd->top; y < cmd->top + cmd->height; y++)
@@ -986,8 +990,8 @@ static UINT gdi_CreateSurface(RdpgfxClientContext* context,
 			goto fail;
 	}
 
-	surface->scanline = gfx_align_scanline(surface->width * 4, 16);
-	surface->data = (BYTE*)_aligned_malloc(surface->scanline * surface->height, 16);
+	surface->scanline = gfx_align_scanline(surface->width * 4UL, 16);
+	surface->data = (BYTE*)_aligned_malloc(surface->scanline * surface->height * 1ULL, 16);
 
 	if (!surface->data)
 	{

@@ -411,7 +411,7 @@ static INLINE BOOL progressive_tile_allocate(RFX_PROGRESSIVE_TILE* tile)
 	tile->stride = 4 * tile->width;
 
 	{
-		size_t dataLen = tile->stride * tile->height;
+		size_t dataLen = tile->stride * tile->height * 1ULL;
 		tile->data = (BYTE*)_aligned_malloc(dataLen, 16);
 	}
 
@@ -2167,7 +2167,8 @@ INT32 progressive_decompress(PROGRESSIVE_CONTEXT* progressive, const BYTE* pSrcD
 	REGION16 clippingRects, updateRegion;
 	PROGRESSIVE_BLOCK_REGION* region = &progressive->region;
 	PROGRESSIVE_SURFACE_CONTEXT* surface = progressive_get_surface_data(progressive, surfaceId);
-	union {
+	union
+	{
 		const BYTE* cbp;
 		BYTE* bp;
 	} sconv;
@@ -2291,7 +2292,7 @@ INT32 progressive_decompress(PROGRESSIVE_CONTEXT* progressive, const BYTE* pSrcD
 
 	for (i = 0; i < surface->numUpdatedTiles; i++)
 	{
-		UINT32 nbUpdateRects;
+		UINT32 nbUpdateRects, j;
 		const RECTANGLE_16* updateRects;
 		RECTANGLE_16 updateRect;
 		RFX_PROGRESSIVE_TILE* tile = &surface->tiles[surface->updatedTileIndices[i]];
@@ -2602,7 +2603,7 @@ PROGRESSIVE_CONTEXT* progressive_context_new(BOOL Compressor)
 	progressive->log = WLog_Get(TAG);
 	if (!progressive->log)
 		goto fail;
-	progressive->rfx_context = rfx_context_new(Compressor);
+	progressive->rfx_context = rfx_context_new(Compressor, 0);
 	if (!progressive->rfx_context)
 		goto fail;
 	progressive->buffer = Stream_New(NULL, 1024);

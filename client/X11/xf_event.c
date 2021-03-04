@@ -618,6 +618,8 @@ static BOOL xf_event_EnterNotify(xfContext* xfc, const XEnterWindowEvent* event,
 
 static BOOL xf_event_LeaveNotify(xfContext* xfc, const XLeaveWindowEvent* event, BOOL app)
 {
+	if (event->mode == NotifyGrab || event->mode == NotifyUngrab)
+		return TRUE;
 	if (!app)
 	{
 		xfc->mouse_active = FALSE;
@@ -853,7 +855,8 @@ static BOOL xf_event_PropertyNotify(xfContext* xfc, const XPropertyEvent* event,
 				appWindow->rail_state = WINDOW_SHOW_MINIMIZED;
 				xf_rail_send_client_system_command(xfc, appWindow->windowId, SC_MINIMIZE);
 			}
-			else if (!minimized && !maxVert && !maxHorz && (appWindow->rail_state != WINDOW_SHOW) &&
+			else if (((Atom)event->atom == xfc->WM_STATE) && !minimized &&
+			         (appWindow->rail_state != WINDOW_SHOW) &&
 			         (appWindow->rail_state != WINDOW_HIDE))
 			{
 				appWindow->rail_state = WINDOW_SHOW;
