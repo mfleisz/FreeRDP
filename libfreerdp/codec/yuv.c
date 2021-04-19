@@ -58,50 +58,78 @@ struct _YUV_ENCODE_WORK_PARAM
 };
 typedef struct _YUV_ENCODE_WORK_PARAM YUV_ENCODE_WORK_PARAM;
 
+static INLINE BOOL avc420_yuv_to_rgb(const BYTE* pYUVData[3], const UINT32 iStride[3],
+                                     const RECTANGLE_16* rect, UINT32 nDstStep, BYTE* pDstData,
+                                     DWORD DstFormat)
+{
+	primitives_t* prims = primitives_get();
+	prim_size_t roi;
+	const BYTE* pYUVPoint[3];
+	const INT32 width = rect->right - rect->left;
+	const INT32 height = rect->bottom - rect->top;
+	BYTE* pDstPoint = pDstData + rect->top * nDstStep + rect->left * GetBytesPerPixel(DstFormat);
+
+	pYUVPoint[0] = pYUVData[0] + rect->top * iStride[0] + rect->left;
+	pYUVPoint[1] = pYUVData[1] + rect->top / 2 * iStride[1] + rect->left / 2;
+	pYUVPoint[2] = pYUVData[2] + rect->top / 2 * iStride[2] + rect->left / 2;
+
+	roi.width = width;
+	roi.height = height;
+
+	if (prims->YUV420ToRGB_8u_P3AC4R(pYUVPoint, iStride, pDstPoint, nDstStep, DstFormat, &roi) !=
+	    PRIMITIVES_SUCCESS)
+		return FALSE;
+
+	return TRUE;
+}
+
+static INLINE BOOL avc444_yuv_to_rgb(const BYTE* pYUVData[3], const UINT32 iStride[3],
+                                     const RECTANGLE_16* rect, UINT32 nDstStep, BYTE* pDstData,
+                                     DWORD DstFormat)
+{
+	primitives_t* prims = primitives_get();
+	prim_size_t roi;
+	const BYTE* pYUVPoint[3];
+	const INT32 width = rect->right - rect->left;
+	const INT32 height = rect->bottom - rect->top;
+	BYTE* pDstPoint = pDstData + rect->top * nDstStep + rect->left * GetBytesPerPixel(DstFormat);
+
+	pYUVPoint[0] = pYUVData[0] + rect->top * iStride[0] + rect->left;
+	pYUVPoint[1] = pYUVData[1] + rect->top * iStride[1] + rect->left;
+	pYUVPoint[2] = pYUVData[2] + rect->top * iStride[2] + rect->left;
+
+	roi.width = width;
+	roi.height = height;
+
+	if (prims->YUV444ToRGB_8u_P3AC4R(pYUVPoint, iStride, pDstPoint, nDstStep, DstFormat, &roi) !=
+	    PRIMITIVES_SUCCESS)
+		return FALSE;
+
+	return TRUE;
+}
+
 static void CALLBACK yuv420_process_work_callback(PTP_CALLBACK_INSTANCE instance, void* context,
                                                   PTP_WORK work)
 {
-	prim_size_t roi;
 	YUV_PROCESS_WORK_PARAM* param = (YUV_PROCESS_WORK_PARAM*)context;
-	primitives_t* prims = primitives_get();
+	WINPR_UNUSED(instance);
+	WINPR_UNUSED(work);
 
-	const BYTE* pYUVData[3];
-	BYTE* dest = param->dest + param->rect.top * param->nDstStep +
-	             param->rect.left * GetBytesPerPixel(param->DstFormat);
-	pYUVData[0] = param->pYUVData[0] + param->iStride[0] * param->rect.top + param->rect.left;
-	pYUVData[1] =
-	    param->pYUVData[1] + param->iStride[1] * param->rect.top / 2 + param->rect.left / 2;
-	pYUVData[2] =
-	    param->pYUVData[2] + param->iStride[2] * param->rect.top / 2 + param->rect.left / 2;
-	roi.width = param->rect.right - param->rect.left;
-	roi.height = param->rect.bottom - param->rect.top;
-	if (prims->YUV420ToRGB_8u_P3AC4R(pYUVData, param->iStride, dest, param->nDstStep,
-	                                 param->DstFormat, &roi) != PRIMITIVES_SUCCESS)
-	{
-		WLog_ERR(TAG, "error when decoding lines");
-	}
+	if (!avc420_yuv_to_rgb(param->pYUVData, param->iStride, &param->rect, param->nDstStep,
+	                       param->dest, param->DstFormat))
+		WLog_WARN(TAG, "avc420_yuv_to_rgb failed");
 }
 
 static void CALLBACK yuv444_process_work_callback(PTP_CALLBACK_INSTANCE instance, void* context,
                                                   PTP_WORK work)
 {
-	prim_size_t roi;
 	YUV_PROCESS_WORK_PARAM* param = (YUV_PROCESS_WORK_PARAM*)context;
-	primitives_t* prims = primitives_get();
+	WINPR_UNUSED(instance);
+	WINPR_UNUSED(work);
 
-	const BYTE* pYUVData[3];
-	BYTE* dest = param->dest + param->rect.top * param->nDstStep +
-	             param->rect.left * GetBytesPerPixel(param->DstFormat);
-	pYUVData[0] = param->pYUVData[0] + param->iStride[0] * param->rect.top + param->rect.left;
-	pYUVData[1] = param->pYUVData[1] + param->iStride[1] * param->rect.top + param->rect.left;
-	pYUVData[2] = param->pYUVData[2] + param->iStride[2] * param->rect.top + param->rect.left;
-	roi.width = param->rect.right - param->rect.left;
-	roi.height = param->rect.bottom - param->rect.top;
-	if (prims->YUV444ToRGB_8u_P3AC4R(pYUVData, param->iStride, dest, param->nDstStep,
-	                                 param->DstFormat, &roi) != PRIMITIVES_SUCCESS)
-	{
-		WLog_ERR(TAG, "error when decoding lines");
-	}
+	if (!avc444_yuv_to_rgb(param->pYUVData, param->iStride, &param->rect, param->nDstStep,
+	                       param->dest, param->DstFormat))
+		WLog_WARN(TAG, "avc444_yuv_to_rgb failed");
 }
 
 void yuv_context_reset(YUV_CONTEXT* context, UINT32 width, UINT32 height)
@@ -111,7 +139,7 @@ void yuv_context_reset(YUV_CONTEXT* context, UINT32 width, UINT32 height)
 	context->heightStep = (height / context->nthreads);
 }
 
-YUV_CONTEXT* yuv_context_new(BOOL encoder)
+YUV_CONTEXT* yuv_context_new(BOOL encoder, UINT32 ThreadingFlags)
 {
 	SYSTEM_INFO sysInfos;
 	YUV_CONTEXT* ret = calloc(1, sizeof(*ret));
@@ -121,23 +149,23 @@ YUV_CONTEXT* yuv_context_new(BOOL encoder)
 	/** do it here to avoid a race condition between threads */
 	primitives_get();
 
-	GetNativeSystemInfo(&sysInfos);
-	ret->useThreads = (sysInfos.dwNumberOfProcessors > 1);
-	if (ret->useThreads)
+	ret->nthreads = 1;
+	if (!(ThreadingFlags & THREADING_FLAGS_DISABLE_THREADS))
 	{
-		ret->nthreads = sysInfos.dwNumberOfProcessors;
-		ret->threadPool = CreateThreadpool(NULL);
-		if (!ret->threadPool)
+		GetNativeSystemInfo(&sysInfos);
+		ret->useThreads = (sysInfos.dwNumberOfProcessors > 1);
+		if (ret->useThreads)
 		{
-			goto error_threadpool;
-		}
+			ret->nthreads = sysInfos.dwNumberOfProcessors;
+			ret->threadPool = CreateThreadpool(NULL);
+			if (!ret->threadPool)
+			{
+				goto error_threadpool;
+			}
 
-		InitializeThreadpoolEnvironment(&ret->ThreadPoolEnv);
-		SetThreadpoolCallbackPool(&ret->ThreadPoolEnv, ret->threadPool);
-	}
-	else
-	{
-		ret->nthreads = 1;
+			InitializeThreadpoolEnvironment(&ret->ThreadPoolEnv);
+			SetThreadpoolCallbackPool(&ret->ThreadPoolEnv, ret->threadPool);
+		}
 	}
 
 	return ret;
@@ -251,8 +279,7 @@ static BOOL pool_decode(YUV_CONTEXT* context, PTP_WORK_CALLBACK cb, const BYTE* 
 	UINT32 waitCount = 0, nobjects;
 	primitives_t* prims = primitives_get();
 
-	if (!context->useThreads || (primitives_flags(prims) & PRIM_FLAGS_HAVE_EXTGPU) ||
-	    TRUE) // TODO: Multithreadded decoding yields artifacts, deactivate for now
+	if (!context->useThreads || (primitives_flags(prims) & PRIM_FLAGS_HAVE_EXTGPU))
 	{
 		for (y = 0; y < numRegionRects; y++)
 		{
@@ -265,7 +292,7 @@ static BOOL pool_decode(YUV_CONTEXT* context, PTP_WORK_CALLBACK cb, const BYTE* 
 	}
 
 	/* case where we use threads */
-	steps = MAX((context->nthreads + numRegionRects / 2) / numRegionRects, 1);
+	steps = MAX((context->nthreads + numRegionRects / 2 + 1) / numRegionRects, 1);
 	nobjects = numRegionRects * steps;
 
 	if (!allocate_objects(&work_objects, (void**)&params, sizeof(YUV_PROCESS_WORK_PARAM), nobjects))
@@ -276,7 +303,7 @@ static BOOL pool_decode(YUV_CONTEXT* context, PTP_WORK_CALLBACK cb, const BYTE* 
 		const RECTANGLE_16* rect = &regionRects[x];
 		const UINT32 height = rect->bottom - rect->top;
 
-		const UINT32 heightStep = MAX((height + steps / 2) / steps, 1);
+		const UINT32 heightStep = MAX((height + steps / 2 + 1) / steps, 1);
 		for (y = 0; y < steps; y++)
 		{
 			YUV_PROCESS_WORK_PARAM* cur = &params[waitCount];
@@ -285,11 +312,11 @@ static BOOL pool_decode(YUV_CONTEXT* context, PTP_WORK_CALLBACK cb, const BYTE* 
 
 			/* If we have an odd bounding rectangle we might end up with < steps
 			 * workers. Check we do not exceed the bounding rectangle. */
-			if (r.top >= rect->bottom)
-				continue;
 			r.bottom = r.top + heightStep;
 			if (r.bottom > rect->bottom)
 				r.bottom = rect->bottom;
+			if (r.top >= rect->bottom)
+				continue;
 			*cur = pool_decode_param(&r, context, pYUVData, iStride, DstFormat, dest, nDstStep);
 			if (!submit_object(&work_objects[waitCount], cb, cur, context))
 				goto fail;
@@ -308,6 +335,7 @@ static INLINE BOOL check_rect(const YUV_CONTEXT* yuv, const RECTANGLE_16* rect, 
 	/* Check, if the output rectangle is valid in decoded h264 frame. */
 	if ((rect->right > yuv->width) || (rect->left > yuv->width))
 		return FALSE;
+
 	if ((rect->top > yuv->height) || (rect->bottom > yuv->height))
 		return FALSE;
 
@@ -422,6 +450,7 @@ BOOL yuv444_context_decode(YUV_CONTEXT* context, BYTE type, const BYTE* pYUVData
 	if (!pool_decode_rect(context, type, pYUVData, iStride, pYUVDstData, iDstStride, regionRects,
 	                      numRegionRects))
 		return FALSE;
+
 	pYUVCDstData[0] = pYUVDstData[0];
 	pYUVCDstData[1] = pYUVDstData[1];
 	pYUVCDstData[2] = pYUVDstData[2];

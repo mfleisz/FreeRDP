@@ -52,6 +52,34 @@ struct winpr_sam
 	BOOL readOnly;
 };
 
+static WINPR_SAM_ENTRY* SamEntryFromDataA(LPCSTR User, DWORD UserLength, LPCSTR Domain,
+                                          DWORD DomainLength)
+{
+	WINPR_SAM_ENTRY* entry = calloc(1, sizeof(WINPR_SAM_ENTRY));
+	if (!entry)
+		return NULL;
+	entry->User = _strdup(User);
+	entry->UserLength = UserLength;
+	entry->Domain = _strdup(Domain);
+	entry->DomainLength = DomainLength;
+	return entry;
+}
+
+static BOOL SamAreEntriesEqual(const WINPR_SAM_ENTRY* a, const WINPR_SAM_ENTRY* b)
+{
+	if (!a || !b)
+		return FALSE;
+	if (a->UserLength != b->UserLength)
+		return FALSE;
+	if (a->DomainLength != b->DomainLength)
+		return FALSE;
+	if (strncmp(a->User, b->User, a->UserLength) != 0)
+		return FALSE;
+	if (strncmp(a->Domain, b->Domain, a->DomainLength) != 0)
+		return FALSE;
+	return TRUE;
+}
+
 WINPR_SAM* SamOpen(const char* filename, BOOL readOnly)
 {
 	FILE* fp = NULL;
@@ -72,7 +100,7 @@ WINPR_SAM* SamOpen(const char* filename, BOOL readOnly)
 
 	if (fp)
 	{
-		sam = (WINPR_SAM*)malloc(sizeof(WINPR_SAM));
+		sam = (WINPR_SAM*)calloc(1, sizeof(WINPR_SAM));
 
 		if (!sam)
 		{
@@ -108,7 +136,7 @@ static BOOL SamLookupStart(WINPR_SAM* sam)
 		return FALSE;
 
 	sam->context = NULL;
-	sam->buffer = (char*)malloc(fileSize + 2);
+	sam->buffer = (char*)calloc(fileSize + 2, 1);
 
 	if (!sam->buffer)
 		return FALSE;
@@ -139,29 +167,6 @@ static void SamLookupFinish(WINPR_SAM* sam)
 	free(sam->buffer);
 	sam->buffer = NULL;
 	sam->line = NULL;
-}
-
-static void HexStrToBin(char* str, BYTE* bin, int length)
-{
-	int i;
-	CharUpperBuffA(str, length * 2);
-
-	for (i = 0; i < length; i++)
-	{
-		bin[i] = 0;
-
-		if ((str[i * 2] >= '0') && (str[i * 2] <= '9'))
-			bin[i] |= (str[i * 2] - '0') << 4;
-
-		if ((str[i * 2] >= 'A') && (str[i * 2] <= 'F'))
-			bin[i] |= (str[i * 2] - 'A' + 10) << 4;
-
-		if ((str[i * 2 + 1] >= '0') && (str[i * 2 + 1] <= '9'))
-			bin[i] |= (str[i * 2 + 1] - '0');
-
-		if ((str[i * 2 + 1] >= 'A') && (str[i * 2 + 1] <= 'F'))
-			bin[i] |= (str[i * 2 + 1] - 'A' + 10);
-	}
 }
 
 static BOOL SamReadEntry(WINPR_SAM* sam, WINPR_SAM_ENTRY* entry)
@@ -228,10 +233,10 @@ static BOOL SamReadEntry(WINPR_SAM* sam, WINPR_SAM_ENTRY* entry)
 		entry->Domain = NULL;
 
 	if (LmHashLength == 32)
-		HexStrToBin(p[2], (BYTE*)entry->LmHash, 16);
+		winpr_HexStringToBinBuffer(p[2], LmHashLength, entry->LmHash, sizeof(entry->LmHash));
 
 	if (NtHashLength == 32)
-		HexStrToBin(p[3], (BYTE*)entry->NtHash, 16);
+		winpr_HexStringToBinBuffer(p[3], NtHashLength, (BYTE*)entry->NtHash, sizeof(entry->NtHash));
 
 	return TRUE;
 }
@@ -276,17 +281,14 @@ WINPR_SAM_ENTRY* SamLookupUserA(WINPR_SAM* sam, LPCSTR User, UINT32 UserLength, 
 {
 	size_t length;
 	BOOL found = FALSE;
-	WINPR_SAM_ENTRY* entry;
-	entry = (WINPR_SAM_ENTRY*)calloc(1, sizeof(WINPR_SAM_ENTRY));
+	WINPR_SAM_ENTRY* search = SamEntryFromDataA(User, UserLength, Domain, DomainLength);
+	WINPR_SAM_ENTRY* entry = (WINPR_SAM_ENTRY*)calloc(1, sizeof(WINPR_SAM_ENTRY));
 
-	if (!entry)
-		return NULL;
+	if (!entry || !search)
+		goto fail;
 
 	if (!SamLookupStart(sam))
-	{
-		free(entry);
-		return NULL;
-	}
+		goto fail;
 
 	while (sam->line != NULL)
 	{
@@ -301,7 +303,7 @@ WINPR_SAM_ENTRY* SamLookupUserA(WINPR_SAM* sam, LPCSTR User, UINT32 UserLength, 
 					goto out_fail;
 				}
 
-				if (strcmp(User, entry->User) == 0)
+				if (SamAreEntriesEqual(entry, search))
 				{
 					found = 1;
 					break;
@@ -315,10 +317,12 @@ WINPR_SAM_ENTRY* SamLookupUserA(WINPR_SAM* sam, LPCSTR User, UINT32 UserLength, 
 
 out_fail:
 	SamLookupFinish(sam);
+fail:
+	SamFreeEntry(sam, search);
 
 	if (!found)
 	{
-		free(entry);
+		SamFreeEntry(sam, entry);
 		return NULL;
 	}
 
@@ -328,115 +332,23 @@ out_fail:
 WINPR_SAM_ENTRY* SamLookupUserW(WINPR_SAM* sam, LPCWSTR User, UINT32 UserLength, LPCWSTR Domain,
                                 UINT32 DomainLength)
 {
-	size_t length;
-	BOOL Found = FALSE;
-	BOOL UserMatch;
-	BOOL DomainMatch;
-	LPWSTR EntryUser = NULL;
-	UINT32 EntryUserLength;
-	LPWSTR EntryDomain = NULL;
-	UINT32 EntryDomainLength;
-	WINPR_SAM_ENTRY* entry;
+	int rc;
+	WINPR_SAM_ENTRY* entry = NULL;
+	char* utfUser = NULL;
+	char* utfDomain = NULL;
+	const size_t UserCharLength = UserLength / sizeof(WCHAR);
+	const size_t DomainCharLength = DomainLength / sizeof(WCHAR);
 
-	if (!(entry = (WINPR_SAM_ENTRY*)calloc(1, sizeof(WINPR_SAM_ENTRY))))
-		return NULL;
-
-	if (!SamLookupStart(sam))
-	{
-		free(entry);
-		return NULL;
-	}
-
-	while (sam->line != NULL)
-	{
-		length = strlen(sam->line);
-
-		if (length > 1)
-		{
-			if (sam->line[0] != '#')
-			{
-				DomainMatch = 0;
-				UserMatch = 0;
-
-				if (!SamReadEntry(sam, entry))
-					goto out_fail;
-
-				if (DomainLength > 0)
-				{
-					if (entry->DomainLength > 0)
-					{
-						EntryDomainLength = (UINT32)strlen(entry->Domain) * 2;
-						EntryDomain = (LPWSTR)malloc(EntryDomainLength + 2);
-
-						if (!EntryDomain)
-							goto out_fail;
-
-						MultiByteToWideChar(CP_ACP, 0, entry->Domain, EntryDomainLength / 2,
-						                    (LPWSTR)EntryDomain, EntryDomainLength / 2);
-
-						if (DomainLength == EntryDomainLength)
-						{
-							if (memcmp(Domain, EntryDomain, DomainLength) == 0)
-							{
-								DomainMatch = 1;
-							}
-						}
-
-						free(EntryDomain);
-					}
-					else
-					{
-						DomainMatch = 0;
-					}
-				}
-				else
-				{
-					DomainMatch = 1;
-				}
-
-				if (DomainMatch)
-				{
-					EntryUserLength = (UINT32)strlen(entry->User) * 2;
-					EntryUser = (LPWSTR)malloc(EntryUserLength + 2);
-
-					if (!EntryUser)
-						goto out_fail;
-
-					MultiByteToWideChar(CP_ACP, 0, entry->User, EntryUserLength / 2,
-					                    (LPWSTR)EntryUser, EntryUserLength / 2);
-
-					if (UserLength == EntryUserLength)
-					{
-						if (memcmp(User, EntryUser, UserLength) == 0)
-						{
-							UserMatch = 1;
-						}
-					}
-
-					free(EntryUser);
-
-					if (UserMatch)
-					{
-						Found = TRUE;
-						break;
-					}
-				}
-			}
-		}
-
-		SamResetEntry(entry);
-		sam->line = strtok_s(NULL, "\n", &sam->context);
-	}
-
-out_fail:
-	SamLookupFinish(sam);
-
-	if (!Found)
-	{
-		free(entry);
-		return NULL;
-	}
-
+	rc = ConvertFromUnicode(CP_UTF8, 0, User, UserCharLength, &utfUser, 0, NULL, NULL);
+	if ((rc < 0) || ((size_t)rc != UserCharLength))
+		goto fail;
+	rc = ConvertFromUnicode(CP_UTF8, 0, Domain, DomainCharLength, &utfDomain, 0, NULL, NULL);
+	if ((rc < 0) || ((size_t)rc != DomainCharLength))
+		goto fail;
+	entry = SamLookupUserA(sam, utfUser, UserCharLength, utfDomain, DomainCharLength);
+fail:
+	free(utfUser);
+	free(utfDomain);
 	return entry;
 }
 

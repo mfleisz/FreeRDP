@@ -197,6 +197,11 @@ static void rfx_encoder_tile_free(void* obj)
 
 RFX_CONTEXT* rfx_context_new(BOOL encoder)
 {
+	return rfx_context_new_ex(encoder, 0);
+}
+
+RFX_CONTEXT* rfx_context_new_ex(BOOL encoder, UINT32 ThreadingFlags)
+{
 	HKEY hKey;
 	LONG status;
 	DWORD dwType;
@@ -257,6 +262,8 @@ RFX_CONTEXT* rfx_context_new(BOOL encoder)
 	if (!priv->BufferPool)
 		goto error_BufferPool;
 
+	if (!(ThreadingFlags & THREADING_FLAGS_DISABLE_THREADS))
+	{
 #ifdef _WIN32
 	{
 		BOOL isVistaOrLater;
@@ -265,7 +272,7 @@ RFX_CONTEXT* rfx_context_new(BOOL encoder)
 		verinfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFOA);
 		GetVersionExA(&verinfo);
 		isVistaOrLater =
-		    ((verinfo.dwMajorVersion >= 6) && (verinfo.dwMinorVersion >= 0)) ? TRUE : FALSE;
+			((verinfo.dwMajorVersion >= 6) && (verinfo.dwMinorVersion >= 0)) ? TRUE : FALSE;
 		priv->UseThreads = isVistaOrLater;
 	}
 #else
@@ -281,18 +288,23 @@ RFX_CONTEXT* rfx_context_new(BOOL encoder)
 		dwSize = sizeof(dwValue);
 
 		if (RegQueryValueEx(hKey, _T("UseThreads"), NULL, &dwType, (BYTE*)&dwValue, &dwSize) ==
-		    ERROR_SUCCESS)
+			ERROR_SUCCESS)
 			priv->UseThreads = dwValue ? 1 : 0;
 
 		if (RegQueryValueEx(hKey, _T("MinThreadCount"), NULL, &dwType, (BYTE*)&dwValue, &dwSize) ==
-		    ERROR_SUCCESS)
+			ERROR_SUCCESS)
 			priv->MinThreadCount = dwValue;
 
 		if (RegQueryValueEx(hKey, _T("MaxThreadCount"), NULL, &dwType, (BYTE*)&dwValue, &dwSize) ==
-		    ERROR_SUCCESS)
+			ERROR_SUCCESS)
 			priv->MaxThreadCount = dwValue;
 
 		RegCloseKey(hKey);
+	}
+	}
+	else
+	{
+		priv->UseThreads = FALSE;
 	}
 
 	if (priv->UseThreads)
