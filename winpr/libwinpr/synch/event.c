@@ -88,7 +88,7 @@ BOOL winpr_event_init(WINPR_EVENT_IMPL* event)
 	return TRUE;
 
 out_error:
-	winpr_event_uninit(&event);
+	winpr_event_uninit(event);
 	return FALSE;
 #endif
 }
@@ -129,7 +129,7 @@ BOOL winpr_event_reset(WINPR_EVENT_IMPL* event)
 			ret = eventfd_read(event->fds[0], &value);
 #else
 			char value;
-			ret = read(event->fds[1], &value, 1);
+			ret = read(event->fds[0], &value, 1);
 #endif
 		} while (ret < 0 && errno == EINTR);
 	} while (ret >= 0);
