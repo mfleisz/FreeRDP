@@ -115,6 +115,10 @@ foreach(${MODULE_PREFIX}_SUBMODULE ${${MODULE_PREFIX}_SUBMODULES})
     add_subdirectory(${${MODULE_PREFIX}_SUBMODULE})
 endforeach()
 
+if (NOT WITH_DSP_FFMPEG AND NOT WITH_FAAC)
+    message(WARNING "Compiling without WITH_DSP_FFMPEG and WITH_FAAC, AAC encoder support disabled")
+endif ()
+
 ## cmake source properties are only seen by targets in the same CMakeLists.txt
 ## therefore primitives and codecs need to be defined here
 
@@ -391,7 +395,11 @@ endif()
 
 target_link_libraries(${MODULE_NAME} ${PRIVATE_KEYWORD} ${LIBFREERDP_LIBS} winpr)
 
-install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT libraries EXPORT FreeRDPTargets)
+install(TARGETS ${MODULE_NAME} COMPONENT libraries EXPORT FreeRDPTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
 if (WITH_DEBUG_SYMBOLS AND MSVC AND BUILD_SHARED_LIBS)
     get_target_property(OUTPUT_FILENAME ${MODULE_NAME} OUTPUT_NAME)
     install(FILES ${CMAKE_PDB_BINARY_DIR}/${OUTPUT_FILENAME}.pdb DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT symbols)

@@ -25,6 +25,7 @@
 
 #include <winpr/wtypes.h>
 #include <winpr/crt.h>
+#include <winpr/file.h>
 
 #include <winpr/image.h>
 
@@ -153,7 +154,7 @@ int winpr_bitmap_write(const char* filename, const BYTE* data, int width, int he
 	UINT32 img_size = width * height * (bpp / 8);
 
 	int ret = -1;
-	fp = fopen(filename, "w+b");
+	fp = winpr_fopen(filename, "w+b");
 
 	if (!fp)
 	{
@@ -414,7 +415,8 @@ int winpr_image_read(wImage* image, const char* filename)
 	FILE* fp;
 	BYTE sig[8];
 	int status = -1;
-	fp = fopen(filename, "rb");
+
+	fp = winpr_fopen(filename, "rb");
 
 	if (!fp)
 	{

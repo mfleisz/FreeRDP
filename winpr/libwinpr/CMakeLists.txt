@@ -78,13 +78,16 @@ macro (winpr_definition_add)
 endmacro()
 
 set(CMAKE_REQUIRED_LIBRARIES rt)
-check_function_exists(timer_create TIMER_CREATE)
-check_function_exists(timer_delete TIMER_DELETE)
-check_function_exists(timer_settime TIMER_SETTIME)
-check_function_exists(timer_gettime TIMER_GETTIME)
-if (TIMER_CREATE AND TIMER_DELETE AND TIMER_SETTIME AND TIMER_GETTIME)
-    add_definitions(-DWITH_POSIX_TIMER)
-	winpr_library_add_private(rt)
+
+if(NOT IOS)
+    check_function_exists(timer_create TIMER_CREATE)
+    check_function_exists(timer_delete TIMER_DELETE)
+    check_function_exists(timer_settime TIMER_SETTIME)
+    check_function_exists(timer_gettime TIMER_GETTIME)
+    if (TIMER_CREATE AND TIMER_DELETE AND TIMER_SETTIME AND TIMER_GETTIME)
+        add_definitions(-DWITH_POSIX_TIMER)
+        winpr_library_add_private(rt)
+    endif()
 endif()
 
 if (ANDROID)
@@ -142,7 +145,11 @@ endif()
 
 add_definitions(${WINPR_DEFINITIONS})
 target_link_libraries(${MODULE_NAME} ${PRIVATE_KEYWORD} ${WINPR_LIBS_PRIVATE} ${PUBLIC_KEYWORD} ${WINPR_LIBS_PUBLIC})
-install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT libraries EXPORT WinPRTargets)
+install(TARGETS ${MODULE_NAME} COMPONENT libraries EXPORT WinPRTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
 if (WITH_DEBUG_SYMBOLS AND MSVC AND BUILD_SHARED_LIBS)
     get_target_property(OUTPUT_FILENAME ${MODULE_NAME} OUTPUT_NAME)
     install(FILES ${CMAKE_PDB_BINARY_DIR}/${OUTPUT_FILENAME}.pdb DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT symbols)

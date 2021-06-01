@@ -766,7 +766,7 @@ static HANDLE FileCreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dw
 			}
 		}
 
-		fp = fopen(pFile->lpFileName, "ab");
+		fp = winpr_fopen(pFile->lpFileName, "ab");
 		if (!fp)
 		{
 			SetLastError(map_posix_err(errno));
@@ -800,7 +800,7 @@ static HANDLE FileCreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dw
 	}
 
 	if (NULL == fp)
-		fp = fopen(pFile->lpFileName, mode);
+		fp = winpr_fopen(pFile->lpFileName, mode);
 
 	pFile->fp = fp;
 	if (!pFile->fp)
@@ -1357,4 +1357,31 @@ HANDLE GetFileHandleForFileDescriptor(int fd)
 
 	return (HANDLE)pFile;
 #endif /* _WIN32 */
+}
+
+FILE* winpr_fopen(const char* path, const char* mode)
+{
+#ifndef _WIN32
+	return fopen(path, mode);
+#else
+	LPWSTR lpPathW = NULL;
+	LPWSTR lpModeW = NULL;
+	FILE* result = NULL;
+
+	if (!path || !mode)
+		return NULL;
+
+	if (ConvertToUnicode(CP_UTF8, 0, path, -1, &lpPathW, 0) < 1)
+		goto cleanup;
+
+	if (ConvertToUnicode(CP_UTF8, 0, mode, -1, &lpModeW, 0) < 1)
+		goto cleanup;
+
+	result = _wfopen(lpPathW, lpModeW);
+
+cleanup:
+	free(lpPathW);
+	free(lpModeW);
+	return result;
+#endif
 }

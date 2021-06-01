@@ -180,6 +180,7 @@ endif()
 
 if(BUILD_TESTING)
 	set(EXPORT_ALL_SYMBOLS TRUE)
+	set(CTEST_OUTPUT_ON_FAILURE TRUE)
 elseif(NOT DEFINED EXPORT_ALL_SYMBOLS)
 	set(EXPORT_ALL_SYMBOLS FALSE)
 endif()
@@ -354,17 +355,9 @@ else()
 endif()
 
 if(NOT WIN32)
-	CHECK_SYMBOL_EXISTS(pthread_mutex_timedlock pthread.h HAVE_PTHREAD_MUTEX_TIMEDLOCK_SYMBOL)
-	if (NOT HAVE_PTHREAD_MUTEX_TIMEDLOCK_SYMBOL)
-		CHECK_LIBRARY_EXISTS(pthread pthread_mutex_timedlock "" HAVE_PTHREAD_MUTEX_TIMEDLOCK_LIB)
-	endif (NOT HAVE_PTHREAD_MUTEX_TIMEDLOCK_SYMBOL)
-	if (NOT HAVE_PTHREAD_MUTEX_TIMEDLOCK_LIB)
-		CHECK_LIBRARY_EXISTS(pthreads pthread_mutex_timedlock "" HAVE_PTHREAD_MUTEX_TIMEDLOCK_LIBS)
-	endif (NOT HAVE_PTHREAD_MUTEX_TIMEDLOCK_LIB)
-
-	if (HAVE_PTHREAD_MUTEX_TIMEDLOCK_SYMBOL OR HAVE_PTHREAD_MUTEX_TIMEDLOCK_LIB OR HAVE_PTHREAD_MUTEX_TIMEDLOCK_LIBS)
-		set(HAVE_PTHREAD_MUTEX_TIMEDLOCK ON)
-	endif (HAVE_PTHREAD_MUTEX_TIMEDLOCK_SYMBOL OR HAVE_PTHREAD_MUTEX_TIMEDLOCK_LIB OR HAVE_PTHREAD_MUTEX_TIMEDLOCK_LIBS)
+	list(APPEND CMAKE_REQUIRED_LIBRARIES pthread)
+	check_symbol_exists(pthread_mutex_timedlock pthread.h HAVE_PTHREAD_MUTEX_TIMEDLOCK)
+	list(REMOVE_ITEM CMAKE_REQUIRED_LIBRARIES pthread)
 endif()
 
 # Enable address sanitizer, where supported and when required
@@ -478,6 +471,14 @@ if(MSVC)
 
 endif()
 
+if(ANDROID)
+	# workaround for https://github.com/android-ndk/ndk/issues/243
+	string(REPLACE "-g " "" CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
+	string(REPLACE "-g " "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
+	set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g")
+	set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
+endif()
+
 if(WIN32)
 	add_definitions(-DUNICODE -D_UNICODE)
 	add_definitions(-D_CRT_SECURE_NO_WARNINGS)
@@ -518,10 +519,6 @@ if(WIN32)
 	if (FREERDP_EXTERNAL_SSL_PATH)
 		set(OPENSSL_ROOT_DIR ${FREERDP_EXTERNAL_SSL_PATH})
 	endif()
-endif()
-
-if(IOS)
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -isysroot ${CMAKE_IOS_SDK_ROOT} -g")
 endif()
 
 add_definitions(-DWINPR_EXPORTS -DFREERDP_EXPORTS)
@@ -607,6 +604,11 @@ if(ANDROID)
 	endif()
 	set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -llog")
 
+	# CMAKE_PREFIX_PATH detection is broken in most Android toolchain files
+	# Append it to CMAKE_FIND_ROOT_PATH and avoid potential duplicates
+	list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_PREFIX_PATH})
+	list(REMOVE_DUPLICATES CMAKE_FIND_ROOT_PATH)
+
 	if (NOT FREERDP_EXTERNAL_PATH)
 		if (IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/external/")
 			set (FREERDP_EXTERNAL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/")
@@ -645,7 +647,9 @@ if(UNIX OR CYGWIN)
 	if (FREEBSD)
 		list(REMOVE_ITEM CMAKE_REQUIRED_INCLUDES ${EPOLLSHIM_INCLUDE_DIR})
 	endif()
-	check_include_files(poll.h HAVE_POLL_H)
+	if(NOT APPLE)
+		check_include_files(poll.h HAVE_POLL_H)
+	endif()
 	list(APPEND CMAKE_REQUIRED_LIBRARIES m)
 	check_symbol_exists(ceill math.h HAVE_MATH_C99_LONG_DOUBLE)
 	list(REMOVE_ITEM CMAKE_REQUIRED_LIBRARIES m)
@@ -1042,15 +1046,6 @@ endif()
 add_subdirectory(include)
 
 add_subdirectory(libfreerdp)
-
-if (IOS)
-	set(CMAKE_OSX_DEPLOYMENT_TARGET "10.0")
-	if (IOS_PLATFORM MATCHES "SIMULATOR")
-		set(CMAKE_OSX_SYSROOT "iphonesimulator")
-	else()
-		set(CMAKE_OSX_SYSROOT "iphoneos")
-	endif()
-endif()
 
 # RdTk
 include_directories("${CMAKE_SOURCE_DIR}/rdtk/include")

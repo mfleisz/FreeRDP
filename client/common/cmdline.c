@@ -93,7 +93,7 @@ static BOOL freerdp_path_valid(const char* path, BOOL* special)
 	                ? TRUE
 	                : FALSE;
 	if (!isSpecial)
-		isPath = PathFileExistsA(path);
+		isPath = winpr_PathFileExists(path);
 
 	if (special)
 		*special = isSpecial;
@@ -151,9 +151,9 @@ static BOOL freerdp_client_add_drive(rdpSettings* settings, const char* path, co
 	if (name)
 	{
 		/* Path was entered as secondary argument, swap */
-		if (PathFileExistsA(name))
+		if (winpr_PathFileExists(name))
 		{
-			if (!PathFileExistsA(path) || (!PathIsRelativeA(name) && PathIsRelativeA(path)))
+			if (!winpr_PathFileExists(path) || (!PathIsRelativeA(name) && PathIsRelativeA(path)))
 			{
 				const char* tmp = path;
 				path = name;
@@ -270,7 +270,7 @@ static BOOL value_to_uint(const char* value, ULONGLONG* result, ULONGLONG min, U
 
 BOOL freerdp_client_print_version(void)
 {
-	printf("This is FreeRDP version %s (%s)\n", FREERDP_VERSION_FULL, GIT_REVISION);
+	printf("This is FreeRDP version %s (%s)\n", FREERDP_VERSION_FULL, FREERDP_GIT_REVISION);
 	return TRUE;
 }
 
@@ -1831,6 +1831,7 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 				UINT32 i;
 				char** p;
 				size_t count = 0;
+				UINT32* MonitorIds;
 				p = CommandLineParseCommaSeparatedValues(arg->Value, &count);
 
 				if (!p)
@@ -1839,16 +1840,22 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 				if (count > 16)
 					count = 16;
 
-				settings->NumMonitorIds = (UINT32)count;
+				if (!freerdp_settings_set_pointer_len(settings, FreeRDP_MonitorIds, NULL, count))
+				{
+					free(p);
+					return FALSE;
+				}
 
-				for (i = 0; i < settings->NumMonitorIds; i++)
+				MonitorIds =
+				    freerdp_settings_get_pointer_array_writable(settings, FreeRDP_MonitorIds, 0);
+				for (i = 0; i < count; i++)
 				{
 					LONGLONG val;
 
 					if (!value_to_int(p[i], &val, 0, UINT16_MAX))
 						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 
-					settings->MonitorIds[i] = (UINT32)val;
+					MonitorIds[i] = (UINT32)val;
 				}
 
 				free(p);
@@ -3109,16 +3116,15 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		CommandLineSwitchCase(arg, "reconnect-cookie")
 		{
 			BYTE* base64 = NULL;
-			int length;
+			size_t length;
 			if (!arg->Value)
 				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 
-			crypto_base64_decode((const char*)(arg->Value), (int)strlen(arg->Value), &base64,
-			                     &length);
+			crypto_base64_decode((const char*)(arg->Value), strlen(arg->Value), &base64, &length);
 
 			if ((base64 != NULL) && (length == sizeof(ARC_SC_PRIVATE_PACKET)))
 			{
-				memcpy(settings->ServerAutoReconnectCookie, base64, (size_t)length);
+				memcpy(settings->ServerAutoReconnectCookie, base64, length);
 			}
 			else
 			{
@@ -3773,7 +3779,7 @@ BOOL freerdp_client_load_addins(rdpChannels* channels, rdpSettings* settings)
 			return FALSE;
 	}
 
-	if (settings->SupportGeometryTracking)
+	if (freerdp_settings_get_bool(settings, FreeRDP_SupportGeometryTracking))
 	{
 		char* p[1];
 		size_t count;
@@ -3784,7 +3790,7 @@ BOOL freerdp_client_load_addins(rdpChannels* channels, rdpSettings* settings)
 			return FALSE;
 	}
 
-	if (settings->SupportVideoOptimized)
+	if (freerdp_settings_get_bool(settings, FreeRDP_SupportVideoOptimized))
 	{
 		char* p[1];
 		size_t count;
