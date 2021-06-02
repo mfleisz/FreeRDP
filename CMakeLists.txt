@@ -454,12 +454,6 @@ if(MSVC)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Gd")
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W3")
 
-	if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-		add_definitions(-D_AMD64_)
-	else()
-		add_definitions(-D_X86_)
-	endif()
-
 	set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR})
 	set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR})
 
@@ -592,6 +586,12 @@ if(ANDROID)
 
 	if (${ANDROID_ABI} STREQUAL "armeabi")
 		set (WITH_NEON OFF)
+	endif()
+
+	if(ANDROID_ABI STREQUAL arm64-v8a)
+		# https://github.com/android/ndk/issues/910
+		add_definitions(-D__ARM_NEON__)
+		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfloat-abi=softfp")
 	endif()
 
 	if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
