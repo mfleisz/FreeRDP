@@ -122,7 +122,7 @@ static BOOL audin_alsa_set_params(AudinALSADevice* alsa, snd_pcm_t* capture_hand
 
 static DWORD WINAPI audin_alsa_thread_func(LPVOID arg)
 {
-	long error;
+	int error;
 	BYTE* buffer;
 	snd_pcm_t* capture_handle = NULL;
 	AudinALSADevice* alsa = (AudinALSADevice*)arg;
@@ -183,8 +183,8 @@ static DWORD WINAPI audin_alsa_thread_func(LPVOID arg)
 			break;
 		}
 
-		error =
-		    alsa->receive(&alsa->aformat, buffer, error * alsa->bytes_per_frame, alsa->user_data);
+		error = alsa->receive(&alsa->aformat, buffer, (long)error * alsa->bytes_per_frame,
+		                      alsa->user_data);
 
 		if (error)
 		{

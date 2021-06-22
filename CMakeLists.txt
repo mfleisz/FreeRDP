@@ -18,9 +18,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.4)
 
-project(FreeRDP C CXX)
+project(FreeRDP C)
 
 if(NOT DEFINED VENDOR)
 	set(VENDOR "FreeRDP" CACHE STRING "FreeRDP package vendor")
@@ -39,7 +39,7 @@ set(CMAKE_COLOR_MAKEFILE ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Include our extra modules
-set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/)
+set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/)
 
 if((CMAKE_SYSTEM_NAME MATCHES "WindowsStore") AND (CMAKE_SYSTEM_VERSION MATCHES "10.0"))
 	set(UWP 1)
@@ -67,7 +67,6 @@ include(ConfigOptions)
 include(ComplexLibrary)
 include(FeatureSummary)
 include(CheckCCompilerFlag)
-include(CheckCXXCompilerFlag)
 include(GNUInstallDirsWrapper)
 include(CMakePackageConfigHelpers)
 include(InstallFreeRDPMan)
@@ -82,8 +81,8 @@ endif()
 set(WITH_LIBRARY_VERSIONING "ON")
 
 set(RAW_VERSION_STRING "3.0.0-dev")
-if(EXISTS "${CMAKE_SOURCE_DIR}/.source_tag")
-	file(READ ${CMAKE_SOURCE_DIR}/.source_tag RAW_VERSION_STRING)
+if(EXISTS "${PROJECT_SOURCE_DIR}/.source_tag")
+	file(READ ${PROJECT_SOURCE_DIR}/.source_tag RAW_VERSION_STRING)
 elseif(USE_VERSION_FROM_GIT_TAG)
 	git_get_exact_tag(_GIT_TAG --tags --always)
 	if (NOT ${_GIT_TAG} STREQUAL "n/a")
@@ -130,21 +129,13 @@ endif(CMAKE_CROSSCOMPILING)
 
 find_program(CCACHE ccache)
 if(CCACHE AND WITH_CCACHE)
-	if(CMAKE_VERSION VERSION_GREATER 3.3.2)
-		if(NOT DEFINED CMAKE_C_COMPILER_LAUNCHER)
-			SET(CMAKE_C_COMPILER_LAUNCHER ${CCACHE})
-		endif(NOT DEFINED CMAKE_C_COMPILER_LAUNCHER)
-		if(NOT DEFINED CMAKE_CXX_COMPILER_LAUNCHER)
-			SET(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE})
-		endif(NOT DEFINED CMAKE_CXX_COMPILER_LAUNCHER)
-	else()
-		set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ${CCACHE})
-		set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ${CCACHE})
-	endif()
+	if(NOT DEFINED CMAKE_C_COMPILER_LAUNCHER)
+		SET(CMAKE_C_COMPILER_LAUNCHER ${CCACHE})
+	endif(NOT DEFINED CMAKE_C_COMPILER_LAUNCHER)
 endif(CCACHE AND WITH_CCACHE)
 
-if(EXISTS "${CMAKE_SOURCE_DIR}/.source_version" )
-	file(READ ${CMAKE_SOURCE_DIR}/.source_version GIT_REVISION)
+if(EXISTS "${PROJECT_SOURCE_DIR}/.source_version" )
+	file(READ ${PROJECT_SOURCE_DIR}/.source_version GIT_REVISION)
 
   string(STRIP ${GIT_REVISION} GIT_REVISION)
 else()
@@ -170,13 +161,12 @@ if(NOT CMAKE_BUILD_TYPE)
 	set(CMAKE_BUILD_TYPE "Release")
 endif()
 
-if(NOT DEFINED BUILD_SHARED_LIBS)
-	if(IOS)
-		set(BUILD_SHARED_LIBS OFF)
-	else()
-		set(BUILD_SHARED_LIBS ON)
-	endif()
+set(LIB_DEFAULT ON)
+if (IOS)
+	set(LIB_DEFAULT OFF)
 endif()
+option(BUILD_SHARED_LIBS "Build shared libraries" ${LIB_DEFAULT})
+option(EXPORT_ALL_SYMBOLS "Export all symbols form library" OFF)
 
 if(BUILD_TESTING)
 	set(EXPORT_ALL_SYMBOLS TRUE)
@@ -254,12 +244,6 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		else()
 			set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=i686")
 		endif()
-	else()
-		if(CMAKE_POSITION_INDEPENDENT_CODE)
-			if(${CMAKE_VERSION} VERSION_LESS 2.8.9)
-				set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
-			endif()
-		endif()
 	endif()
 
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
@@ -275,10 +259,6 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	CHECK_C_COMPILER_FLAG(-Wno-deprecated-declarations Wno-deprecated-declarations)
 	if(Wno-deprecated-declarations)
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-deprecated-declarations")
-	endif()
-	CHECK_CXX_COMPILER_FLAG(-Wno-deprecated-declarations Wno-deprecated-declarationsCXX)
-	if(Wno-deprecated-declarationsCXX)
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
 	endif()
 
 	if(NOT EXPORT_ALL_SYMBOLS)
@@ -306,7 +286,6 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		add_definitions(-DNDEBUG)
 	else()
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g")
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
 	endif()
 endif()
 
@@ -317,12 +296,7 @@ if (CMAKE_GENERATOR MATCHES "Unix Makefile*")
 		string(TOUPPER ${CMAKE_BUILD_TYPE} UPPER_BUILD_TYPE)
 		CHECK_C_COMPILER_FLAG (-Wno-builtin-macro-redefined Wno-builtin-macro-redefined)
 		if(Wno-builtin-macro-redefined)
-			set(CMAKE_C_FLAGS_${UPPER_BUILD_TYPE} "${CMAKE_C_FLAGS_${UPPER_BUILD_TYPE}} -Wno-builtin-macro-redefined -D__FILE__='\"$(subst ${CMAKE_BINARY_DIR}/,,$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<)))\"'")
-		endif()
-
-		CHECK_CXX_COMPILER_FLAG (-Wno-builtin-macro-redefined Wno-builtin-macro-redefinedCXX)
-		if(Wno-builtin-macro-redefinedCXX)
-			set(CMAKE_CXX_FLAGS_${UPPER_BUILD_TYPE} "${CMAKE_CXX_FLAGS_${UPPER_BUILD_TYPE}} -Wno-builtin-macro-redefined -D__FILE__='\"$(subst ${CMAKE_BINARY_DIR}/,,$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<)))\"'")
+			set(CMAKE_C_FLAGS_${UPPER_BUILD_TYPE} "${CMAKE_C_FLAGS_${UPPER_BUILD_TYPE}} -Wno-builtin-macro-redefined -D__FILE__='\"$(subst ${PROJCET_BINARY_DIR}/,,$(subst ${PROJECT_SOURCE_DIR}/,,$(abspath $<)))\"'")
 		endif()
 	endif()
 endif()
@@ -335,10 +309,6 @@ if(${CMAKE_C_COMPILER_ID} STREQUAL "Clang")
 	CHECK_C_COMPILER_FLAG(-Wno-deprecated-declarations Wno-deprecated-declarations)
 	if(Wno-deprecated-declarations)
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-deprecated-declarations")
-	endif()
-	CHECK_CXX_COMPILER_FLAG(-Wno-deprecated-declarations Wno-deprecated-declarationsCXX)
-	if(Wno-deprecated-declarationsCXX)
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
 	endif()
 endif()
 
@@ -369,11 +339,11 @@ if(${CMAKE_C_COMPILER_ID} STREQUAL "Clang" OR CMAKE_COMPILER_IS_GNUCC)
 	endif()
 
 	set(CMAKE_REQUIRED_LINK_OPTIONS_SAVED ${CMAKE_REQUIRED_LINK_OPTIONS})
-	file(WRITE ${CMAKE_BINARY_DIR}/foo.txt "")
+	file(WRITE ${PROJECT_BINARY_DIR}/foo.txt "")
 	if(WITH_SANITIZE_ADDRESS)
 		list(APPEND CMAKE_REQUIRED_LINK_OPTIONS "-fsanitize=address")
 		CHECK_C_COMPILER_FLAG ("-fsanitize=address" fsanitize-address)
-		CHECK_C_COMPILER_FLAG ("-fsanitize-blacklist=${CMAKE_BINARY_DIR}/foo.txt" fsanitize-blacklist)
+		CHECK_C_COMPILER_FLAG ("-fsanitize-blacklist=${PROJECT_BINARY_DIR}/foo.txt" fsanitize-blacklist)
 		CHECK_C_COMPILER_FLAG ("-fsanitize-address-use-after-scope" fsanitize-address-use-after-scope)
 
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address")
@@ -381,7 +351,7 @@ if(${CMAKE_C_COMPILER_ID} STREQUAL "Clang" OR CMAKE_COMPILER_IS_GNUCC)
 		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
 
 		if(fsanitize-blacklist)
-			set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize-blacklist=${CMAKE_SOURCE_DIR}/scripts/blacklist-address-sanitizer.txt")
+			set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize-blacklist=${PROJECT_SOURCE_DIR}/scripts/blacklist-address-sanitizer.txt")
 		endif(fsanitize-blacklist)
 
 		if(fsanitize-address-use-after-scope)
@@ -390,7 +360,7 @@ if(${CMAKE_C_COMPILER_ID} STREQUAL "Clang" OR CMAKE_COMPILER_IS_GNUCC)
 	elseif(WITH_SANITIZE_MEMORY)
 		list(APPEND CMAKE_REQUIRED_LINK_OPTIONS "-fsanitize=memory")
 		CHECK_C_COMPILER_FLAG ("-fsanitize=memory" fsanitize-memory)
-		CHECK_C_COMPILER_FLAG ("-fsanitize-blacklist=${CMAKE_BINARY_DIR}/foo.txt" fsanitize-blacklist)
+		CHECK_C_COMPILER_FLAG ("-fsanitize-blacklist=${PROJECT_BINARY_DIR}/foo.txt" fsanitize-blacklist)
 		CHECK_C_COMPILER_FLAG ("-fsanitize-memory-use-after-dtor" fsanitize-memory-use-after-dtor)
 		CHECK_C_COMPILER_FLAG ("-fsanitize-memory-track-origins" fsanitize-memory-track-origins)
 
@@ -399,7 +369,7 @@ if(${CMAKE_C_COMPILER_ID} STREQUAL "Clang" OR CMAKE_COMPILER_IS_GNUCC)
 		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=memory")
 
 		if(fsanitize-blacklist)
-			set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize-blacklist=${CMAKE_SOURCE_DIR}/scripts/blacklist-memory-sanitizer.txt")
+			set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize-blacklist=${PROJECT_SOURCE_DIR}/scripts/blacklist-memory-sanitizer.txt")
 		endif(fsanitize-blacklist)
 
 		if (fsanitize-memory-use-after-dtor)
@@ -412,17 +382,17 @@ if(${CMAKE_C_COMPILER_ID} STREQUAL "Clang" OR CMAKE_COMPILER_IS_GNUCC)
 	elseif(WITH_SANITIZE_THREAD)
 		list(APPEND CMAKE_REQUIRED_LINK_OPTIONS "-fsanitize=thread")
 		CHECK_C_COMPILER_FLAG ("-fsanitize=thread" fsanitize-thread)
-		CHECK_C_COMPILER_FLAG ("-fsanitize-blacklist=${CMAKE_BINARY_DIR}/foo.txt" fsanitize-blacklist)
+		CHECK_C_COMPILER_FLAG ("-fsanitize-blacklist=${PROJECT_BINARY_DIR}/foo.txt" fsanitize-blacklist)
 
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=thread")
 		if(fsanitize-blacklist)
-			set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize-blacklist=${CMAKE_SOURCE_DIR}/scripts/blacklist-thread-sanitizer.txt")
+			set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize-blacklist=${PROJECT_SOURCE_DIR}/scripts/blacklist-thread-sanitizer.txt")
 		endif(fsanitize-blacklist)
 		set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=thread")
 		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread")
 	endif()
 
-	file(REMOVE ${CMAKE_BINARY_DIR}/foo.txt)
+	file(REMOVE ${PROJECT_BINARY_DIR}/foo.txt)
 	set(CMAKE_REQUIRED_LINK_OPTIONS ${CMAKE_REQUIRED_LINK_OPTIONS_SAVED})
 
 	if (WITH_NO_UNDEFINED)
@@ -440,10 +410,6 @@ if(MSVC)
 	# NMake is otherwise complaining.
 	foreach (flags_var_to_scrub
 		CMAKE_C_FLAGS
-		CMAKE_CXX_FLAGS
-		CMAKE_CXX_FLAGS_RELEASE
-		CMAKE_CXX_FLAGS_RELWITHDEBINFO
-		CMAKE_CXX_FLAGS_MINSIZEREL
 		CMAKE_C_FLAGS_RELEASE
 		CMAKE_C_FLAGS_RELWITHDEBINFO
 		CMAKE_C_FLAGS_MINSIZEREL)
@@ -460,7 +426,6 @@ if(MSVC)
 	if(CMAKE_BUILD_TYPE STREQUAL "Release")
 	else()
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Zi")
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zi")
 	endif()
 
 endif()
@@ -468,9 +433,7 @@ endif()
 if(ANDROID)
 	# workaround for https://github.com/android-ndk/ndk/issues/243
 	string(REPLACE "-g " "" CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
-	string(REPLACE "-g " "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
 	set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g")
-	set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
 endif()
 
 if(WIN32)
@@ -481,9 +444,9 @@ if(WIN32)
 
 	set(CMAKE_USE_RELATIVE_PATH ON)
 	if (${CMAKE_GENERATOR} MATCHES "NMake Makefile*" OR ${CMAKE_GENERATOR} MATCHES "Ninja*" OR ${CMAKE_GENERATOR} MATCHES "Unix Makefiles")
-		set(CMAKE_PDB_BINARY_DIR ${CMAKE_BINARY_DIR})
+		set(CMAKE_PDB_BINARY_DIR ${PROJECT_BINARY_DIR})
 	elseif (${CMAKE_GENERATOR} MATCHES "Visual Studio*")
-		set(CMAKE_PDB_BINARY_DIR "${CMAKE_BINARY_DIR}/\${CMAKE_INSTALL_CONFIG_NAME}")
+		set(CMAKE_PDB_BINARY_DIR "${PROJECT_BINARY_DIR}/\${CMAKE_INSTALL_CONFIG_NAME}")
 	else()
 		message(FATAL_ERROR "Unknown generator ${CMAKE_GENERATOR}")
 	endif()
@@ -515,7 +478,7 @@ if(WIN32)
 	endif()
 endif()
 
-add_definitions(-DWINPR_EXPORTS -DFREERDP_EXPORTS)
+add_definitions(-DFREERDP_EXPORTS)
 
 # Include files
 if(NOT IOS)
@@ -564,7 +527,6 @@ if(APPLE)
 
 	if (WITH_VERBOSE)
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -v")
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -v")
 	endif()
 endif(APPLE)
 
@@ -623,8 +585,8 @@ if(ANDROID)
 	set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH )
 
 	if (WITH_GPROF)
-		CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/scripts/gprof_generate.sh.cmake
-			${CMAKE_BINARY_DIR}/scripts/gprof_generate.sh @ONLY)
+		CONFIGURE_FILE(${PROJECT_SOURCE_DIR}/scripts/gprof_generate.sh.cmake
+			${PROJECT_BINARY_DIR}/scripts/gprof_generate.sh @ONLY)
 	endif(WITH_GPROF)
 endif()
 
@@ -962,7 +924,7 @@ set(FREERDP_EXTENSION_PATH "${CMAKE_INSTALL_FULL_LIBDIR}/freerdp${FREERDP_VERSIO
 # Proxy plugins path
 if(NOT DEFINED PROXY_PLUGINDIR)
 	message("using default plugins location")
-  	set(FREERDP_PROXY_PLUGINDIR "${CMAKE_BINARY_DIR}/server/proxy/plugins")
+  	set(FREERDP_PROXY_PLUGINDIR "${PROJECT_BINARY_DIR}/server/proxy/plugins")
 else()
 	set(FREERDP_PROXY_PLUGINDIR "${PROXY_PLUGINDIR}")
 endif()
@@ -1010,29 +972,28 @@ if(BUILD_TESTING)
 	enable_testing()
 
 	if(MSVC)
-		set(TESTING_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+		set(TESTING_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}")
 	else()
-		set(TESTING_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Testing")
+		set(TESTING_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/Testing")
 	endif()
 endif()
 
 # WinPR
-include_directories("${CMAKE_SOURCE_DIR}/winpr/include")
-include_directories("${CMAKE_BINARY_DIR}/winpr/include")
+if (FREERDP_UNIFIED_BUILD)
+	add_subdirectory(winpr)
+	if (WITH_WAYLAND)
+		add_subdirectory(uwac)
+	endif()
+	if (WITH_SERVER)
+		add_subdirectory(rdtk)
+	endif()
 
-if (${CMAKE_VERSION} VERSION_LESS 2.8.12)
-	set(PUBLIC_KEYWORD "")
-	set(PRIVATE_KEYWORD "")
+	include_directories(${PROJECT_SOURCE_DIR}/winpr/include)
+	include_directories(${PROJECT_BINARY_DIR}/winpr/include)
 else()
-	set(PUBLIC_KEYWORD "PUBLIC")
-	set(PRIVATE_KEYWORD "PRIVATE")
+	find_package(WinPR 3 REQUIRED)
+	include_directories(${WinPR_INCLUDE_DIR})
 endif()
-
-if(BUILD_SHARED_LIBS)
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DWINPR_DLL")
-endif()
-
-add_subdirectory(winpr)
 
 # Sub-directories
 
@@ -1046,16 +1007,6 @@ endif()
 add_subdirectory(include)
 
 add_subdirectory(libfreerdp)
-
-# RdTk
-include_directories("${CMAKE_SOURCE_DIR}/rdtk/include")
-include_directories("${CMAKE_BINARY_DIR}/rdtk/include")
-
-add_subdirectory(rdtk)
-
-if(WAYLAND_FOUND)
-	add_subdirectory(uwac)
-endif()
 
 if(BSD)
 	if(IS_DIRECTORY /usr/local/include)
@@ -1090,7 +1041,7 @@ set(CMAKE_CPACK_INCLUDE_FILE "CMakeCPack.cmake")
 
 if(NOT (VENDOR MATCHES "FreeRDP"))
 	if(DEFINED CLIENT_VENDOR_PATH)
-		if(EXISTS "${CMAKE_SOURCE_DIR}/${CLIENT_VENDOR_PATH}/CMakeCPack.cmake")
+		if(EXISTS "${PROJECT_SOURCE_DIR}/${CLIENT_VENDOR_PATH}/CMakeCPack.cmake")
 			set(CMAKE_CPACK_INCLUDE_FILE "${CLIENT_VENDOR_PATH}/CMakeCPack.cmake")
 		endif()
 	endif()

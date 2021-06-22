@@ -900,8 +900,9 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_TcpAckTimeout (5194)
 #define FreeRDP_ActionScript (5195)
 #define FreeRDP_Floatbar (5196)
+#define FreeRDP_TcpConnectTimeout (5197)
 
-#define FreeRDP_RelativeMouseInput (5197)
+#define FreeRDP_RelativeMouseInput (5198)
 
 /**
  * FreeRDP Settings Data Structure
@@ -1561,8 +1562,9 @@ struct rdp_settings
 	ALIGN64 UINT32 TcpAckTimeout;         /* 5194 */
 	ALIGN64 char* ActionScript;           /* 5195 */
 	ALIGN64 UINT32 Floatbar;              /* 5196 */
-	ALIGN64 BOOL RelativeMouseInput;      /* 5197 */
-	UINT64 padding5312[5312 - 5198];      /* 5198 */
+	ALIGN64 UINT32 TcpConnectTimeout;     /* 5197 */
+	ALIGN64 BOOL RelativeMouseInput;      /* 5198 */
+	UINT64 padding5312[5312 - 5199];      /* 5199 */
 
 	/**
 	 * WARNING: End of ABI stable zone!

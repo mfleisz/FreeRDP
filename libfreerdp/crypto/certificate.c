@@ -22,7 +22,7 @@
 #include "config.h"
 #endif
 
-#include <assert.h>
+#include <winpr/assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -325,7 +325,7 @@ static WCHAR* certificate_get_cert_file_name(rdpCertificateStore* store,
 	size_t x, offset = 0;
 	char* pem = NULL;
 	WCHAR* wpem = NULL;
-	WINPR_DIGEST_CTX* ctx;
+	WINPR_DIGEST_CTX* ctx = NULL;
 	BYTE hash[WINPR_SHA3_256_DIGEST_LENGTH] = { 0 };
 	char fname[WINPR_SHA3_256_DIGEST_LENGTH * 2 + 6] = { 0 };
 
@@ -339,7 +339,7 @@ static WCHAR* certificate_get_cert_file_name(rdpCertificateStore* store,
 		goto fail;
 	if (!winpr_Digest_Update(ctx, (const BYTE*)data->hostname, strlen(data->hostname)))
 		goto fail;
-	if (!winpr_Digest_Update(ctx, (BYTE*)&data->port, sizeof(data->port)))
+	if (!winpr_Digest_Update(ctx, (const BYTE*)&data->port, sizeof(data->port)))
 		goto fail;
 	if (!winpr_Digest_Final(ctx, hash, sizeof(hash)))
 		goto fail;
@@ -494,7 +494,7 @@ static int certificate_match_data_file(rdpCertificateStore* certificate_store,
 static BOOL useKnownHosts(rdpCertificateStore* certificate_store)
 {
 	BOOL use;
-	assert(certificate_store);
+	WINPR_ASSERT(certificate_store);
 
 	use = freerdp_settings_get_bool(certificate_store->settings, FreeRDP_CertificateUseKnownHosts);
 	WLog_INFO(TAG, "known_hosts=%d", use);

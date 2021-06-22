@@ -266,7 +266,7 @@ DWORD GetModuleFileNameW(HMODULE hModule, LPWSTR lpFilename, DWORD nSize)
 DWORD GetModuleFileNameA(HMODULE hModule, LPSTR lpFilename, DWORD nSize)
 {
 #if defined(__linux__)
-	int status;
+	SSIZE_T status;
 	size_t length;
 	char path[64];
 
@@ -289,7 +289,7 @@ DWORD GetModuleFileNameA(HMODULE hModule, LPSTR lpFilename, DWORD nSize)
 		{
 			CopyMemory(lpFilename, buffer, length);
 			lpFilename[length] = '\0';
-			return length;
+			return (DWORD)length;
 		}
 
 		CopyMemory(lpFilename, buffer, nSize - 1);

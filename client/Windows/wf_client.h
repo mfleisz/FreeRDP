@@ -134,6 +134,10 @@ extern "C"
 		RailClientContext* rail;
 		wHashTable* railWindows;
 		BOOL isConsole;
+
+		DispClientContext* disp;
+		UINT64 lastSentDate;
+		BOOL wasMaximized;
 	};
 
 	/**

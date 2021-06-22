@@ -700,7 +700,7 @@ static BOOL urbdrc_udevman_register_devices(UDEVMAN* udevman, const char* device
 				return CHANNEL_RC_NO_MEMORY;
 			idpair->vid = id1;
 			idpair->pid = id2;
-			if (ArrayList_Add(udevman->hotplug_vid_pids, idpair) == -1)
+			if (!ArrayList_Append(udevman->hotplug_vid_pids, idpair))
 			{
 				free(idpair);
 				return CHANNEL_RC_NO_MEMORY;
@@ -918,8 +918,6 @@ UINT freerdp_urbdrc_client_subsystem_entry(PFREERDP_URBDRC_SERVICE_ENTRY_POINTS 
 	if (!udevman->hotplug_vid_pids)
 		goto fail;
 	obj = ArrayList_Object(udevman->hotplug_vid_pids);
-	if (!obj)
-		goto fail;
 	obj->fnObjectFree = free;
 	obj->fnObjectEquals = udevman_vid_pid_pair_equals;
 

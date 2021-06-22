@@ -164,7 +164,7 @@ static DWORD FileSetFilePointer(HANDLE hFile, LONG lDistanceToMove, PLONG lpDist
 		return INVALID_SET_FILE_POINTER;
 	}
 
-	return _ftelli64(pFile->fp);
+	return (DWORD)_ftelli64(pFile->fp);
 }
 
 static BOOL FileSetFilePointerEx(HANDLE hFile, LARGE_INTEGER liDistanceToMove,
@@ -240,7 +240,7 @@ static BOOL FileRead(PVOID Object, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 	}
 
 	if (lpNumberOfBytesRead)
-		*lpNumberOfBytesRead = io_status;
+		*lpNumberOfBytesRead = (DWORD)io_status;
 
 	return status;
 }
@@ -271,7 +271,7 @@ static BOOL FileWrite(PVOID Object, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrit
 		return FALSE;
 	}
 
-	*lpNumberOfBytesWritten = io_status;
+	*lpNumberOfBytesWritten = (DWORD)io_status;
 	return TRUE;
 }
 
@@ -318,9 +318,9 @@ static DWORD FileGetFileSize(HANDLE Object, LPDWORD lpFileSizeHigh)
 	}
 
 	if (lpFileSizeHigh)
-		*lpFileSizeHigh = 0;
+		*lpFileSizeHigh = (UINT32)(size >> 32);
 
-	return size;
+	return size & 0xFFFFFFFFUL;
 }
 
 static BOOL FileLockFileEx(HANDLE hFile, DWORD dwFlags, DWORD dwReserved,

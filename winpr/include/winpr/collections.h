@@ -57,7 +57,7 @@ extern "C"
 
 	typedef struct _wQueue wQueue;
 
-	WINPR_API int Queue_Count(wQueue* queue);
+	WINPR_API size_t Queue_Count(wQueue* queue);
 
 	WINPR_API void Queue_Lock(wQueue* queue);
 	WINPR_API void Queue_Unlock(wQueue* queue);
@@ -75,7 +75,7 @@ extern "C"
 
 	WINPR_API void* Queue_Peek(wQueue* queue);
 
-	WINPR_API wQueue* Queue_New(BOOL synchronized, int capacity, int growthFactor);
+	WINPR_API wQueue* Queue_New(BOOL synchronized, SSIZE_T capacity, SSIZE_T growthFactor);
 	WINPR_API void Queue_Free(wQueue* queue);
 
 	/* System.Collections.Stack */
@@ -124,7 +124,8 @@ extern "C"
 	WINPR_API void ArrayList_Clear(wArrayList* arrayList);
 	WINPR_API BOOL ArrayList_Contains(wArrayList* arrayList, const void* obj);
 
-	WINPR_API int ArrayList_Add(wArrayList* arrayList, void* obj);
+	WINPR_API WINPR_DEPRECATED(int ArrayList_Add(wArrayList* arrayList, const void* obj));
+	WINPR_API BOOL ArrayList_Append(wArrayList* arrayList, const void* obj);
 	WINPR_API BOOL ArrayList_Insert(wArrayList* arrayList, size_t index, const void* obj);
 
 	WINPR_API BOOL ArrayList_Remove(wArrayList* arrayList, const void* obj);
@@ -229,19 +230,6 @@ extern "C"
 
 	/* System.Collections.Generic.KeyValuePair<TKey,TValue> */
 
-	typedef struct _wKeyValuePair wKeyValuePair;
-
-	/* WARNING: Do not access structs directly, the API will be reworked
-	 * to make this opaque. */
-	struct _wKeyValuePair
-	{
-		void* key;
-		void* value;
-
-		wKeyValuePair* next;
-		BOOL markedForRemove;
-	};
-
 	/* Reference Table */
 
 	/* WARNING: Do not access structs directly, the API will be reworked
@@ -302,65 +290,44 @@ extern "C"
 
 	/* Hash Table */
 
-	typedef UINT32 (*HASH_TABLE_HASH_FN)(void* key);
-	typedef BOOL (*HASH_TABLE_KEY_COMPARE_FN)(void* key1, void* key2);
-	typedef BOOL (*HASH_TABLE_VALUE_COMPARE_FN)(void* value1, void* value2);
-	typedef void* (*HASH_TABLE_KEY_CLONE_FN)(void* key);
-	typedef void* (*HASH_TABLE_VALUE_CLONE_FN)(void* value);
-	typedef void (*HASH_TABLE_KEY_FREE_FN)(void* key);
-	typedef void (*HASH_TABLE_VALUE_FREE_FN)(void* value);
+	typedef UINT32 (*HASH_TABLE_HASH_FN)(const void* key);
 
-	/* WARNING: Do not access structs directly, the API will be reworked
-	 * to make this opaque. */
-	struct _wHashTable
-	{
-		BOOL synchronized;
-		CRITICAL_SECTION lock;
-
-		int numOfBuckets;
-		int numOfElements;
-		float idealRatio;
-		float lowerRehashThreshold;
-		float upperRehashThreshold;
-		wKeyValuePair** bucketArray;
-
-		HASH_TABLE_HASH_FN hash;
-		HASH_TABLE_KEY_COMPARE_FN keyCompare;
-		HASH_TABLE_VALUE_COMPARE_FN valueCompare;
-		HASH_TABLE_KEY_CLONE_FN keyClone;
-		HASH_TABLE_VALUE_CLONE_FN valueClone;
-		HASH_TABLE_KEY_FREE_FN keyFree;
-		HASH_TABLE_VALUE_FREE_FN valueFree;
-
-		DWORD foreachRecursionLevel;
-		DWORD pendingRemoves;
-	};
 	typedef struct _wHashTable wHashTable;
 
 	typedef BOOL (*HASH_TABLE_FOREACH_FN)(const void* key, void* value, void* arg);
 
-	WINPR_API int HashTable_Count(wHashTable* table);
-	WINPR_API int HashTable_Add(wHashTable* table, void* key, void* value);
-	WINPR_API BOOL HashTable_Remove(wHashTable* table, void* key);
+	WINPR_API size_t HashTable_Count(wHashTable* table);
+	WINPR_API WINPR_DEPRECATED(int HashTable_Add(wHashTable* table, const void* key,
+	                                             const void* value));
+	WINPR_API BOOL HashTable_Insert(wHashTable* table, const void* key, const void* value);
+	WINPR_API BOOL HashTable_Remove(wHashTable* table, const void* key);
 	WINPR_API void HashTable_Clear(wHashTable* table);
-	WINPR_API BOOL HashTable_Contains(wHashTable* table, void* key);
-	WINPR_API BOOL HashTable_ContainsKey(wHashTable* table, void* key);
-	WINPR_API BOOL HashTable_ContainsValue(wHashTable* table, void* value);
-	WINPR_API void* HashTable_GetItemValue(wHashTable* table, void* key);
-	WINPR_API BOOL HashTable_SetItemValue(wHashTable* table, void* key, void* value);
-	WINPR_API int HashTable_GetKeys(wHashTable* table, ULONG_PTR** ppKeys);
+	WINPR_API BOOL HashTable_Contains(wHashTable* table, const void* key);
+	WINPR_API BOOL HashTable_ContainsKey(wHashTable* table, const void* key);
+	WINPR_API BOOL HashTable_ContainsValue(wHashTable* table, const void* value);
+	WINPR_API void* HashTable_GetItemValue(wHashTable* table, const void* key);
+	WINPR_API BOOL HashTable_SetItemValue(wHashTable* table, const void* key, const void* value);
+	WINPR_API size_t HashTable_GetKeys(wHashTable* table, ULONG_PTR** ppKeys);
 	WINPR_API BOOL HashTable_Foreach(wHashTable* table, HASH_TABLE_FOREACH_FN fn, VOID* arg);
 
-	WINPR_API UINT32 HashTable_PointerHash(void* pointer);
-	WINPR_API BOOL HashTable_PointerCompare(void* pointer1, void* pointer2);
+	WINPR_API UINT32 HashTable_PointerHash(const void* pointer);
+	WINPR_API BOOL HashTable_PointerCompare(const void* pointer1, const void* pointer2);
 
-	WINPR_API UINT32 HashTable_StringHash(void* key);
-	WINPR_API BOOL HashTable_StringCompare(void* string1, void* string2);
-	WINPR_API void* HashTable_StringClone(void* str);
+	WINPR_API UINT32 HashTable_StringHash(const void* key);
+	WINPR_API BOOL HashTable_StringCompare(const void* string1, const void* string2);
+	WINPR_API void* HashTable_StringClone(const void* str);
 	WINPR_API void HashTable_StringFree(void* str);
 
 	WINPR_API wHashTable* HashTable_New(BOOL synchronized);
 	WINPR_API void HashTable_Free(wHashTable* table);
+
+	WINPR_API wObject* HashTable_KeyObject(wHashTable* table);
+	WINPR_API wObject* HashTable_ValueObject(wHashTable* table);
+
+	WINPR_API BOOL HashTable_SetHashFunction(wHashTable* table, HASH_TABLE_HASH_FN fn);
+
+	/* Utility function to setup hash table for strings */
+	WINPR_API BOOL HashTable_SetupForStringData(wHashTable* table, BOOL stringValues);
 
 	/* BufferPool */
 

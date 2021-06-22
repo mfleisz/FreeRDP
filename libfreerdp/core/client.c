@@ -158,8 +158,6 @@ rdpChannels* freerdp_channels_new(freerdp* instance)
 		goto error;
 
 	obj = MessageQueue_Object(channels->queue);
-	if (!obj)
-		goto error;
 	obj->fnObjectFree = channel_queue_free;
 
 	return channels;
@@ -830,8 +828,9 @@ static UINT VCAPITYPE FreeRDP_VirtualChannelInitEx(
 		pChannelOpenData->OpenHandle = InterlockedIncrement(&g_OpenHandleSeq);
 		pChannelOpenData->channels = channels;
 		pChannelOpenData->lpUserParam = lpUserParam;
-		HashTable_Add(g_ChannelHandles, (void*)(UINT_PTR)pChannelOpenData->OpenHandle,
-		              (void*)pChannelOpenData);
+		if (!HashTable_Insert(g_ChannelHandles, (void*)(UINT_PTR)pChannelOpenData->OpenHandle,
+		                      (void*)pChannelOpenData))
+			return CHANNEL_RC_INITIALIZATION_ERROR;
 		pChannelOpenData->flags = 1; /* init */
 		strncpy(pChannelOpenData->name, pChannelDef->name, CHANNEL_NAME_LEN);
 		pChannelOpenData->options = pChannelDef->options;
@@ -920,8 +919,9 @@ static UINT VCAPITYPE FreeRDP_VirtualChannelInit(LPVOID* ppInitHandle, PCHANNEL_
 		pChannelOpenData = &channels->openDataList[channels->openDataCount];
 		pChannelOpenData->OpenHandle = InterlockedIncrement(&g_OpenHandleSeq);
 		pChannelOpenData->channels = channels;
-		HashTable_Add(g_ChannelHandles, (void*)(UINT_PTR)pChannelOpenData->OpenHandle,
-		              (void*)pChannelOpenData);
+		if (!HashTable_Insert(g_ChannelHandles, (void*)(UINT_PTR)pChannelOpenData->OpenHandle,
+		                      (void*)pChannelOpenData))
+			return CHANNEL_RC_INITIALIZATION_ERROR;
 		pChannelOpenData->flags = 1; /* init */
 		strncpy(pChannelOpenData->name, pChannelDef->name, CHANNEL_NAME_LEN);
 		pChannelOpenData->options = pChannelDef->options;

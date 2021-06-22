@@ -18,7 +18,7 @@
  * limitations under the License.
  */
 
-#include <assert.h>
+#include <winpr/assert.h>
 
 #include <winpr/file.h>
 #include <winpr/wlog.h>
@@ -109,6 +109,7 @@ static BOOL pf_modules_proxy_ArrayList_ForEachFkt(void* data, size_t index, va_l
 			IFCALLRET(plugin->ServerSessionEnd, ok, pdata);
 			break;
 
+		case HOOK_LAST:
 		default:
 			WLog_ERR(TAG, "invalid hook called");
 	}
@@ -171,6 +172,7 @@ static BOOL pf_modules_ArrayList_ForEachFkt(void* data, size_t index, va_list ap
 			IFCALLRET(plugin->ServerFetchTargetAddr, result, pdata, param);
 			break;
 
+		case FILTER_LAST:
 		default:
 			WLog_ERR(TAG, "invalid filter called");
 	}
@@ -209,15 +211,15 @@ static BOOL pf_modules_set_plugin_data(const char* plugin_name, proxyData* pdata
 		char* cp;
 	} ccharconv;
 
-	assert(plugin_name);
+	WINPR_ASSERT(plugin_name);
 
 	ccharconv.ccp = plugin_name;
 	if (data == NULL) /* no need to store anything */
 		return FALSE;
 
-	if (HashTable_Add(pdata->modules_info, ccharconv.cp, data) < 0)
+	if (!HashTable_Insert(pdata->modules_info, ccharconv.cp, data))
 	{
-		WLog_ERR(TAG, "[%s]: HashTable_Add failed!");
+		WLog_ERR(TAG, "[%s]: HashTable_Insert failed!");
 		return FALSE;
 	}
 
@@ -237,8 +239,8 @@ static void* pf_modules_get_plugin_data(const char* plugin_name, proxyData* pdat
 		const char* ccp;
 		char* cp;
 	} ccharconv;
-	assert(plugin_name);
-	assert(pdata);
+	WINPR_ASSERT(plugin_name);
+	WINPR_ASSERT(pdata);
 	ccharconv.ccp = plugin_name;
 
 	return HashTable_GetItemValue(pdata->modules_info, ccharconv.cp);
@@ -246,7 +248,7 @@ static void* pf_modules_get_plugin_data(const char* plugin_name, proxyData* pdat
 
 static void pf_modules_abort_connect(proxyData* pdata)
 {
-	assert(pdata);
+	WINPR_ASSERT(pdata);
 	WLog_DBG(TAG, "%s is called!", __FUNCTION__);
 	proxy_data_abort_connect(pdata);
 }
@@ -276,7 +278,7 @@ static BOOL pf_modules_register_plugin(proxyPlugin* plugin_to_register)
 	                       plugin_to_register))
 		return FALSE;
 
-	if (ArrayList_Add(plugins_list, plugin_to_register) < 0)
+	if (!ArrayList_Append(plugins_list, plugin_to_register))
 	{
 		WLog_ERR(TAG, "[%s]: failed adding plugin to list: %s", __FUNCTION__,
 		         plugin_to_register->name);
@@ -364,9 +366,9 @@ static BOOL pf_modules_load_module(const char* module_path)
 	}
 
 	/* save module handle for freeing the module later */
-	if (ArrayList_Add(handles_list, handle) < 0)
+	if (!ArrayList_Append(handles_list, handle))
 	{
-		WLog_ERR(TAG, "ArrayList_Add failed!");
+		WLog_ERR(TAG, "ArrayList_Append failed!");
 		return FALSE;
 	}
 

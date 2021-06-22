@@ -360,7 +360,7 @@ static BOOL add_file_to_list(const char* local_name, const WCHAR* remote_name, w
 	if (!file)
 		return FALSE;
 
-	if (ArrayList_Add(files, file) < 0)
+	if (!ArrayList_Append(files, file))
 	{
 		free_posix_file(file);
 		return FALSE;
@@ -842,8 +842,6 @@ static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 		goto error;
 
 	obj = ArrayList_Object(clipboard->localFiles);
-	if (!obj)
-		goto error;
 	obj->fnObjectFree = free_posix_file;
 
 	if (!ClipboardRegisterSynthesizer(clipboard, local_file_format_id, file_group_format_id,

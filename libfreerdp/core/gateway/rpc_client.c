@@ -950,7 +950,7 @@ BOOL rpc_client_write_call(rdpRpc* rpc, wStream* s, UINT16 opnum)
 	if (!clientCall)
 		goto fail;
 
-	if (ArrayList_Add(rpc->client->ClientCallList, clientCall) < 0)
+	if (!ArrayList_Append(rpc->client->ClientCallList, clientCall))
 	{
 		rpc_client_call_free(clientCall);
 		goto fail;
@@ -1084,9 +1084,6 @@ RpcClient* rpc_client_new(rdpContext* context, UINT32 max_recv_frag)
 		goto fail;
 
 	obj = ArrayList_Object(client->ClientCallList);
-	if (!obj)
-		goto fail;
-
 	obj->fnObjectFree = rpc_array_client_call_free;
 	return client;
 fail:

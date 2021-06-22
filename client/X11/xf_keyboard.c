@@ -72,8 +72,6 @@ static BOOL xf_keyboard_action_script_init(xfContext* xfc)
 		return FALSE;
 
 	obj = ArrayList_Object(xfc->keyCombinations);
-	if (!obj)
-		return FALSE;
 	obj->fnObjectFree = free;
 	sprintf_s(command, sizeof(command), "%s key", xfc->context.settings->ActionScript);
 	keyScript = popen(command, "r");
@@ -90,7 +88,7 @@ static BOOL xf_keyboard_action_script_init(xfContext* xfc)
 		strtok_s(buffer, "\n", &context);
 		keyCombination = _strdup(buffer);
 
-		if (!keyCombination || ArrayList_Add(xfc->keyCombinations, keyCombination) < 0)
+		if (!keyCombination || !ArrayList_Append(xfc->keyCombinations, keyCombination))
 		{
 			ArrayList_Free(xfc->keyCombinations);
 			xfc->actionScriptExists = FALSE;

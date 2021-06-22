@@ -153,7 +153,7 @@ static const char* x11_event_string(int event)
 
 		default:
 			return "UNKNOWN";
-	};
+	}
 }
 
 #ifdef WITH_DEBUG_X11
@@ -178,8 +178,6 @@ BOOL xf_event_action_script_init(xfContext* xfc)
 		return FALSE;
 
 	obj = ArrayList_Object(xfc->xevents);
-	if (!obj)
-		return FALSE;
 	obj->fnObjectFree = free;
 	sprintf_s(command, sizeof(command), "%s xevent", xfc->context.settings->ActionScript);
 	actionScript = popen(command, "r");
@@ -193,7 +191,7 @@ BOOL xf_event_action_script_init(xfContext* xfc)
 		strtok_s(buffer, "\n", &context);
 		xevent = _strdup(buffer);
 
-		if (!xevent || ArrayList_Add(xfc->xevents, xevent) < 0)
+		if (!xevent || !ArrayList_Append(xfc->xevents, xevent))
 		{
 			pclose(actionScript);
 			ArrayList_Free(xfc->xevents);

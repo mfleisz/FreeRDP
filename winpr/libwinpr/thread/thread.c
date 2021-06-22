@@ -24,7 +24,7 @@
 #include "config.h"
 #endif
 
-#include <assert.h>
+#include <winpr/assert.h>
 
 #include <winpr/handle.h>
 
@@ -248,7 +248,7 @@ static INIT_ONCE threads_InitOnce = INIT_ONCE_STATIC_INIT;
 static pthread_t mainThreadId;
 static DWORD currentThreadTlsIndex = TLS_OUT_OF_INDEXES;
 
-BOOL initializeThreads(PINIT_ONCE InitOnce, PVOID Parameter, PVOID* Context)
+static BOOL initializeThreads(PINIT_ONCE InitOnce, PVOID Parameter, PVOID* Context)
 {
 	if (!apc_init(&mainThread.apc))
 	{
@@ -312,7 +312,7 @@ static void* thread_launcher(void* arg)
 	if (pthread_mutex_unlock(&thread->threadIsReadyMutex))
 		goto exit;
 
-	assert(ListDictionary_Contains(thread_list, &thread->thread));
+	WINPR_ASSERT(ListDictionary_Contains(thread_list, &thread->thread));
 	rc = fkt(thread->lpParameter);
 exit:
 
@@ -586,7 +586,7 @@ VOID ExitThread(DWORD dwExitCode)
 		WINPR_THREAD* thread;
 		ListDictionary_Lock(thread_list);
 		thread = ListDictionary_GetItemValue(thread_list, &tid);
-		assert(thread);
+		WINPR_ASSERT(thread);
 		thread->exited = TRUE;
 		thread->dwExitCode = dwExitCode;
 #if defined(WITH_DEBUG_THREADS)
@@ -657,7 +657,7 @@ typedef struct
 	ULONG_PTR completionArg;
 } UserApcItem;
 
-void userAPC(LPVOID arg)
+static void userAPC(LPVOID arg)
 {
 	UserApcItem* userApc = (UserApcItem*)arg;
 

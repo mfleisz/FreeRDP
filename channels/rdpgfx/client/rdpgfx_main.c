@@ -25,7 +25,7 @@
 #include "config.h"
 #endif
 
-#include <assert.h>
+#include <winpr/assert.h>
 
 #include <winpr/crt.h>
 #include <winpr/wlog.h>
@@ -1948,7 +1948,10 @@ static UINT rdpgfx_set_surface_data(RdpgfxClientContext* context, UINT16 surface
 	key = ((ULONG_PTR)surfaceId) + 1;
 
 	if (pData)
-		HashTable_Add(gfx->SurfaceTable, (void*)key, pData);
+	{
+		if (!HashTable_Insert(gfx->SurfaceTable, (void*)key, pData))
+			return ERROR_BAD_ARGUMENTS;
+	}
 	else
 		HashTable_Remove(gfx->SurfaceTable, (void*)key);
 

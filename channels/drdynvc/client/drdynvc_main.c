@@ -98,7 +98,7 @@ static UINT dvcman_create_listener(IWTSVirtualChannelManager* pChannelMgr,
 	if (ppListener)
 		*ppListener = (IWTSListener*)listener;
 
-	if (ArrayList_Add(dvcman->listeners, listener) < 0)
+	if (!ArrayList_Append(dvcman->listeners, listener))
 		return ERROR_INTERNAL_ERROR;
 	return CHANNEL_RC_OK;
 }
@@ -129,9 +129,9 @@ static UINT dvcman_register_plugin(IDRDYNVC_ENTRY_POINTS* pEntryPoints, const ch
 {
 	DVCMAN* dvcman = ((DVCMAN_ENTRY_POINTS*)pEntryPoints)->dvcman;
 
-	if (ArrayList_Add(dvcman->plugin_names, _strdup(name)) < 0)
+	if (!ArrayList_Append(dvcman->plugin_names, _strdup(name)))
 		return ERROR_INTERNAL_ERROR;
-	if (ArrayList_Add(dvcman->plugins, pPlugin) < 0)
+	if (!ArrayList_Append(dvcman->plugins, pPlugin))
 		return ERROR_INTERNAL_ERROR;
 
 	WLog_DBG(TAG, "register_plugin: num_plugins %d", ArrayList_Count(dvcman->plugins));
@@ -502,7 +502,7 @@ static UINT dvcman_create_channel(drdynvcPlugin* drdynvc, IWTSVirtualChannelMana
 	}
 
 	channel->status = ERROR_NOT_CONNECTED;
-	if (ArrayList_Add(dvcman->channels, channel) < 0)
+	if (!ArrayList_Append(dvcman->channels, channel))
 		return ERROR_INTERNAL_ERROR;
 
 	ArrayList_Lock(dvcman->listeners);
@@ -1464,8 +1464,6 @@ static UINT drdynvc_virtual_channel_event_initialized(drdynvcPlugin* drdynvc, LP
 	}
 
 	obj = MessageQueue_Object(drdynvc->queue);
-	if (!obj)
-		goto error;
 	obj->fnObjectFree = drdynvc_queue_object_free;
 	drdynvc->channel_mgr = dvcman_new(drdynvc);
 

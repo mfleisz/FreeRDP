@@ -828,7 +828,7 @@ HANDLE WINAPI FreeRDP_WTSOpenServerA(LPSTR pServerName)
 			goto error_free;
 	}
 
-	if (HashTable_Add(g_ServerHandles, (void*)(UINT_PTR)vcm->SessionId, (void*)vcm) < 0)
+	if (!HashTable_Insert(g_ServerHandles, (void*)(UINT_PTR)vcm->SessionId, (void*)vcm))
 		goto error_free;
 
 	queueCallbacks.fnObjectFree = wts_virtual_channel_manager_free_message;
@@ -1218,7 +1218,7 @@ HANDLE WINAPI FreeRDP_WTSVirtualChannelOpenEx(DWORD SessionId, LPSTR pVirtualNam
 
 	channel->channelId = InterlockedIncrement(&vcm->dvc_channel_id_seq);
 
-	if (ArrayList_Add(vcm->dynamicVirtualChannels, channel) < 0)
+	if (!ArrayList_Append(vcm->dynamicVirtualChannels, channel))
 		goto fail;
 
 	s = Stream_New(NULL, 64);
