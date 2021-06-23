@@ -1647,7 +1647,9 @@ extern "C"
 	FREERDP_API BOOL freerdp_static_channel_collection_del(rdpSettings* settings, const char* name);
 	FREERDP_API ADDIN_ARGV* freerdp_static_channel_collection_find(rdpSettings* settings,
 	                                                               const char* name);
+#if defined(WITH_FREERDP_DEPRECATED)
 	FREERDP_API WINPR_DEPRECATED(ADDIN_ARGV* freerdp_static_channel_clone(ADDIN_ARGV* channel));
+#endif
 
 	FREERDP_API void freerdp_static_channel_collection_free(rdpSettings* settings);
 
@@ -1658,7 +1660,10 @@ extern "C"
 	FREERDP_API ADDIN_ARGV* freerdp_dynamic_channel_collection_find(const rdpSettings* settings,
 	                                                                const char* name);
 
+#if defined(WITH_FREERDP_DEPRECATED)
 	FREERDP_API WINPR_DEPRECATED(ADDIN_ARGV* freerdp_dynamic_channel_clone(ADDIN_ARGV* channel));
+#endif
+
 	FREERDP_API void freerdp_dynamic_channel_collection_free(rdpSettings* settings);
 
 	FREERDP_API void freerdp_target_net_addresses_free(rdpSettings* settings);
@@ -1676,6 +1681,7 @@ extern "C"
 	 * the functions freerdp_get_param_* and freerdp_set_param_* are deprecated.
 	 * use freerdp_settings_get_* and freerdp_settings_set_* as a replacement!
 	 */
+#if defined(WITH_FREERDP_DEPRECATED)
 	FREERDP_API WINPR_DEPRECATED(BOOL freerdp_get_param_bool(const rdpSettings* settings, int id));
 	FREERDP_API WINPR_DEPRECATED(int freerdp_set_param_bool(rdpSettings* settings, int id,
 	                                                        BOOL param));
@@ -1698,6 +1704,7 @@ extern "C"
 	                                                            int id));
 	FREERDP_API WINPR_DEPRECATED(int freerdp_set_param_string(rdpSettings* settings, int id,
 	                                                          const char* param));
+#endif
 
 	FREERDP_API BOOL freerdp_settings_get_bool(const rdpSettings* settings, size_t id);
 	FREERDP_API BOOL freerdp_settings_set_bool(rdpSettings* settings, size_t id, BOOL param);
