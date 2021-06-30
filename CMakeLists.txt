@@ -303,12 +303,6 @@ else()
 	CHECK_SYMBOL_EXISTS(strndup string.h HAVE_STRNDUP)
 endif()
 
-if(NOT WIN32)
-	list(APPEND CMAKE_REQUIRED_LIBRARIES pthread)
-	check_symbol_exists(pthread_mutex_timedlock pthread.h HAVE_PTHREAD_MUTEX_TIMEDLOCK)
-	list(REMOVE_ITEM CMAKE_REQUIRED_LIBRARIES pthread)
-endif()
-
 # Enable address sanitizer, where supported and when required
 if(${CMAKE_C_COMPILER_ID} STREQUAL "Clang" OR CMAKE_COMPILER_IS_GNUCC)
 	CHECK_C_COMPILER_FLAG ("-fno-omit-frame-pointer" fno-omit-frame-pointer)
@@ -461,21 +455,12 @@ add_definitions(-DFREERDP_EXPORTS)
 
 # Include files
 if(NOT IOS)
-	check_include_files(fcntl.h HAVE_FCNTL_H)
 	check_include_files(unistd.h HAVE_UNISTD_H)
 	check_include_files(execinfo.h HAVE_EXECINFO_H)
 	check_include_files(inttypes.h HAVE_INTTYPES_H)
-	check_include_files(sys/modem.h HAVE_SYS_MODEM_H)
-	check_include_files(sys/filio.h HAVE_SYS_FILIO_H)
-	check_include_files(sys/sockio.h HAVE_SYS_SOCKIO_H)
-	check_include_files(sys/strtio.h HAVE_SYS_STRTIO_H)
-	check_include_files(sys/select.h HAVE_SYS_SELECT_H)
-	check_include_files(syslog.h HAVE_SYSLOG_H)
 else()
-	set(HAVE_FCNTL_H 1)
 	set(HAVE_UNISTD_H 1)
 	set(HAVE_INTTYPES_H 1)
-	set(HAVE_SYS_FILIO_H 1)
 endif()
 
 if(NOT IOS)
@@ -576,15 +561,9 @@ else()
 endif()
 
 if(UNIX OR CYGWIN)
-	check_include_files(aio.h HAVE_AIO_H)
-	check_include_files(sys/eventfd.h HAVE_SYS_EVENTFD_H)
-	if (HAVE_SYS_EVENTFD_H)
-		check_symbol_exists(eventfd_read sys/eventfd.h WITH_EVENTFD_READ_WRITE)
-	endif()
 	if (FREEBSD)
 		list(APPEND CMAKE_REQUIRED_INCLUDES ${EPOLLSHIM_INCLUDE_DIR})
 	endif()
-	check_include_files(sys/timerfd.h HAVE_SYS_TIMERFD_H)
 	if (FREEBSD)
 		list(REMOVE_ITEM CMAKE_REQUIRED_INCLUDES ${EPOLLSHIM_INCLUDE_DIR})
 	endif()
@@ -911,11 +890,6 @@ endif()
 # Declare we have config.h, generated later on.
 add_definitions("-DHAVE_CONFIG_H")
 
-# Include directories
-include_directories(${CMAKE_CURRENT_BINARY_DIR})
-include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-
 # RPATH configuration
 set(CMAKE_SKIP_BUILD_RPATH FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
@@ -979,6 +953,11 @@ else()
 		add_definitions(-DWITH_VERBOSE_WINPR_ASSERT)
 	endif()
 endif()
+
+# Include directories
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Sub-directories
 
