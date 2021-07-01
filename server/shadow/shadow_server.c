@@ -365,6 +365,36 @@ int shadow_server_parse_command_line(rdpShadowServer* server, int argc, char** a
 			if (!WLog_AddStringLogFilters(arg->Value))
 				return COMMAND_LINE_ERROR;
 		}
+		CommandLineSwitchCase(arg, "gfx-progressive")
+		{
+			if (!freerdp_settings_set_bool(settings, FreeRDP_GfxProgressive,
+			                               arg->Value ? TRUE : FALSE))
+				return COMMAND_LINE_ERROR;
+		}
+		CommandLineSwitchCase(arg, "gfx-rfx")
+		{
+			if (!freerdp_settings_set_bool(settings, FreeRDP_RemoteFxCodec,
+			                               arg->Value ? TRUE : FALSE))
+				return COMMAND_LINE_ERROR;
+		}
+		CommandLineSwitchCase(arg, "gfx-planar")
+		{
+			if (!freerdp_settings_set_bool(settings, FreeRDP_GfxPlanar, arg->Value ? TRUE : FALSE))
+				return COMMAND_LINE_ERROR;
+		}
+		CommandLineSwitchCase(arg, "gfx-avc420")
+		{
+			if (!freerdp_settings_set_bool(settings, FreeRDP_GfxH264, arg->Value ? TRUE : FALSE))
+				return COMMAND_LINE_ERROR;
+		}
+		CommandLineSwitchCase(arg, "gfx-avc444")
+		{
+			if (!freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444v2,
+			                               arg->Value ? TRUE : FALSE))
+				return COMMAND_LINE_ERROR;
+			if (!freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444, arg->Value ? TRUE : FALSE))
+				return COMMAND_LINE_ERROR;
+		}
 		CommandLineSwitchDefault(arg)
 		{
 		}

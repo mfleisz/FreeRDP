@@ -2942,10 +2942,11 @@ static BOOL rdp_read_bitmap_codecs_capability_set(wStream* s, rdpSettings* setti
 
 	if (settings->ServerMode)
 	{
+		BOOL NSCodec = freerdp_settings_get_bool(settings, FreeRDP_NSCodec);
 		/* only enable a codec if we've announced/enabled it before */
 		settings->RemoteFxCodec = settings->RemoteFxCodec && guidRemoteFx;
 		settings->RemoteFxImageCodec = settings->RemoteFxImageCodec && guidRemoteFxImage;
-		settings->NSCodec = settings->NSCodec && guidNSCodec;
+		freerdp_settings_set_bool(settings, FreeRDP_NSCodec, NSCodec && guidNSCodec);
 		settings->JpegCodec = FALSE;
 	}
 
@@ -3109,7 +3110,7 @@ static BOOL rdp_write_bitmap_codecs_capability_set(wStream* s, const rdpSettings
 	if (settings->RemoteFxCodec)
 		bitmapCodecCount++;
 
-	if (settings->NSCodec)
+	if (freerdp_settings_get_bool(settings, FreeRDP_NSCodec))
 		bitmapCodecCount++;
 
 #if defined(WITH_JPEG)
@@ -3144,7 +3145,7 @@ static BOOL rdp_write_bitmap_codecs_capability_set(wStream* s, const rdpSettings
 		}
 	}
 
-	if (settings->NSCodec)
+	if (freerdp_settings_get_bool(settings, FreeRDP_NSCodec))
 	{
 		rdp_write_bitmap_codec_guid(s, &CODEC_GUID_NSCODEC); /* codecGUID */
 
@@ -4096,7 +4097,7 @@ BOOL rdp_recv_confirm_active(rdpRdp* rdp, wStream* s, UINT16 pduLength)
 	{
 		/* client does not support bitmap codecs */
 		settings->RemoteFxCodec = FALSE;
-		settings->NSCodec = FALSE;
+		freerdp_settings_set_bool(settings, FreeRDP_NSCodec, FALSE);
 		settings->JpegCodec = FALSE;
 	}
 

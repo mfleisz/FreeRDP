@@ -13,7 +13,6 @@
 #cmakedefine HAVE_SYS_FILIO_H
 #cmakedefine HAVE_SYS_SELECT_H
 #cmakedefine HAVE_SYS_SOCKIO_H
-#cmakedefine HAVE_SYS_STRTIO_H
 #cmakedefine HAVE_SYS_EVENTFD_H
 #cmakedefine HAVE_SYS_TIMERFD_H
 #cmakedefine HAVE_TM_GMTOFF
@@ -26,5 +25,12 @@
 #cmakedefine HAVE_GETLOGIN_R
 #cmakedefine HAVE_STRNDUP
 #cmakedefine WITH_EVENTFD_READ_WRITE
+
+#cmakedefine WITH_NATIVE_SSPI
+#cmakedefine WITH_ICU
+
+#cmakedefine WITH_DEBUG_NTLM
+#cmakedefine WITH_DEBUG_THREADS
+#cmakedefine WITH_DEBUG_MUTEX
 
 #endif /* WINPR_CONFIG_H */
