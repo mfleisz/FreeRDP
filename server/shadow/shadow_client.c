@@ -63,10 +63,10 @@ static INLINE BOOL shadow_client_rdpgfx_new_surface(rdpShadowClient* client)
 	createSurface.width = (UINT16)settings->DesktopWidth;
 	createSurface.height = (UINT16)settings->DesktopHeight;
 	createSurface.pixelFormat = GFX_PIXEL_FORMAT_XRGB_8888;
-	createSurface.surfaceId = 0;
+	createSurface.surfaceId = client->surfaceId;
 	surfaceToOutput.outputOriginX = 0;
 	surfaceToOutput.outputOriginY = 0;
-	surfaceToOutput.surfaceId = 0;
+	surfaceToOutput.surfaceId = client->surfaceId;
 	surfaceToOutput.reserved = 0;
 	IFCALLRET(context->CreateSurface, error, context, &createSurface);
 
@@ -98,7 +98,7 @@ static INLINE BOOL shadow_client_rdpgfx_release_surface(rdpShadowClient* client)
 	context = client->rdpgfx;
 	WINPR_ASSERT(context);
 
-	pdu.surfaceId = 0;
+	pdu.surfaceId = client->surfaceId++;
 	IFCALLRET(context->DeleteSurface, error, context, &pdu);
 
 	if (error)
@@ -173,6 +173,7 @@ static BOOL shadow_client_context_new(freerdp_peer* peer, rdpContext* context)
 	srvSettings = server->settings;
 	WINPR_ASSERT(srvSettings);
 
+	client->surfaceId = 1;
 	client->server = server;
 	client->subsystem = server->subsystem;
 	WINPR_ASSERT(client->subsystem);
@@ -360,11 +361,7 @@ static INLINE BOOL shadow_client_recalc_desktop_size(rdpShadowClient* client)
 	WINPR_ASSERT(height >= 0);
 	WINPR_ASSERT(height <= UINT16_MAX);
 	if (settings->DesktopWidth != (UINT32)width || settings->DesktopHeight != (UINT32)height)
-	{
-		settings->DesktopWidth = (UINT16)width;
-		settings->DesktopHeight = (UINT16)height;
 		return TRUE;
-	}
 
 	return FALSE;
 }
@@ -389,9 +386,6 @@ static BOOL shadow_client_capabilities(freerdp_peer* peer)
 	if (!ret)
 		WLog_WARN(TAG, "subsystem->ClientCapabilities failed");
 
-	/* Recalculate desktop size regardless whether previous call fail
-	 * or not. Make sure we send correct width/height to client */
-	(void)shadow_client_recalc_desktop_size(client);
 	return ret;
 }
 
@@ -1013,10 +1007,10 @@ static BOOL shadow_client_send_surface_gfx(rdpShadowClient* client, const BYTE* 
 	const rdpContext* context = (const rdpContext*)client;
 	const rdpSettings* settings;
 	rdpShadowEncoder* encoder;
-	RDPGFX_SURFACE_COMMAND cmd;
-	RDPGFX_START_FRAME_PDU cmdstart;
-	RDPGFX_END_FRAME_PDU cmdend;
-	SYSTEMTIME sTime;
+	RDPGFX_SURFACE_COMMAND cmd = { 0 };
+	RDPGFX_START_FRAME_PDU cmdstart = { 0 };
+	RDPGFX_END_FRAME_PDU cmdend = { 0 };
+	SYSTEMTIME sTime = { 0 };
 
 	if (!context || !pSrcData)
 		return FALSE;
@@ -1038,9 +1032,7 @@ static BOOL shadow_client_send_surface_gfx(rdpShadowClient* client, const BYTE* 
 	cmdstart.timestamp = (UINT32)(sTime.wHour << 22U | sTime.wMinute << 16U | sTime.wSecond << 10U |
 	                              sTime.wMilliseconds);
 	cmdend.frameId = cmdstart.frameId;
-	cmd.surfaceId = 0;
-	cmd.codecId = 0;
-	cmd.contextId = 0;
+	cmd.surfaceId = client->surfaceId;
 	cmd.format = PIXEL_FORMAT_BGRX32;
 	cmd.left = nXSrc;
 	cmd.top = nYSrc;
@@ -1048,9 +1040,6 @@ static BOOL shadow_client_send_surface_gfx(rdpShadowClient* client, const BYTE* 
 	cmd.bottom = cmd.top + nHeight;
 	cmd.width = nWidth;
 	cmd.height = nHeight;
-	cmd.length = 0;
-	cmd.data = NULL;
-	cmd.extra = NULL;
 
 	id = freerdp_settings_get_uint32(settings, FreeRDP_RemoteFxCodecId);
 	if (settings->GfxAVC444 || settings->GfxAVC444v2)
@@ -1250,10 +1239,7 @@ static BOOL shadow_client_send_surface_gfx(rdpShadowClient* client, const BYTE* 
 		BOOL rc;
 		const UINT32 w = cmd.right - cmd.left;
 		const UINT32 h = cmd.bottom - cmd.top;
-		const size_t step = w * GetBytesPerPixel(SrcFormat);
-		const size_t size = step * h;
-		BYTE* dst;
-
+		const BYTE* src = &pSrcData[cmd.top * nSrcStep + cmd.left * GetBytesPerPixel(SrcFormat)];
 		if (shadow_encoder_prepare(encoder, FREERDP_CODEC_PLANAR) < 0)
 		{
 			WLog_ERR(TAG, "Failed to prepare encoder FREERDP_CODEC_PLANAR");
@@ -1262,18 +1248,11 @@ static BOOL shadow_client_send_surface_gfx(rdpShadowClient* client, const BYTE* 
 
 		rc = freerdp_bitmap_planar_context_reset(encoder->planar, w, h);
 		WINPR_ASSERT(rc);
+		freerdp_planar_topdown_image(encoder->planar, TRUE);
 
-		dst = malloc(size);
-		WINPR_ASSERT(dst);
-		rc = freerdp_image_copy(dst, SrcFormat, step, 0, 0, w, h, pSrcData, SrcFormat, nSrcStep,
-		                        cmd.left, cmd.top, NULL, FREERDP_FLIP_VERTICAL);
-		WINPR_ASSERT(rc);
-
-		cmd.data = freerdp_bitmap_compress_planar(encoder->planar, dst, SrcFormat, w, h, step, NULL,
-		                                          &cmd.length);
+		cmd.data = freerdp_bitmap_compress_planar(encoder->planar, src, SrcFormat, w, h, nSrcStep,
+		                                          NULL, &cmd.length);
 		WINPR_ASSERT(cmd.data || (cmd.length == 0));
-
-		free(dst);
 
 		cmd.codecId = RDPGFX_CODECID_PLANAR;
 
