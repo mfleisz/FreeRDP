@@ -42,9 +42,9 @@
 
 #if defined(WITH_SSE2)
 /* Use lddqu for unaligned; load for 16-byte aligned. */
-#define LOAD_SI128(_ptr_)                                           \
-	(((ULONG_PTR)(_ptr_)&0x0f) ? _mm_lddqu_si128((__m128i*)(_ptr_)) \
-	                           : _mm_load_si128((__m128i*)(_ptr_)))
+#define LOAD_SI128(_ptr_)                                                       \
+	(((const ULONG_PTR)(_ptr_)&0x0f) ? _mm_lddqu_si128((const __m128i*)(_ptr_)) \
+	                                 : _mm_load_si128((const __m128i*)(_ptr_)))
 #endif
 
 static INLINE BYTE* writePixelBGRA(BYTE* dst, DWORD formatSize, UINT32 format, BYTE R, BYTE G,
@@ -200,7 +200,7 @@ static INLINE fkt_writePixel getPixelWriteFunction(DWORD format, BOOL useAlpha)
 	}
 }
 
-static INLINE BYTE CLIP(INT32 X)
+static INLINE BYTE CLIP(INT64 X)
 {
 	if (X > 255L)
 		return 255L;
@@ -208,7 +208,7 @@ static INLINE BYTE CLIP(INT32 X)
 	if (X < 0L)
 		return 0L;
 
-	return X;
+	return (BYTE)X;
 }
 
 /**

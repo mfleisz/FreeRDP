@@ -21,6 +21,7 @@
 #include "config.h"
 #endif
 
+#include <winpr/environment.h>
 #include <winpr/wtypes.h>
 #include <winpr/timezone.h>
 #include <winpr/crt.h>
@@ -283,9 +284,22 @@ static BOOL winpr_match_unix_timezone_identifier_with_list(const char* tzid, con
 static TIME_ZONE_ENTRY* winpr_detect_windows_time_zone(void)
 {
 	size_t i, j;
-	char* tzid;
+	char* tzid = NULL;
+	LPCSTR tz = "TZ";
 
-	tzid = winpr_get_unix_timezone_identifier_from_file();
+	DWORD nSize = GetEnvironmentVariableA(tz, NULL, 0);
+	if (nSize)
+	{
+		tzid = (char*)malloc(nSize);
+		if (!GetEnvironmentVariableA(tz, tzid, nSize))
+		{
+			free(tzid);
+			tzid = NULL;
+		}
+	}
+
+	if (tzid == NULL)
+		tzid = winpr_get_unix_timezone_identifier_from_file();
 
 	if (tzid == NULL)
 		tzid = winpr_get_timezone_from_link();
@@ -306,14 +320,14 @@ static TIME_ZONE_ENTRY* winpr_detect_windows_time_zone(void)
 
 			if (winpr_match_unix_timezone_identifier_with_list(tzid, wzid->tzid))
 			{
-				TIME_ZONE_ENTRY* timezone = (TIME_ZONE_ENTRY*)malloc(sizeof(TIME_ZONE_ENTRY));
+				TIME_ZONE_ENTRY* ctimezone = (TIME_ZONE_ENTRY*)malloc(sizeof(TIME_ZONE_ENTRY));
 				free(tzid);
 
-				if (!timezone)
+				if (!ctimezone)
 					return NULL;
 
-				*timezone = TimeZoneTable[i];
-				return timezone;
+				*ctimezone = TimeZoneTable[i];
+				return ctimezone;
 			}
 		}
 	}

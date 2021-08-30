@@ -39,26 +39,10 @@
 /* Authentication Functions: http://msdn.microsoft.com/en-us/library/windows/desktop/aa374731/ */
 
 #include "NTLM/ntlm_export.h"
-
-extern const SecPkgInfoA KERBEROS_SecPkgInfoA;
-extern const SecPkgInfoW KERBEROS_SecPkgInfoW;
-extern const SecurityFunctionTableA KERBEROS_SecurityFunctionTableA;
-extern const SecurityFunctionTableW KERBEROS_SecurityFunctionTableW;
-
-extern const SecPkgInfoA NEGOTIATE_SecPkgInfoA;
-extern const SecPkgInfoW NEGOTIATE_SecPkgInfoW;
-extern const SecurityFunctionTableA NEGOTIATE_SecurityFunctionTableA;
-extern const SecurityFunctionTableW NEGOTIATE_SecurityFunctionTableW;
-
-extern const SecPkgInfoA CREDSSP_SecPkgInfoA;
-extern const SecPkgInfoW CREDSSP_SecPkgInfoW;
-extern const SecurityFunctionTableA CREDSSP_SecurityFunctionTableA;
-extern const SecurityFunctionTableW CREDSSP_SecurityFunctionTableW;
-
-extern const SecPkgInfoA SCHANNEL_SecPkgInfoA;
-extern const SecPkgInfoW SCHANNEL_SecPkgInfoW;
-extern const SecurityFunctionTableA SCHANNEL_SecurityFunctionTableA;
-extern const SecurityFunctionTableW SCHANNEL_SecurityFunctionTableW;
+#include "CredSSP/credssp.h"
+#include "Kerberos/kerberos.h"
+#include "Negotiate/negotiate.h"
+#include "Schannel/schannel.h"
 
 static const SecPkgInfoA* SecPkgInfoA_LIST[] = { &NTLM_SecPkgInfoA, &KERBEROS_SecPkgInfoA,
 	                                             &NEGOTIATE_SecPkgInfoA, &CREDSSP_SecPkgInfoA,
@@ -93,18 +77,18 @@ static const SecurityFunctionTableA_NAME SecurityFunctionTableA_NAME_LIST[] = {
 	{ "Schannel", &SCHANNEL_SecurityFunctionTableA }
 };
 
-static const WCHAR NTLM_NAME_W[] = { 'N', 'T', 'L', 'M', '\0' };
-static const WCHAR KERBEROS_NAME_W[] = { 'K', 'e', 'r', 'b', 'e', 'r', 'o', 's', '\0' };
-static const WCHAR NEGOTIATE_NAME_W[] = { 'N', 'e', 'g', 'o', 't', 'i', 'a', 't', 'e', '\0' };
-static const WCHAR CREDSSP_NAME_W[] = { 'C', 'r', 'e', 'd', 'S', 'S', 'P', '\0' };
-static const WCHAR SCHANNEL_NAME_W[] = { 'S', 'c', 'h', 'a', 'n', 'n', 'e', 'l', '\0' };
+static const WCHAR _NTLM_NAME_W[] = { 'N', 'T', 'L', 'M', '\0' };
+static const WCHAR _KERBEROS_NAME_W[] = { 'K', 'e', 'r', 'b', 'e', 'r', 'o', 's', '\0' };
+static const WCHAR _NEGOTIATE_NAME_W[] = { 'N', 'e', 'g', 'o', 't', 'i', 'a', 't', 'e', '\0' };
+static const WCHAR _CREDSSP_NAME_W[] = { 'C', 'r', 'e', 'd', 'S', 'S', 'P', '\0' };
+static const WCHAR _SCHANNEL_NAME_W[] = { 'S', 'c', 'h', 'a', 'n', 'n', 'e', 'l', '\0' };
 
 static const SecurityFunctionTableW_NAME SecurityFunctionTableW_NAME_LIST[] = {
-	{ NTLM_NAME_W, &NTLM_SecurityFunctionTableW },
-	{ KERBEROS_NAME_W, &KERBEROS_SecurityFunctionTableW },
-	{ NEGOTIATE_NAME_W, &NEGOTIATE_SecurityFunctionTableW },
-	{ CREDSSP_NAME_W, &CREDSSP_SecurityFunctionTableW },
-	{ SCHANNEL_NAME_W, &SCHANNEL_SecurityFunctionTableW }
+	{ _NTLM_NAME_W, &NTLM_SecurityFunctionTableW },
+	{ _KERBEROS_NAME_W, &KERBEROS_SecurityFunctionTableW },
+	{ _NEGOTIATE_NAME_W, &NEGOTIATE_SecurityFunctionTableW },
+	{ _CREDSSP_NAME_W, &CREDSSP_SecurityFunctionTableW },
+	{ _SCHANNEL_NAME_W, &SCHANNEL_SecurityFunctionTableW }
 };
 
 #define SecHandle_LOWER_MAX 0xFFFFFFFF
@@ -506,7 +490,7 @@ void sspi_GlobalFinish(void)
 	sspi_ContextBufferAllocTableFree();
 }
 
-static SecurityFunctionTableA* sspi_GetSecurityFunctionTableAByNameA(const SEC_CHAR* Name)
+static const SecurityFunctionTableA* sspi_GetSecurityFunctionTableAByNameA(const SEC_CHAR* Name)
 {
 	int index;
 	UINT32 cPackages;
@@ -516,7 +500,7 @@ static SecurityFunctionTableA* sspi_GetSecurityFunctionTableAByNameA(const SEC_C
 	{
 		if (strcmp(Name, SecurityFunctionTableA_NAME_LIST[index].Name) == 0)
 		{
-			return (SecurityFunctionTableA*)SecurityFunctionTableA_NAME_LIST[index]
+			return (const SecurityFunctionTableA*)SecurityFunctionTableA_NAME_LIST[index]
 			    .SecurityFunctionTable;
 		}
 	}
@@ -524,7 +508,7 @@ static SecurityFunctionTableA* sspi_GetSecurityFunctionTableAByNameA(const SEC_C
 	return NULL;
 }
 
-static SecurityFunctionTableW* sspi_GetSecurityFunctionTableWByNameW(const SEC_WCHAR* Name)
+static const SecurityFunctionTableW* sspi_GetSecurityFunctionTableWByNameW(const SEC_WCHAR* Name)
 {
 	int index;
 	UINT32 cPackages;
@@ -534,7 +518,7 @@ static SecurityFunctionTableW* sspi_GetSecurityFunctionTableWByNameW(const SEC_W
 	{
 		if (lstrcmpW(Name, SecurityFunctionTableW_NAME_LIST[index].Name) == 0)
 		{
-			return (SecurityFunctionTableW*)SecurityFunctionTableW_NAME_LIST[index]
+			return (const SecurityFunctionTableW*)SecurityFunctionTableW_NAME_LIST[index]
 			    .SecurityFunctionTable;
 		}
 	}
@@ -542,11 +526,11 @@ static SecurityFunctionTableW* sspi_GetSecurityFunctionTableWByNameW(const SEC_W
 	return NULL;
 }
 
-static SecurityFunctionTableW* sspi_GetSecurityFunctionTableWByNameA(const SEC_CHAR* Name)
+static const SecurityFunctionTableW* sspi_GetSecurityFunctionTableWByNameA(const SEC_CHAR* Name)
 {
 	int status;
 	SEC_WCHAR* NameW = NULL;
-	SecurityFunctionTableW* table;
+	const SecurityFunctionTableW* table;
 	status = ConvertToUnicode(CP_UTF8, 0, Name, -1, &NameW, 0);
 
 	if (status <= 0)
@@ -785,7 +769,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_AcquireCredentialsHandleW(
     PTimeStamp ptsExpiry)
 {
 	SECURITY_STATUS status;
-	SecurityFunctionTableW* table = sspi_GetSecurityFunctionTableWByNameW(pszPackage);
+	const SecurityFunctionTableW* table = sspi_GetSecurityFunctionTableWByNameW(pszPackage);
 
 	if (!table)
 		return SEC_E_SECPKG_NOT_FOUND;
@@ -815,7 +799,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_AcquireCredentialsHandleA(
     PTimeStamp ptsExpiry)
 {
 	SECURITY_STATUS status;
-	SecurityFunctionTableA* table = sspi_GetSecurityFunctionTableAByNameA(pszPackage);
+	const SecurityFunctionTableA* table = sspi_GetSecurityFunctionTableAByNameA(pszPackage);
 
 	if (!table)
 		return SEC_E_SECPKG_NOT_FOUND;
@@ -845,7 +829,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_ExportSecurityContext(PCtxtHandle phConte
 {
 	SEC_CHAR* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableW* table;
+	const SecurityFunctionTableW* table;
 	Name = (SEC_CHAR*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -877,7 +861,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_FreeCredentialsHandle(PCredHandle phCrede
 {
 	char* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableA* table;
+	const SecurityFunctionTableA* table;
 	Name = (char*)sspi_SecureHandleGetUpperPointer(phCredential);
 
 	if (!Name)
@@ -911,7 +895,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_ImportSecurityContextW(SEC_WCHAR* pszPack
 {
 	SEC_CHAR* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableW* table;
+	const SecurityFunctionTableW* table;
 	Name = (SEC_CHAR*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -945,7 +929,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_ImportSecurityContextA(SEC_CHAR* pszPacka
 {
 	char* Name = NULL;
 	SECURITY_STATUS status;
-	SecurityFunctionTableA* table;
+	const SecurityFunctionTableA* table;
 	Name = (char*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -978,7 +962,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_QueryCredentialsAttributesW(PCredHandle p
 {
 	SEC_WCHAR* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableW* table;
+	const SecurityFunctionTableW* table;
 	Name = (SEC_WCHAR*)sspi_SecureHandleGetUpperPointer(phCredential);
 
 	if (!Name)
@@ -1011,7 +995,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_QueryCredentialsAttributesA(PCredHandle p
 {
 	char* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableA* table;
+	const SecurityFunctionTableA* table;
 	Name = (char*)sspi_SecureHandleGetUpperPointer(phCredential);
 
 	if (!Name)
@@ -1048,7 +1032,7 @@ winpr_AcceptSecurityContext(PCredHandle phCredential, PCtxtHandle phContext, PSe
 {
 	char* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableA* table;
+	const SecurityFunctionTableA* table;
 	Name = (char*)sspi_SecureHandleGetUpperPointer(phCredential);
 
 	if (!Name)
@@ -1083,7 +1067,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_ApplyControlToken(PCtxtHandle phContext,
 {
 	char* Name = NULL;
 	SECURITY_STATUS status;
-	SecurityFunctionTableA* table;
+	const SecurityFunctionTableA* table;
 	Name = (char*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -1116,7 +1100,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_CompleteAuthToken(PCtxtHandle phContext,
 {
 	char* Name = NULL;
 	SECURITY_STATUS status;
-	SecurityFunctionTableA* table;
+	const SecurityFunctionTableA* table;
 	Name = (char*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -1148,7 +1132,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_DeleteSecurityContext(PCtxtHandle phConte
 {
 	char* Name = NULL;
 	SECURITY_STATUS status;
-	SecurityFunctionTableA* table;
+	const SecurityFunctionTableA* table;
 	Name = (char*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -1189,7 +1173,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_ImpersonateSecurityContext(PCtxtHandle ph
 {
 	SEC_CHAR* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableW* table;
+	const SecurityFunctionTableW* table;
 	Name = (SEC_CHAR*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -1224,7 +1208,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_InitializeSecurityContextW(
 {
 	SEC_CHAR* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableW* table;
+	const SecurityFunctionTableW* table;
 	Name = (SEC_CHAR*)sspi_SecureHandleGetUpperPointer(phCredential);
 
 	if (!Name)
@@ -1261,7 +1245,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_InitializeSecurityContextA(
 {
 	SEC_CHAR* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableA* table;
+	const SecurityFunctionTableA* table;
 	Name = (SEC_CHAR*)sspi_SecureHandleGetUpperPointer(phCredential);
 
 	if (!Name)
@@ -1296,7 +1280,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_QueryContextAttributesW(PCtxtHandle phCon
 {
 	SEC_CHAR* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableW* table;
+	const SecurityFunctionTableW* table;
 	Name = (SEC_CHAR*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -1329,7 +1313,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_QueryContextAttributesA(PCtxtHandle phCon
 {
 	SEC_CHAR* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableA* table;
+	const SecurityFunctionTableA* table;
 	Name = (SEC_CHAR*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -1362,7 +1346,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_QuerySecurityContextToken(PCtxtHandle phC
 {
 	SEC_CHAR* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableW* table;
+	const SecurityFunctionTableW* table;
 	Name = (SEC_CHAR*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -1396,7 +1380,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_SetContextAttributesW(PCtxtHandle phConte
 {
 	SEC_CHAR* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableW* table;
+	const SecurityFunctionTableW* table;
 	Name = (SEC_CHAR*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -1430,7 +1414,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_SetContextAttributesA(PCtxtHandle phConte
 {
 	char* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableA* table;
+	const SecurityFunctionTableA* table;
 	Name = (char*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -1462,7 +1446,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_RevertSecurityContext(PCtxtHandle phConte
 {
 	SEC_CHAR* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableW* table;
+	const SecurityFunctionTableW* table;
 	Name = (SEC_CHAR*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -1498,7 +1482,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_DecryptMessage(PCtxtHandle phContext,
 {
 	char* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableA* table;
+	const SecurityFunctionTableA* table;
 	Name = (char*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -1531,7 +1515,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_EncryptMessage(PCtxtHandle phContext, ULO
 {
 	char* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableA* table;
+	const SecurityFunctionTableA* table;
 	Name = (char*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -1564,7 +1548,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_MakeSignature(PCtxtHandle phContext, ULON
 {
 	char* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableA* table;
+	const SecurityFunctionTableA* table;
 	Name = (char*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
@@ -1598,7 +1582,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_VerifySignature(PCtxtHandle phContext,
 {
 	char* Name;
 	SECURITY_STATUS status;
-	SecurityFunctionTableA* table;
+	const SecurityFunctionTableA* table;
 	Name = (char*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)

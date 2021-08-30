@@ -649,10 +649,10 @@ BOOL xf_create_window(xfContext* xfc)
 
 	if (!xfc->image)
 	{
-		rdpGdi* gdi = xfc->context.gdi;
+		rdpGdi* cgdi = xfc->context.gdi;
 		xfc->image = XCreateImage(xfc->display, xfc->visual, xfc->depth, ZPixmap, 0,
-		                          (char*)gdi->primary_buffer, settings->DesktopWidth,
-		                          settings->DesktopHeight, xfc->scanline_pad, gdi->stride);
+		                          (char*)cgdi->primary_buffer, settings->DesktopWidth,
+		                          settings->DesktopHeight, xfc->scanline_pad, cgdi->stride);
 		xfc->image->byte_order = LSBFirst;
 		xfc->image->bitmap_bit_order = LSBFirst;
 	}
@@ -1489,7 +1489,7 @@ static DWORD WINAPI xf_client_thread(LPVOID param)
 	DWORD exit_code = 0;
 	DWORD nCount;
 	DWORD waitStatus;
-	HANDLE handles[64];
+	HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
 	xfContext* xfc;
 	freerdp* instance;
 	rdpContext* context;

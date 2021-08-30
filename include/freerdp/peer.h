@@ -29,6 +29,7 @@
 
 #include <winpr/sspi.h>
 #include <winpr/ntlm.h>
+#include <winpr/winsock.h>
 
 typedef BOOL (*psPeerContextNew)(freerdp_peer* peer, rdpContext* context);
 typedef void (*psPeerContextFree)(freerdp_peer* peer, rdpContext* context);
@@ -47,12 +48,15 @@ typedef void (*psPeerDisconnect)(freerdp_peer* peer);
 typedef BOOL (*psPeerCapabilities)(freerdp_peer* peer);
 typedef BOOL (*psPeerPostConnect)(freerdp_peer* peer);
 typedef BOOL (*psPeerActivate)(freerdp_peer* peer);
-typedef BOOL (*psPeerLogon)(freerdp_peer* peer, SEC_WINNT_AUTH_IDENTITY* identity, BOOL automatic);
+typedef BOOL (*psPeerLogon)(freerdp_peer* peer, const SEC_WINNT_AUTH_IDENTITY* identity,
+                            BOOL automatic);
 typedef BOOL (*psPeerAdjustMonitorsLayout)(freerdp_peer* peer);
 typedef BOOL (*psPeerClientCapabilities)(freerdp_peer* peer);
 
 typedef BOOL (*psPeerSendChannelData)(freerdp_peer* peer, UINT16 channelId, const BYTE* data,
                                       size_t size);
+typedef BOOL (*psPeerSendChannelPacket)(freerdp_peer* client, UINT16 channelId, size_t totalSize,
+                                        UINT32 flags, const BYTE* data, size_t chunkSize);
 typedef BOOL (*psPeerReceiveChannelData)(freerdp_peer* peer, UINT16 channelId, const BYTE* data,
                                          size_t size, UINT32 flags, size_t totalSize);
 
@@ -133,6 +137,8 @@ struct rdp_freerdp_peer
 	psPeerClientCapabilities ClientCapabilities;
 	psPeerComputeNtlmHash ComputeNtlmHash;
 	psPeerLicenseCallback LicenseCallback;
+
+	psPeerSendChannelPacket SendChannelPacket;
 };
 
 #ifdef __cplusplus
@@ -145,6 +151,8 @@ extern "C"
 
 	FREERDP_API freerdp_peer* freerdp_peer_new(int sockfd);
 	FREERDP_API void freerdp_peer_free(freerdp_peer* client);
+	FREERDP_API BOOL freerdp_peer_set_local_and_hostname(freerdp_peer* client,
+	                                                     const struct sockaddr_storage* peer_addr);
 
 #ifdef __cplusplus
 }

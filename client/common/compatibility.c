@@ -31,6 +31,10 @@
 #include <freerdp/addin.h>
 #include <freerdp/settings.h>
 #include <freerdp/client/channels.h>
+#include <freerdp/channels/drdynvc.h>
+#include <freerdp/channels/cliprdr.h>
+#include <freerdp/channels/encomsp.h>
+#include <freerdp/channels/rdpsnd.h>
 
 #include <freerdp/locale/keyboard.h>
 
@@ -180,7 +184,7 @@ static int freerdp_client_old_process_plugin(rdpSettings* settings, ADDIN_ARGV* 
 {
 	int args_handled = 0;
 
-	if (strcmp(args->argv[0], "cliprdr") == 0)
+	if (strcmp(args->argv[0], CLIPRDR_SVC_CHANNEL_NAME) == 0)
 	{
 		args_handled++;
 		settings->RedirectClipboard = TRUE;
@@ -218,12 +222,12 @@ static int freerdp_client_old_process_plugin(rdpSettings* settings, ADDIN_ARGV* 
 			freerdp_client_add_device_channel(settings, args->argc - 1, &args->argv[1]);
 		}
 	}
-	else if (strcmp(args->argv[0], "drdynvc") == 0)
+	else if (strcmp(args->argv[0], DRDYNVC_SVC_CHANNEL_NAME) == 0)
 	{
 		args_handled++;
 		freerdp_client_add_dynamic_channel(settings, args->argc - 1, &args->argv[1]);
 	}
-	else if (strcmp(args->argv[0], "rdpsnd") == 0)
+	else if (strcmp(args->argv[0], RDPSND_CHANNEL_NAME) == 0)
 	{
 		args_handled++;
 
@@ -234,7 +238,7 @@ static int freerdp_client_old_process_plugin(rdpSettings* settings, ADDIN_ARGV* 
 		freerdp_addin_replace_argument_value(args, args->argv[1], "sys", args->argv[1]);
 		freerdp_client_add_static_channel(settings, args->argc, args->argv);
 	}
-	else if (strcmp(args->argv[0], "rail") == 0)
+	else if (strcmp(args->argv[0], RAIL_SVC_CHANNEL_NAME) == 0)
 	{
 		args_handled++;
 
@@ -287,7 +291,7 @@ static int freerdp_client_old_command_line_pre_filter(void* context, int index, 
 	if (strcmp("--plugin", argv[index]) == 0)
 	{
 		int args_handled = 0;
-		int length;
+		size_t length;
 		char *a, *p;
 		int i, j, t;
 		int old_index;
@@ -341,7 +345,7 @@ static int freerdp_client_old_command_line_pre_filter(void* context, int index, 
 
 					if (p != NULL)
 					{
-						length = (int)(p - a);
+						length = (size_t)(p - a);
 
 						if (!freerdp_addin_argv_add_argument_ex(args, a, length))
 						{
@@ -636,12 +640,12 @@ int freerdp_client_parse_old_command_line_arguments(int argc, char** argv, rdpSe
 		}
 		CommandLineSwitchCase(arg, "t")
 		{
-			unsigned long p = strtoul(arg->Value, NULL, 0);
+			unsigned long cp = strtoul(arg->Value, NULL, 0);
 
-			if ((errno != 0) || (p == 0) || (p > UINT16_MAX))
+			if ((errno != 0) || (cp == 0) || (cp > UINT16_MAX))
 				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 
-			settings->ServerPort = p;
+			settings->ServerPort = cp;
 			WLog_WARN(TAG, "-t %s -> /port:%s", arg->Value, arg->Value);
 		}
 		CommandLineSwitchCase(arg, "u")

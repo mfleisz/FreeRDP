@@ -23,6 +23,8 @@
 #include "config.h"
 #endif
 
+#include <stdarg.h>
+
 #include "rdp.h"
 #include "input.h"
 #include "update.h"
@@ -408,7 +410,20 @@ int freerdp_message_queue_process_pending_messages(freerdp* instance, DWORD id)
 static BOOL freerdp_send_channel_data(freerdp* instance, UINT16 channelId, const BYTE* data,
                                       size_t size)
 {
+	WINPR_ASSERT(instance);
+	WINPR_ASSERT(instance->context);
+	WINPR_ASSERT(instance->context->rdp);
 	return rdp_send_channel_data(instance->context->rdp, channelId, data, size);
+}
+
+static BOOL freerdp_send_channel_packet(freerdp* instance, UINT16 channelId, size_t totalSize,
+                                        UINT32 flags, const BYTE* data, size_t chunkSize)
+{
+	WINPR_ASSERT(instance);
+	WINPR_ASSERT(instance->context);
+	WINPR_ASSERT(instance->context->rdp);
+	return rdp_channel_send_packet(instance->context->rdp, channelId, totalSize, flags, data,
+	                               chunkSize);
 }
 
 BOOL freerdp_disconnect(freerdp* instance)
@@ -867,6 +882,7 @@ freerdp* freerdp_new(void)
 
 	instance->ContextSize = sizeof(rdpContext);
 	instance->SendChannelData = freerdp_send_channel_data;
+	instance->SendChannelPacket = freerdp_send_channel_packet;
 	instance->ReceiveChannelData = freerdp_channels_data;
 	return instance;
 }
@@ -963,10 +979,13 @@ void clearChannelError(rdpContext* context)
 	ResetEvent(context->channelErrorEvent);
 }
 
-void setChannelError(rdpContext* context, UINT errorNum, char* description)
+void setChannelError(rdpContext* context, UINT errorNum, const char* format, ...)
 {
+	va_list ap;
+	va_start(ap, format);
 	context->channelErrorNum = errorNum;
-	strncpy(context->errorDescription, description, 499);
+	vsnprintf(context->errorDescription, 499, format, ap);
+	va_end(ap);
 	SetEvent(context->channelErrorEvent);
 }
 

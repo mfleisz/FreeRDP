@@ -2033,7 +2033,7 @@ BOOL tsg_connect(rdpTsg* tsg, const char* hostname, UINT16 port, DWORD timeout)
 {
 	UINT64 looptimeout = timeout * 1000ULL;
 	DWORD nCount;
-	HANDLE events[64];
+	HANDLE events[MAXIMUM_WAIT_OBJECTS] = { 0 };
 	rdpRpc* rpc = tsg->rpc;
 	rdpSettings* settings = rpc->settings;
 	rdpTransport* transport = rpc->transport;
@@ -2055,7 +2055,7 @@ BOOL tsg_connect(rdpTsg* tsg, const char* hostname, UINT16 port, DWORD timeout)
 		return FALSE;
 	}
 
-	nCount = tsg_get_event_handles(tsg, events, 64);
+	nCount = tsg_get_event_handles(tsg, events, ARRAYSIZE(events));
 
 	if (nCount == 0)
 		return FALSE;
@@ -2246,7 +2246,7 @@ static int transport_bio_tsg_write(BIO* bio, const char* buf, int num)
 	int status;
 	rdpTsg* tsg = (rdpTsg*)BIO_get_data(bio);
 	BIO_clear_flags(bio, BIO_FLAGS_WRITE);
-	status = tsg_write(tsg, (BYTE*)buf, num);
+	status = tsg_write(tsg, (const BYTE*)buf, num);
 
 	if (status < 0)
 	{
@@ -2339,27 +2339,27 @@ static long transport_bio_tsg_ctrl(BIO* bio, int cmd, long arg1, void* arg2)
 
 		case BIO_C_READ_BLOCKED:
 		{
-			BIO* bio = outChannel->common.bio;
-			status = BIO_read_blocked(bio);
+			BIO* cbio = outChannel->common.bio;
+			status = BIO_read_blocked(cbio);
 		}
 		break;
 
 		case BIO_C_WRITE_BLOCKED:
 		{
-			BIO* bio = inChannel->common.bio;
-			status = BIO_write_blocked(bio);
+			BIO* cbio = inChannel->common.bio;
+			status = BIO_write_blocked(cbio);
 		}
 		break;
 
 		case BIO_C_WAIT_READ:
 		{
 			int timeout = (int)arg1;
-			BIO* bio = outChannel->common.bio;
+			BIO* cbio = outChannel->common.bio;
 
-			if (BIO_read_blocked(bio))
-				return BIO_wait_read(bio, timeout);
-			else if (BIO_write_blocked(bio))
-				return BIO_wait_write(bio, timeout);
+			if (BIO_read_blocked(cbio))
+				return BIO_wait_read(cbio, timeout);
+			else if (BIO_write_blocked(cbio))
+				return BIO_wait_write(cbio, timeout);
 			else
 				status = 1;
 		}
@@ -2368,12 +2368,12 @@ static long transport_bio_tsg_ctrl(BIO* bio, int cmd, long arg1, void* arg2)
 		case BIO_C_WAIT_WRITE:
 		{
 			int timeout = (int)arg1;
-			BIO* bio = inChannel->common.bio;
+			BIO* cbio = inChannel->common.bio;
 
-			if (BIO_write_blocked(bio))
-				status = BIO_wait_write(bio, timeout);
-			else if (BIO_read_blocked(bio))
-				status = BIO_wait_read(bio, timeout);
+			if (BIO_write_blocked(cbio))
+				status = BIO_wait_write(cbio, timeout);
+			else if (BIO_read_blocked(cbio))
+				status = BIO_wait_read(cbio, timeout);
 			else
 				status = 1;
 		}

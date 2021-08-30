@@ -563,11 +563,13 @@ static BOOL rdg_websocket_reply_close(BIO* bio, wStream* s)
 	{
 		uint16_t data;
 		Stream_Read_UINT16(s, data);
-		Stream_Write_UINT16(s, data ^ maskingKey1);
+		Stream_Write_UINT16(closeFrame, data ^ maskingKey1);
 	}
 	Stream_SealLength(closeFrame);
 
 	status = BIO_write(bio, Stream_Buffer(closeFrame), Stream_Length(closeFrame));
+	Stream_Free(closeFrame, TRUE);
+
 	/* server MUST close socket now. The server is not allowed anymore to
 	 * send frames but if he does, nothing bad would happen */
 	if (status < 0)
@@ -2008,7 +2010,7 @@ static int rdg_write_websocket_data_packet(rdpRdg* rdg, const BYTE* buf, int isi
 	/* mask as much as possible with 32bit access */
 	for (streamPos = 0; streamPos + 4 <= isize; streamPos += 4)
 	{
-		uint32_t masked = *((uint32_t*)((BYTE*)buf + streamPos)) ^ maskingKey;
+		uint32_t masked = *((const uint32_t*)((const BYTE*)buf + streamPos)) ^ maskingKey;
 		Stream_Write_UINT32(sWS, masked);
 	}
 
@@ -2016,7 +2018,7 @@ static int rdg_write_websocket_data_packet(rdpRdg* rdg, const BYTE* buf, int isi
 	for (; streamPos < isize; streamPos++)
 	{
 		BYTE* partialMask = (BYTE*)(&maskingKey) + streamPos % 4;
-		BYTE masked = *((BYTE*)((BYTE*)buf + streamPos)) ^ *partialMask;
+		BYTE masked = *((const BYTE*)((const BYTE*)buf + streamPos)) ^ *partialMask;
 		Stream_Write_UINT8(sWS, masked);
 	}
 
@@ -2400,10 +2402,10 @@ static int rdg_bio_gets(BIO* bio, char* str, int size)
 	return -2;
 }
 
-static long rdg_bio_ctrl(BIO* bio, int cmd, long arg1, void* arg2)
+static long rdg_bio_ctrl(BIO* in_bio, int cmd, long arg1, void* arg2)
 {
 	long status = -1;
-	rdpRdg* rdg = (rdpRdg*)BIO_get_data(bio);
+	rdpRdg* rdg = (rdpRdg*)BIO_get_data(in_bio);
 	rdpTls* tlsOut = rdg->tlsOut;
 	rdpTls* tlsIn = rdg->tlsIn;
 
@@ -2420,42 +2422,42 @@ static long rdg_bio_ctrl(BIO* bio, int cmd, long arg1, void* arg2)
 	}
 	else if (cmd == BIO_C_READ_BLOCKED)
 	{
-		BIO* bio = tlsOut->bio;
-		status = BIO_read_blocked(bio);
+		BIO* cbio = tlsOut->bio;
+		status = BIO_read_blocked(cbio);
 	}
 	else if (cmd == BIO_C_WRITE_BLOCKED)
 	{
-		BIO* bio = tlsIn->bio;
+		BIO* cbio = tlsIn->bio;
 
 		if (rdg->transferEncoding.isWebsocketTransport)
-			bio = tlsOut->bio;
+			cbio = tlsOut->bio;
 
-		status = BIO_write_blocked(bio);
+		status = BIO_write_blocked(cbio);
 	}
 	else if (cmd == BIO_C_WAIT_READ)
 	{
 		int timeout = (int)arg1;
-		BIO* bio = tlsOut->bio;
+		BIO* cbio = tlsOut->bio;
 
-		if (BIO_read_blocked(bio))
-			return BIO_wait_read(bio, timeout);
-		else if (BIO_write_blocked(bio))
-			return BIO_wait_write(bio, timeout);
+		if (BIO_read_blocked(cbio))
+			return BIO_wait_read(cbio, timeout);
+		else if (BIO_write_blocked(cbio))
+			return BIO_wait_write(cbio, timeout);
 		else
 			status = 1;
 	}
 	else if (cmd == BIO_C_WAIT_WRITE)
 	{
 		int timeout = (int)arg1;
-		BIO* bio = tlsIn->bio;
+		BIO* cbio = tlsIn->bio;
 
 		if (rdg->transferEncoding.isWebsocketTransport)
-			bio = tlsOut->bio;
+			cbio = tlsOut->bio;
 
-		if (BIO_write_blocked(bio))
-			status = BIO_wait_write(bio, timeout);
-		else if (BIO_read_blocked(bio))
-			status = BIO_wait_read(bio, timeout);
+		if (BIO_write_blocked(cbio))
+			status = BIO_wait_write(cbio, timeout);
+		else if (BIO_read_blocked(cbio))
+			status = BIO_wait_read(cbio, timeout);
 		else
 			status = 1;
 	}

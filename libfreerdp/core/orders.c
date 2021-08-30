@@ -2108,7 +2108,7 @@ BOOL update_write_cache_bitmap_order(wStream* s, const CACHE_BITMAP_ORDER* cache
 	{
 		if ((*flags & NO_BITMAP_COMPRESSION_HDR) == 0)
 		{
-			BYTE* bitmapComprHdr = (BYTE*)&(cache_bitmap->bitmapComprHdr);
+			const BYTE* bitmapComprHdr = (const BYTE*)&(cache_bitmap->bitmapComprHdr);
 			Stream_Write(s, bitmapComprHdr, 8); /* bitmapComprHdr (8 bytes) */
 			bitmapLength -= 8;
 		}
@@ -2431,8 +2431,9 @@ BOOL update_write_cache_color_table_order(wStream* s,
                                           const CACHE_COLOR_TABLE_ORDER* cache_color_table,
                                           UINT16* flags)
 {
-	int i, inf;
-	UINT32* colorTable;
+	size_t i;
+	int inf;
+	const UINT32* colorTable;
 
 	if (cache_color_table->numberColors != 256)
 		return FALSE;
@@ -2444,9 +2445,9 @@ BOOL update_write_cache_color_table_order(wStream* s,
 
 	Stream_Write_UINT8(s, cache_color_table->cacheIndex);    /* cacheIndex (1 byte) */
 	Stream_Write_UINT16(s, cache_color_table->numberColors); /* numberColors (2 bytes) */
-	colorTable = (UINT32*)&cache_color_table->colorTable;
+	colorTable = (const UINT32*)&cache_color_table->colorTable;
 
-	for (i = 0; i < (int)cache_color_table->numberColors; i++)
+	for (i = 0; i < cache_color_table->numberColors; i++)
 	{
 		update_write_color_quad(s, colorTable[i]);
 	}
@@ -3664,22 +3665,24 @@ static BOOL update_recv_primary_order(rdpUpdate* update, wStream* s, BYTE flags)
 static BOOL update_recv_secondary_order(rdpUpdate* update, wStream* s, BYTE flags)
 {
 	BOOL rc = FALSE;
-	size_t start, end, pos, diff;
+	size_t start, end, pos, diff, rem;
 	BYTE orderType;
 	UINT16 extraFlags;
-	UINT16 orderLength;
+	INT16 orderLength;
+	INT32 orderLengthFull;
 	rdpContext* context = update->context;
 	rdpSettings* settings = context->settings;
 	rdpSecondaryUpdate* secondary = update->secondary;
 	const char* name;
 
-	if (Stream_GetRemainingLength(s) < 5)
+	rem = Stream_GetRemainingLength(s);
+	if (rem < 5)
 	{
 		WLog_Print(update->log, WLOG_ERROR, "Stream_GetRemainingLength(s) < 5");
 		return FALSE;
 	}
 
-	Stream_Read_UINT16(s, orderLength); /* orderLength (2 bytes) */
+	Stream_Read_INT16(s, orderLength);  /* orderLength (2 bytes signed) */
 	Stream_Read_UINT16(s, extraFlags);  /* extraFlags (2 bytes) */
 	Stream_Read_UINT8(s, orderType);    /* orderType (1 byte) */
 
@@ -3695,10 +3698,16 @@ static BOOL update_recv_secondary_order(rdpUpdate* update, wStream* s, BYTE flag
 	 * According to [MS-RDPEGDI] 2.2.2.2.1.2.1.1 the order length must be increased by 13 bytes
 	 * including the header. As we already read the header 7 left
 	 */
-	if (Stream_GetRemainingLength(s) < orderLength + 7U)
+	rem = Stream_GetRemainingLength(s);
+
+	/* orderLength might be negative without the adjusted header data.
+	 * Account for that here so all further checks operate on the correct value.
+	 */
+	orderLengthFull = orderLength + 7;
+	if ((orderLengthFull < 0) || (rem < (size_t)orderLengthFull))
 	{
-		WLog_Print(update->log, WLOG_ERROR, "Stream_GetRemainingLength(s) %" PRIuz " < %" PRIu16,
-		           Stream_GetRemainingLength(s), orderLength + 7);
+		WLog_Print(update->log, WLOG_ERROR, "Stream_GetRemainingLength(s) %" PRIuz " < %" PRId32,
+		           rem, orderLengthFull);
 		return FALSE;
 	}
 
@@ -3822,7 +3831,7 @@ static BOOL update_recv_secondary_order(rdpUpdate* update, wStream* s, BYTE flag
 		WLog_Print(update->log, WLOG_ERROR, "SECONDARY ORDER %s failed", name);
 	}
 
-	end = start + orderLength + 7;
+	end = start + orderLengthFull;
 	pos = Stream_GetPosition(s);
 	if (pos > end)
 	{

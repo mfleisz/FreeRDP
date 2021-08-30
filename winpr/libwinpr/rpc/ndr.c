@@ -148,11 +148,11 @@ static void NdrProcessParams(PMIDL_STUB_MESSAGE pStubMsg, PFORMAT_STRING pFormat
                              void** fpuArgs, unsigned short numberParams)
 {
 	unsigned int i;
-	NDR_PARAM* params;
+	const NDR_PARAM* params;
 	PFORMAT_STRING fmt;
 	unsigned char* arg;
 	unsigned char type;
-	params = (NDR_PARAM*)pFormat;
+	params = (const NDR_PARAM*)pFormat;
 	WLog_INFO(TAG, "Params = ");
 
 	for (i = 0; i < numberParams; i++)
@@ -244,8 +244,8 @@ static void NdrPrintExtFlags(INTERPRETER_OPT_FLAGS2 extFlags)
 		WLog_INFO(TAG, "HasNotify2, ");
 }
 
-CLIENT_CALL_RETURN NdrClientCall(PMIDL_STUB_DESC pStubDescriptor, PFORMAT_STRING pFormat,
-                                 void** stackTop, void** fpuStack)
+static CLIENT_CALL_RETURN NdrClientCall(PMIDL_STUB_DESC pStubDescriptor, PFORMAT_STRING pFormat,
+                                        void** stackTop, void** fpuStack)
 {
 	RPC_MESSAGE rpcMsg;
 	unsigned short procNum;
@@ -255,11 +255,11 @@ CLIENT_CALL_RETURN NdrClientCall(PMIDL_STUB_DESC pStubDescriptor, PFORMAT_STRING
 	MIDL_STUB_MESSAGE stubMsg;
 	INTERPRETER_FLAGS flags;
 	INTERPRETER_OPT_FLAGS optFlags;
-	NDR_PROC_HEADER* procHeader;
-	NDR_OI2_PROC_HEADER* oi2ProcHeader;
+	const NDR_PROC_HEADER* procHeader;
+	const NDR_OI2_PROC_HEADER* oi2ProcHeader;
 	CLIENT_CALL_RETURN client_call_return;
 	procNum = stackSize = numberParams = 0;
-	procHeader = (NDR_PROC_HEADER*)&pFormat[0];
+	procHeader = (const NDR_PROC_HEADER*)&pFormat[0];
 	client_call_return.Pointer = NULL;
 	handleType = procHeader->HandleType;
 	flags = procHeader->OldOiFlags;
@@ -277,14 +277,14 @@ CLIENT_CALL_RETURN NdrClientCall(PMIDL_STUB_DESC pStubDescriptor, PFORMAT_STRING
 	{
 		/* implicit handle */
 		WLog_INFO(TAG, "Implicit Handle");
-		oi2ProcHeader = (NDR_OI2_PROC_HEADER*)&pFormat[0];
+		oi2ProcHeader = (const NDR_OI2_PROC_HEADER*)&pFormat[0];
 		pFormat += sizeof(NDR_OI2_PROC_HEADER);
 	}
 	else
 	{
 		/* explicit handle */
 		WLog_INFO(TAG, "Explicit Handle");
-		oi2ProcHeader = (NDR_OI2_PROC_HEADER*)&pFormat[6];
+		oi2ProcHeader = (const NDR_OI2_PROC_HEADER*)&pFormat[6];
 		pFormat += sizeof(NDR_OI2_PROC_HEADER) + 6;
 	}
 
@@ -302,17 +302,17 @@ CLIENT_CALL_RETURN NdrClientCall(PMIDL_STUB_DESC pStubDescriptor, PFORMAT_STRING
 	if (optFlags.HasExtensions)
 	{
 		INTERPRETER_OPT_FLAGS2 extFlags;
-		NDR_PROC_HEADER_EXTS* extensions = (NDR_PROC_HEADER_EXTS*)pFormat;
+		const NDR_PROC_HEADER_EXTS* extensions = (const NDR_PROC_HEADER_EXTS*)pFormat;
 		pFormat += extensions->Size;
 		extFlags = extensions->Flags2;
 		WLog_DBG(TAG, "Extensions: Size: %hhu, flags2: 0x%02X", extensions->Size,
-		         *((unsigned char*)&extensions->Flags2));
+		         *((const unsigned char*)&extensions->Flags2));
 #ifdef __x86_64__
 
 		if (extensions->Size > sizeof(*extensions) && fpuStack)
 		{
 			int i;
-			unsigned short fpuMask = *(unsigned short*)(extensions + 1);
+			unsigned short fpuMask = *(const unsigned short*)(extensions + 1);
 
 			for (i = 0; i < 4; i++, fpuMask >>= 2)
 			{

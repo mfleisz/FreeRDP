@@ -32,6 +32,7 @@
 #include <winpr/interlocked.h>
 
 #include <freerdp/log.h>
+#include <freerdp/channels/drdynvc.h>
 
 #include "shadow.h"
 
@@ -118,7 +119,7 @@ static INLINE BOOL shadow_client_rdpgfx_reset_graphic(rdpShadowClient* client)
 	rdpSettings* settings;
 
 	WINPR_ASSERT(client);
-	WINPR_ASSERT(client->context);
+	WINPR_ASSERT(client->rdpgfx);
 
 	context = client->rdpgfx;
 	WINPR_ASSERT(context);
@@ -195,13 +196,13 @@ static BOOL shadow_client_context_new(freerdp_peer* peer, rdpContext* context)
 	settings->DrawAllowDynamicColorFidelity = TRUE;
 	settings->CompressionLevel = PACKET_COMPR_TYPE_RDP6;
 
-	if (!(settings->CertificateFile = _strdup(server->CertificateFile)))
+	if (!freerdp_settings_set_string(settings, FreeRDP_CertificateFile, server->CertificateFile))
 		goto fail_cert_file;
 
-	if (!(settings->PrivateKeyFile = _strdup(server->PrivateKeyFile)))
+	if (!freerdp_settings_set_string(settings, FreeRDP_PrivateKeyFile, server->PrivateKeyFile))
 		goto fail_privkey_file;
 
-	if (!(settings->RdpKeyFile = _strdup(settings->PrivateKeyFile)))
+	if (!freerdp_settings_set_string(settings, FreeRDP_RdpKeyFile, server->PrivateKeyFile))
 		goto fail_rdpkey_file;
 	if (server->ipcSocket && (strncmp(bind_address, server->ipcSocket,
 	                                  strnlen(bind_address, sizeof(bind_address))) != 0))
@@ -243,14 +244,11 @@ fail_message_queue:
 fail_open_server:
 	DeleteCriticalSection(&(client->lock));
 fail_client_lock:
-	free(settings->RdpKeyFile);
-	settings->RdpKeyFile = NULL;
+	freerdp_settings_set_string(settings, FreeRDP_RdpKeyFile, NULL);
 fail_rdpkey_file:
-	free(settings->PrivateKeyFile);
-	settings->PrivateKeyFile = NULL;
+	freerdp_settings_set_string(settings, FreeRDP_PrivateKeyFile, NULL);
 fail_privkey_file:
-	free(settings->CertificateFile);
-	settings->CertificateFile = NULL;
+	freerdp_settings_set_string(settings, FreeRDP_CertificateFile, NULL);
 fail_cert_file:
 	return FALSE;
 }
@@ -292,7 +290,6 @@ static INLINE void shadow_client_mark_invalid(rdpShadowClient* client, UINT32 nu
 	rdpSettings* settings;
 
 	WINPR_ASSERT(client);
-	WINPR_ASSERT(client->context);
 	WINPR_ASSERT(rects || (numRects == 0));
 
 	settings = client->context.settings;
@@ -604,13 +601,15 @@ static BOOL shadow_client_activate(freerdp_peer* peer)
 	return shadow_client_refresh_rect(&client->context, 0, NULL);
 }
 
-static BOOL shadow_client_logon(freerdp_peer* peer, SEC_WINNT_AUTH_IDENTITY* identity,
+static BOOL shadow_client_logon(freerdp_peer* peer, const SEC_WINNT_AUTH_IDENTITY* identity,
                                 BOOL automatic)
 {
 	char* user = NULL;
 	char* domain = NULL;
 	char* password = NULL;
 	rdpSettings* settings;
+
+	WINPR_UNUSED(automatic);
 
 	WINPR_ASSERT(peer);
 	WINPR_ASSERT(identity);
@@ -1141,7 +1140,7 @@ static BOOL shadow_client_send_surface_gfx(rdpShadowClient* client, const BYTE* 
 	{
 		BOOL rc;
 		wStream* s;
-		RECTANGLE_16 rect;
+		RFX_RECT rect;
 
 		if (shadow_encoder_prepare(encoder, FREERDP_CODEC_REMOTEFX) < 0)
 		{
@@ -1156,10 +1155,10 @@ static BOOL shadow_client_send_surface_gfx(rdpShadowClient* client, const BYTE* 
 		WINPR_ASSERT(cmd.top <= UINT16_MAX);
 		WINPR_ASSERT(cmd.right <= UINT16_MAX);
 		WINPR_ASSERT(cmd.bottom <= UINT16_MAX);
-		rect.left = (UINT16)cmd.left;
-		rect.top = (UINT16)cmd.top;
-		rect.right = (UINT16)cmd.right;
-		rect.bottom = (UINT16)cmd.bottom;
+		rect.x = (UINT16)cmd.left;
+		rect.y = (UINT16)cmd.top;
+		rect.width = (UINT16)cmd.right - cmd.left;
+		rect.height = (UINT16)cmd.bottom - cmd.top;
 
 		rc = rfx_compose_message(encoder->rfx, s, &rect, 1, pSrcData, nWidth, nHeight, nSrcStep);
 
@@ -1173,9 +1172,12 @@ static BOOL shadow_client_send_surface_gfx(rdpShadowClient* client, const BYTE* 
 		/* rc > 0 means new data */
 		if (rc > 0)
 		{
+			const size_t pos = Stream_GetPosition(s);
+			WINPR_ASSERT(pos <= UINT32_MAX);
+
 			cmd.codecId = RDPGFX_CODECID_CAVIDEO;
 			cmd.data = Stream_Buffer(s);
-			cmd.length = Stream_GetPosition(s);
+			cmd.length = (UINT32)pos;
 
 			IFCALLRET(client->rdpgfx->SurfaceFrameCommand, error, client->rdpgfx, &cmd, &cmdstart,
 			          &cmdend);
@@ -1923,7 +1925,7 @@ static INLINE BOOL shadow_client_no_surface_update(rdpShadowClient* client,
 	return shadow_client_surface_update(client, &(surface->invalidRegion));
 }
 
-static int shadow_client_subsystem_process_message(rdpShadowClient* client, const wMessage* message)
+static int shadow_client_subsystem_process_message(rdpShadowClient* client, wMessage* message)
 {
 	rdpContext* context = (rdpContext*)client;
 	rdpUpdate* update;
@@ -2189,7 +2191,7 @@ static DWORD WINAPI shadow_client_thread(LPVOID arg)
 		}
 		else
 		{
-			if (WTSVirtualChannelManagerIsChannelJoined(client->vcm, "drdynvc"))
+			if (WTSVirtualChannelManagerIsChannelJoined(client->vcm, DRDYNVC_SVC_CHANNEL_NAME))
 			{
 				switch (WTSVirtualChannelManagerGetDrdynvcState(client->vcm))
 				{

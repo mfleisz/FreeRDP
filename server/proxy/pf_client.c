@@ -95,12 +95,13 @@ static BOOL pf_client_load_rdpsnd(pClientContext* pc)
 	 * if AudioOutput is enabled in proxy and client connected with rdpsnd, use proxy as rdpsnd
 	 * backend. Otherwise, use sys:fake.
 	 */
-	if (!freerdp_static_channel_collection_find(context->settings, "rdpsnd"))
+	if (!freerdp_static_channel_collection_find(context->settings, RDPSND_CHANNEL_NAME))
 	{
 		char* params[2];
-		params[0] = "rdpsnd";
+		params[0] = RDPSND_CHANNEL_NAME;
 
-		if (config->AudioOutput && WTSVirtualChannelManagerIsChannelJoined(ps->vcm, "rdpsnd"))
+		if (config->AudioOutput &&
+		    WTSVirtualChannelManagerIsChannelJoined(ps->vcm, RDPSND_CHANNEL_NAME))
 			params[1] = "sys:proxy";
 		else
 			params[1] = "sys:fake";
@@ -265,7 +266,8 @@ static BOOL pf_client_receive_channel_data_hook(freerdp* instance, UINT16 channe
 			if (!pf_modules_run_filter(FILTER_TYPE_CLIENT_PASSTHROUGH_CHANNEL_DATA, pdata, &ev))
 				return FALSE;
 
-			server_channel_id = (UINT64)HashTable_GetItemValue(ps->vc_ids, (void*)channel_name);
+			server_channel_id =
+			    (UINT64)HashTable_GetItemValue(ps->vc_ids, (const void*)channel_name);
 			return ps->context.peer->SendChannelData(ps->context.peer, (UINT16)server_channel_id,
 			                                         data, size);
 		}

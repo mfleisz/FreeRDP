@@ -37,6 +37,7 @@
 
 #include <freerdp/channels/wtsvc.h>
 #include <freerdp/channels/channels.h>
+#include <freerdp/channels/drdynvc.h>
 
 #include <freerdp/constants.h>
 #include <freerdp/server/rdpsnd.h>
@@ -330,7 +331,7 @@ static void test_peer_draw_icon(freerdp_peer* client, UINT32 x, UINT32 y)
 	WINPR_ASSERT(client);
 	context = (testPeerContext*)client->context;
 	WINPR_ASSERT(context);
-	WINPR_ASSERT(context->update);
+	WINPR_ASSERT(client->update);
 
 	if (client->update->dump_rfx)
 		return;
@@ -619,7 +620,7 @@ static BOOL tf_peer_post_connect(freerdp_peer* client)
 		}
 	}
 
-	if (WTSVirtualChannelManagerIsChannelJoined(context->vcm, "rdpsnd"))
+	if (WTSVirtualChannelManagerIsChannelJoined(context->vcm, RDPSND_CHANNEL_NAME))
 	{
 		sf_peer_rdpsnd_init(context); /* Audio Output */
 	}
@@ -791,12 +792,9 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 	}
 
 	/* Initialize the real server settings here */
-	client->settings->CertificateFile = _strdup("server.crt");
-	client->settings->PrivateKeyFile = _strdup("server.key");
-	client->settings->RdpKeyFile = _strdup("server.key");
-
-	if (!client->settings->CertificateFile || !client->settings->PrivateKeyFile ||
-	    !client->settings->RdpKeyFile)
+	if (!freerdp_settings_set_string(client->settings, FreeRDP_CertificateFile, "server.crt") ||
+	    !freerdp_settings_set_string(client->settings, FreeRDP_PrivateKeyFile, "server.key") ||
+	    !freerdp_settings_set_string(client->settings, FreeRDP_RdpKeyFile, "server.key"))
 	{
 		WLog_ERR(TAG, "Memory allocation failed (strdup)");
 		freerdp_peer_free(client);
@@ -859,7 +857,7 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 			break;
 
 		/* Handle dynamic virtual channel intializations */
-		if (WTSVirtualChannelManagerIsChannelJoined(context->vcm, "drdynvc"))
+		if (WTSVirtualChannelManagerIsChannelJoined(context->vcm, DRDYNVC_SVC_CHANNEL_NAME))
 		{
 			switch (WTSVirtualChannelManagerGetDrdynvcState(context->vcm))
 			{

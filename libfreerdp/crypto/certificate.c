@@ -157,13 +157,14 @@ static BOOL certificate_store_init(rdpCertificateStore* certificate_store)
 	if (!ConfigPath)
 		return FALSE;
 	if (!(certificate_store->certs_path =
-	          GetCombinedPath(ConfigPath, (char*)certificate_store_dir)))
+	          GetCombinedPath(ConfigPath, (const char*)certificate_store_dir)))
 		goto fail;
-	certificate_store->server_path = GetCombinedPath(ConfigPath, (char*)certificate_server_dir);
+	certificate_store->server_path =
+	    GetCombinedPath(ConfigPath, (const char*)certificate_server_dir);
 	if (!certificate_store->server_path)
 		goto fail;
 	if (!(certificate_store->file =
-	          GetCombinedPath(ConfigPath, (char*)certificate_known_hosts_file)))
+	          GetCombinedPath(ConfigPath, (const char*)certificate_known_hosts_file)))
 		goto fail;
 	PathCchConvertStyleA(certificate_store->file, strlen(certificate_store->file), PATH_STYLE_UNIX);
 
@@ -560,7 +561,7 @@ static char* encode(const char* value)
 	if (!value)
 		return NULL;
 	len = strlen(value);
-	return (char*)crypto_base64_encode((BYTE*)value, len);
+	return (char*)crypto_base64_encode((const BYTE*)value, len);
 }
 
 static char* allocated_printf(const char* fmt, ...)
@@ -904,8 +905,8 @@ rdpCertificateData* certificate_split_line(char* line)
 	{
 		BOOL rc;
 		char* dpem = NULL;
-		size_t length;
-		crypto_base64_decode(pem, strlen(pem), (BYTE**)&dpem, &length);
+		size_t clength;
+		crypto_base64_decode(pem, strlen(pem), (BYTE**)&dpem, &clength);
 		rc = certificate_data_set_pem(data, dpem);
 		free(dpem);
 		if (!rc)
@@ -914,11 +915,11 @@ rdpCertificateData* certificate_split_line(char* line)
 	else
 	{
 		BOOL rc;
-		size_t length;
+		size_t clength;
 		char* dsubject = NULL;
 		char* dissuer = NULL;
-		crypto_base64_decode(subject, strlen(subject), (BYTE**)&dsubject, &length);
-		crypto_base64_decode(issuer, strlen(issuer), (BYTE**)&dissuer, &length);
+		crypto_base64_decode(subject, strlen(subject), (BYTE**)&dsubject, &clength);
+		crypto_base64_decode(issuer, strlen(issuer), (BYTE**)&dissuer, &clength);
 
 		rc = certificate_data_set_subject(data, dsubject) &&
 		     certificate_data_set_issuer(data, dissuer) &&

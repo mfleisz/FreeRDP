@@ -1071,7 +1071,7 @@ int tls_write_all(rdpTls* tls, const BYTE* data, int length)
 			if (BIO_write_blocked(bio))
 				status = BIO_wait_write(bio, 100);
 			else if (BIO_read_blocked(bio))
-				status = BIO_wait_read(bio, 100);
+				return -2; /* Abort write, there is data that must be read */
 			else
 				USleep(100);
 
@@ -1176,6 +1176,33 @@ static BOOL is_accepted(rdpTls* tls, const BYTE* pem, size_t length)
 	return FALSE;
 }
 
+static BOOL compare_fingerprint(const char* fp, const char* hash, CryptoCert cert, BOOL separator)
+{
+	BOOL equal;
+	char* strhash;
+
+	WINPR_ASSERT(fp);
+	WINPR_ASSERT(hash);
+	WINPR_ASSERT(cert);
+
+	strhash = crypto_cert_fingerprint_by_hash_ex(cert->px509, hash, separator);
+	if (!strhash)
+		return FALSE;
+
+	equal = (_stricmp(strhash, fp) == 0);
+	free(strhash);
+	return equal;
+}
+
+static BOOL compare_fingerprint_all(const char* fp, const char* hash, CryptoCert cert)
+{
+	if (compare_fingerprint(fp, hash, cert, FALSE))
+		return TRUE;
+	if (compare_fingerprint(fp, hash, cert, TRUE))
+		return TRUE;
+	return FALSE;
+}
+
 static BOOL is_accepted_fingerprint(CryptoCert cert, const char* CertificateAcceptedFingerprints)
 {
 	BOOL rc = FALSE;
@@ -1187,30 +1214,22 @@ static BOOL is_accepted_fingerprint(CryptoCert cert, const char* CertificateAcce
 		while (cur)
 		{
 			char* subcontext = NULL;
-			BOOL equal;
-			char* strhash;
 			const char* h = strtok_s(cur, ":", &subcontext);
 			const char* fp;
 
 			if (!h)
-				continue;
+				goto next;
 
 			fp = h + strlen(h) + 1;
 			if (!fp)
-				continue;
+				goto next;
 
-			strhash = crypto_cert_fingerprint_by_hash(cert->px509, h);
-			if (!strhash)
-				continue;
-
-			equal = (_stricmp(strhash, fp) == 0);
-			free(strhash);
-			if (equal)
+			if (compare_fingerprint_all(fp, h, cert))
 			{
 				rc = TRUE;
 				break;
 			}
-
+		next:
 			cur = strtok_s(NULL, ",", &context);
 		}
 		free(copy);
@@ -1375,10 +1394,10 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, const char* hostname, U
 		if (!certificate_status || !hostname_match)
 		{
 			DWORD accept_certificate = 0;
-			size_t length = 0;
+			size_t pem_length = 0;
 			char* issuer = crypto_cert_issuer(cert->px509);
 			char* subject = crypto_cert_subject(cert->px509);
-			char* pem = (char*)crypto_cert_pem(cert->px509, NULL, &length);
+			char* pem = (char*)crypto_cert_pem(cert->px509, NULL, &pem_length);
 
 			if (!pem)
 				goto end;
@@ -1407,8 +1426,8 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, const char* hostname, U
 				}
 				else if (instance->VerifyX509Certificate)
 				{
-					int rc = instance->VerifyX509Certificate(instance, pemCert, length, hostname,
-					                                         port, flags);
+					int rc = instance->VerifyX509Certificate(instance, pemCert, pem_length,
+					                                         hostname, port, flags);
 
 					if (rc == 1)
 						accept_certificate = 1;
@@ -1467,8 +1486,8 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, const char* hostname, U
 				else if (instance->VerifyX509Certificate)
 				{
 					const int rc =
-					    instance->VerifyX509Certificate(instance, pemCert, length, hostname, port,
-					                                    flags | VERIFY_CERT_FLAG_CHANGED);
+					    instance->VerifyX509Certificate(instance, pemCert, pem_length, hostname,
+					                                    port, flags | VERIFY_CERT_FLAG_CHANGED);
 
 					if (rc == 1)
 						accept_certificate = 1;

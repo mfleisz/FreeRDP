@@ -365,7 +365,7 @@ static UINT rdpsnd_server_select_format(RdpsndServerContext* context, UINT16 cli
 		context->priv->out_buffer_size = out_buffer_size;
 	}
 
-	freerdp_dsp_context_reset(context->priv->dsp_context, format);
+	freerdp_dsp_context_reset(context->priv->dsp_context, format, 0u);
 out:
 	LeaveCriticalSection(&context->priv->lock);
 	return error;
@@ -571,7 +571,7 @@ static UINT rdpsnd_server_send_samples(RdpsndServerContext* context, const void*
 		CopyMemory(context->priv->out_buffer +
 		               (context->priv->out_pending_frames * context->priv->src_bytes_per_frame),
 		           buf, cframesize);
-		buf = (BYTE*)buf + cframesize;
+		buf = (const BYTE*)buf + cframesize;
 		nframes -= cframes;
 		context->priv->out_pending_frames += cframes;
 
@@ -673,7 +673,8 @@ static UINT rdpsnd_server_start(RdpsndServerContext* context)
 	DWORD bytesReturned;
 	RdpsndServerPrivate* priv = context->priv;
 	UINT error = ERROR_INTERNAL_ERROR;
-	priv->ChannelHandle = WTSVirtualChannelOpen(context->vcm, WTS_CURRENT_SESSION, "rdpsnd");
+	priv->ChannelHandle =
+	    WTSVirtualChannelOpen(context->vcm, WTS_CURRENT_SESSION, RDPSND_CHANNEL_NAME);
 
 	if (!priv->ChannelHandle)
 	{

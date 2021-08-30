@@ -21,9 +21,15 @@
 #include "config.h"
 #endif
 
+#include <stdarg.h>
+
 #include <winpr/crt.h>
 #include <winpr/assert.h>
 #include <winpr/collections.h>
+
+#if defined(_WIN32) && (_MSC_VER < 1800)
+#define va_copy(dest, src) (dest = src)
+#endif
 
 struct _wArrayList
 {
@@ -280,6 +286,7 @@ BOOL ArrayList_Contains(wArrayList* arrayList, const void* obj)
 	return rc;
 }
 
+#if defined(WITH_WINPR_DEPRECATED)
 int ArrayList_Add(wArrayList* arrayList, const void* obj)
 {
 	WINPR_ASSERT(arrayList);
@@ -287,6 +294,7 @@ int ArrayList_Add(wArrayList* arrayList, const void* obj)
 		return -1;
 	return (int)ArrayList_Count(arrayList) - 1;
 }
+#endif
 
 /**
  * Adds an object to the end of the ArrayList.
@@ -506,23 +514,36 @@ wObject* ArrayList_Object(wArrayList* arrayList)
 
 BOOL ArrayList_ForEach(wArrayList* arrayList, ArrayList_ForEachFkt fkt, ...)
 {
-	size_t index, count;
+	BOOL rc;
 	va_list ap;
+	va_start(ap, fkt);
+	rc = ArrayList_ForEachAP(arrayList, fkt, ap);
+	va_end(ap);
+
+	return rc;
+}
+
+BOOL ArrayList_ForEachAP(wArrayList* arrayList, ArrayList_ForEachFkt fkt, va_list ap)
+{
+	size_t index, count;
 	BOOL rc = FALSE;
+	va_list cap;
 
 	WINPR_ASSERT(arrayList);
 	WINPR_ASSERT(fkt);
 
 	ArrayList_Lock_Conditional(arrayList);
 	count = ArrayList_Count(arrayList);
-	va_start(ap, fkt);
 	for (index = 0; index < count; index++)
 	{
+		BOOL rs;
 		void* obj = ArrayList_GetItem(arrayList, index);
-		if (!fkt(obj, index, ap))
+		va_copy(cap, ap);
+		rs = fkt(obj, index, cap);
+		va_end(cap);
+		if (!rs)
 			goto fail;
 	}
-	va_end(ap);
 	rc = TRUE;
 fail:
 	ArrayList_Unlock_Conditional(arrayList);
