@@ -282,9 +282,7 @@ static HANDLE freerdp_peer_get_event_handle(freerdp_peer* client)
 	WINPR_ASSERT(client->context->rdp);
 
 	transport = client->context->rdp->transport;
-	WINPR_ASSERT(transport);
-
-	BIO_get_event(transport->frontBio, &hEvent);
+	hEvent = transport_get_front_bio(transport);
 	return hEvent;
 }
 
@@ -881,8 +879,7 @@ static BOOL freerdp_peer_has_more_to_read(freerdp_peer* peer)
 	WINPR_ASSERT(peer);
 	WINPR_ASSERT(peer->context);
 	WINPR_ASSERT(peer->context->rdp);
-	WINPR_ASSERT(peer->context->rdp->transport);
-	return peer->context->rdp->transport->haveMoreBytesToRead;
+	return transport_have_more_bytes_to_read(peer->context->rdp->transport);
 }
 
 static LicenseCallbackResult freerdp_peer_nolicense(freerdp_peer* peer, wStream* s)
@@ -913,7 +910,7 @@ BOOL freerdp_peer_context_new(freerdp_peer* client)
 		return FALSE;
 
 	if (!(context = (rdpContext*)calloc(1, client->ContextSize)))
-		goto fail_context;
+		goto fail;
 
 	client->context = context;
 	context->peer = client;
@@ -921,22 +918,21 @@ BOOL freerdp_peer_context_new(freerdp_peer* client)
 	context->settings = client->settings;
 
 	if (!(context->metrics = metrics_new(context)))
-		goto fail_metrics;
+		goto fail;
 
 	if (!(rdp = rdp_new(context)))
-		goto fail_rdp;
+		goto fail;
 
-	client->input = rdp->input;
 	client->update = rdp->update;
 	client->settings = rdp->settings;
 	client->autodetect = rdp->autodetect;
 	context->rdp = rdp;
-	context->input = client->input;
+	context->input = rdp->input;
 	context->update = client->update;
 	context->settings = client->settings;
 	context->autodetect = client->autodetect;
 	client->update->context = context;
-	client->input->context = context;
+	context->input->context = context;
 	client->autodetect->context = context;
 	update_register_server_callbacks(client->update);
 	autodetect_register_server_callbacks(client->autodetect);
@@ -944,14 +940,13 @@ BOOL freerdp_peer_context_new(freerdp_peer* client)
 	if (!(context->errorDescription = calloc(1, 500)))
 	{
 		WLog_ERR(TAG, "calloc failed!");
-		goto fail_error_description;
+		goto fail;
 	}
 
 	if (!transport_attach(rdp->transport, client->sockfd))
-		goto fail_transport_attach;
+		goto fail;
 
-	rdp->transport->ReceiveCallback = peer_recv_callback;
-	rdp->transport->ReceiveExtra = client;
+	transport_set_recv_callbacks(rdp->transport, peer_recv_callback, client);
 	transport_set_blocking_mode(rdp->transport, FALSE);
 	client->IsWriteBlocked = freerdp_peer_is_write_blocked;
 	client->DrainOutputBuffer = freerdp_peer_drain_output_buffer;
@@ -962,18 +957,9 @@ BOOL freerdp_peer_context_new(freerdp_peer* client)
 	if (ret)
 		return TRUE;
 
+fail:
 	WLog_ERR(TAG, "ContextNew callback failed");
-fail_transport_attach:
-	free(context->errorDescription);
-fail_error_description:
-	rdp_free(client->context->rdp);
-fail_rdp:
-	metrics_free(context->metrics);
-fail_metrics:
-	free(client->context);
-fail_context:
-	client->context = NULL;
-	WLog_ERR(TAG, "Failed to create new peer context");
+	freerdp_peer_context_free(client);
 	return FALSE;
 }
 
@@ -986,14 +972,16 @@ void freerdp_peer_context_free(freerdp_peer* client)
 
 	if (client->context)
 	{
-		free(client->context->errorDescription);
-		client->context->errorDescription = NULL;
-		rdp_free(client->context->rdp);
-		client->context->rdp = NULL;
-		metrics_free(client->context->metrics);
-		client->context->metrics = NULL;
-		free(client->context);
-		client->context = NULL;
+		rdpContext* ctx = client->context;
+
+		free(ctx->errorDescription);
+		ctx->errorDescription = NULL;
+		rdp_free(ctx->rdp);
+		ctx->rdp = NULL;
+		metrics_free(ctx->metrics);
+		ctx->metrics = NULL;
+		free(ctx);
+		ctx = NULL;
 	}
 }
 

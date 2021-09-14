@@ -1112,7 +1112,18 @@ out:
 
 static void gdi_register_update_callbacks(rdpUpdate* update)
 {
-	rdpPrimaryUpdate* primary = update->primary;
+	rdpPrimaryUpdate* primary;
+	const rdpSettings* settings;
+
+	WINPR_ASSERT(update);
+	WINPR_ASSERT(update->context);
+
+	settings = update->context->settings;
+	WINPR_ASSERT(settings);
+
+	primary = update->primary;
+	WINPR_ASSERT(primary);
+
 	update->Palette = gdi_palette_update;
 	update->SetBounds = gdi_set_bounds;
 	primary->DstBlt = gdi_dstblt;
@@ -1282,7 +1293,7 @@ BOOL gdi_init_ex(freerdp* instance, UINT32 format, UINT32 stride, BYTE* buffer,
 	if (!gdi_init_primary(gdi, stride, gdi->dstFormat, buffer, pfree))
 		goto fail;
 
-	if (!(context->cache = cache_new(instance->settings)))
+	if (!(context->cache = cache_new(instance->context)))
 		goto fail;
 
 	gdi_register_update_callbacks(instance->update);

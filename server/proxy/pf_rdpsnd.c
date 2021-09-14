@@ -3,6 +3,8 @@
  * FreeRDP Proxy Server
  *
  * Copyright 2019 Kobi Mizrachi <kmizrachi18@gmail.com>
+ * Copyright 2021 Armin Novak <anovak@thincast.com>
+ * Copyright 2021 Thincast Technologies GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +20,15 @@
  */
 
 #include <winpr/crt.h>
+#include <winpr/assert.h>
+
 #include <freerdp/log.h>
 #include <freerdp/codec/dsp.h>
 #include <freerdp/server/rdpsnd.h>
 #include <freerdp/server/server-common.h>
 
+#include <freerdp/server/proxy/proxy_log.h>
 #include "pf_rdpsnd.h"
-#include "pf_log.h"
 
 #define TAG PROXY_TAG("rdpsnd")
 
@@ -33,10 +37,13 @@ static void rdpsnd_activated(RdpsndServerContext* context)
 	const AUDIO_FORMAT* agreed_format = NULL;
 	UINT16 i = 0, j = 0;
 
+	WINPR_ASSERT(context);
 	for (i = 0; i < context->num_client_formats; i++)
 	{
 		for (j = 0; j < context->num_server_formats; j++)
 		{
+			WINPR_ASSERT(context->server_formats);
+			WINPR_ASSERT(context->client_formats);
 			if (audio_format_compatible(&context->server_formats[j], &context->client_formats[i]))
 			{
 				agreed_format = &context->server_formats[j];
@@ -54,12 +61,16 @@ static void rdpsnd_activated(RdpsndServerContext* context)
 		return;
 	}
 
+	WINPR_ASSERT(context->SelectFormat);
 	context->SelectFormat(context, i);
 }
 
 BOOL pf_server_rdpsnd_init(pServerContext* ps)
 {
 	RdpsndServerContext* rdpsnd;
+
+	WINPR_ASSERT(ps);
+
 	rdpsnd = ps->rdpsnd = rdpsnd_server_context_new(ps->vcm);
 
 	if (!rdpsnd)

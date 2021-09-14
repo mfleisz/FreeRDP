@@ -78,6 +78,7 @@ static char* makecert_read_str(BIO* bio, size_t* pOffset)
 	while (offset >= length)
 	{
 		size_t new_len;
+		size_t readBytes = 0;
 		char* new_str;
 		new_len = length * 2;
 		if (new_len == 0)
@@ -99,12 +100,16 @@ static char* makecert_read_str(BIO* bio, size_t* pOffset)
 
 		length = new_len;
 		x509_str = new_str;
-		status = BIO_read(bio, &x509_str[offset], (int)length - 1);
-
-		if (status < 0)
+#if OPENSSL_VERSION_NUMBER >= 0x10101000L
+		status = BIO_read_ex(bio, &x509_str[offset], length - offset, &readBytes);
+#else
+		status = BIO_read(bio, &x509_str[offset], length - offset);
+		readBytes = status;
+#endif
+		if (status <= 0)
 			break;
 
-		offset += (size_t)status;
+		offset += (size_t)readBytes;
 	}
 
 	if (status < 0)
@@ -124,7 +129,7 @@ static char* makecert_read_str(BIO* bio, size_t* pOffset)
 static int makecert_print_command_line_help(COMMAND_LINE_ARGUMENT_A* args, int argc, char** argv)
 {
 	char* str;
-	COMMAND_LINE_ARGUMENT_A* arg;
+	const COMMAND_LINE_ARGUMENT_A* arg;
 
 	if (!argv || (argc < 1))
 		return -1;
@@ -280,7 +285,7 @@ static int makecert_context_parse_arguments(MAKECERT_CONTEXT* context,
 {
 	int status;
 	DWORD flags;
-	COMMAND_LINE_ARGUMENT_A* arg;
+	const COMMAND_LINE_ARGUMENT_A* arg;
 
 	if (!context || !argv || (argc < 0))
 		return -1;
@@ -838,7 +843,7 @@ int makecert_context_process(MAKECERT_CONTEXT* context, int argc, char** argv)
 	long serial = 0;
 	X509_NAME* name = NULL;
 	const EVP_MD* md = NULL;
-	COMMAND_LINE_ARGUMENT_A* arg;
+	const COMMAND_LINE_ARGUMENT_A* arg;
 	int ret;
 	ret = makecert_context_parse_arguments(context, args, argc, argv);
 

@@ -60,6 +60,8 @@ struct server_info
 {
 	BOOL test_dump_rfx_realtime;
 	const char* test_pcap_file;
+	const char* cert;
+	const char* key;
 };
 
 static void test_peer_context_free(freerdp_peer* client, rdpContext* ctx)
@@ -877,14 +879,22 @@ static BOOL tf_peer_suppress_output(rdpContext* context, BYTE allow, const RECTA
 
 static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 {
+	BOOL rc;
 	DWORD error = CHANNEL_RC_OK;
 	HANDLE handles[32] = { 0 };
 	DWORD count;
 	DWORD status;
 	testPeerContext* context;
+	struct server_info* info;
 	freerdp_peer* client = (freerdp_peer*)arg;
 
+	const char* key = "server.key";
+	const char* cert = "server.crt";
+
 	WINPR_ASSERT(client);
+
+	info = client->ContextExtra;
+	WINPR_ASSERT(info);
 
 	if (!test_peer_init(client))
 	{
@@ -892,11 +902,16 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 		return 0;
 	}
 
+	if (info->key)
+		key = info->key;
+	if (info->cert)
+		cert = info->cert;
+
 	/* Initialize the real server settings here */
 	WINPR_ASSERT(client->settings);
-	if (!freerdp_settings_set_string(client->settings, FreeRDP_CertificateFile, "server.crt") ||
-	    !freerdp_settings_set_string(client->settings, FreeRDP_PrivateKeyFile, "server.key") ||
-	    !freerdp_settings_set_string(client->settings, FreeRDP_RdpKeyFile, "server.key"))
+	if (!freerdp_settings_set_string(client->settings, FreeRDP_CertificateFile, cert) ||
+	    !freerdp_settings_set_string(client->settings, FreeRDP_PrivateKeyFile, key) ||
+	    !freerdp_settings_set_string(client->settings, FreeRDP_RdpKeyFile, key))
 	{
 		WLog_ERR(TAG, "Memory allocation failed (strdup)");
 		freerdp_peer_free(client);
@@ -917,17 +932,22 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 	client->settings->RefreshRect = TRUE;
 	client->PostConnect = tf_peer_post_connect;
 	client->Activate = tf_peer_activate;
-	client->input->SynchronizeEvent = tf_peer_synchronize_event;
-	client->input->KeyboardEvent = tf_peer_keyboard_event;
-	client->input->UnicodeKeyboardEvent = tf_peer_unicode_keyboard_event;
-	client->input->MouseEvent = tf_peer_mouse_event;
-	client->input->ExtendedMouseEvent = tf_peer_extended_mouse_event;
+
+	WINPR_ASSERT(client->context);
+	WINPR_ASSERT(client->context->input);
+	client->context->input->SynchronizeEvent = tf_peer_synchronize_event;
+	client->context->input->KeyboardEvent = tf_peer_keyboard_event;
+	client->context->input->UnicodeKeyboardEvent = tf_peer_unicode_keyboard_event;
+	client->context->input->MouseEvent = tf_peer_mouse_event;
+	client->context->input->ExtendedMouseEvent = tf_peer_extended_mouse_event;
+
 	client->update->RefreshRect = tf_peer_refresh_rect;
 	client->update->SuppressOutput = tf_peer_suppress_output;
 	client->settings->MultifragMaxRequestSize = 0xFFFFFF; /* FIXME */
 
 	WINPR_ASSERT(client->Initialize);
-	client->Initialize(client);
+	rc = client->Initialize(client);
+	WINPR_ASSERT(rc);
 
 	context = (testPeerContext*)client->context;
 	WINPR_ASSERT(context);
@@ -1071,18 +1091,30 @@ static const struct
 	const char sfast[7];
 	const char sport[7];
 	const char slocal_only[13];
-} options = { "--pcap=", "--fast", "--port=", "--local-only" };
+	const char scert[7];
+	const char skey[6];
+} options = { "--pcap=", "--fast", "--port=", "--local-only", "--cert=", "--key=" };
+
+static void print_entry(FILE* fp, const char* fmt, const char* what, size_t size)
+{
+	char buffer[32] = { 0 };
+	strncpy(buffer, what, MIN(size, sizeof(buffer)));
+	fprintf(fp, fmt, buffer);
+}
 
 static WINPR_NORETURN(void usage(const char* app, const char* invalid))
 {
 	FILE* fp = stdout;
+
 	fprintf(fp, "Invalid argument '%s'\n", invalid);
 	fprintf(fp, "Usage: %s <arg>[ <arg> ...]\n", app);
 	fprintf(fp, "Arguments:\n");
-	fprintf(fp, "\t%s<pcap file>\n", options.spcap);
-	fprintf(fp, "\t%s\n", options.sfast);
-	fprintf(fp, "\t%s<port>\n", options.sport);
-	fprintf(fp, "\t%s\n", options.slocal_only);
+	print_entry(fp, "\t%s<pcap file>\n", options.spcap, sizeof(options.spcap));
+	print_entry(fp, "\t%s<cert file>\n", options.scert, sizeof(options.scert));
+	print_entry(fp, "\t%s<key file>\n", options.skey, sizeof(options.skey));
+	print_entry(fp, "\t%s\n", options.sfast, sizeof(options.sfast));
+	print_entry(fp, "\t%s<port>\n", options.sport, sizeof(options.sport));
+	print_entry(fp, "\t%s\n", options.slocal_only, sizeof(options.slocal_only));
 	exit(-1);
 }
 
@@ -1123,6 +1155,18 @@ int main(int argc, char* argv[])
 		{
 			info.test_pcap_file = &arg[sizeof(options.spcap)];
 			if (!winpr_PathFileExists(info.test_pcap_file))
+				usage(app, arg);
+		}
+		else if (strncmp(arg, options.scert, sizeof(options.scert)) == 0)
+		{
+			info.cert = &arg[sizeof(options.scert)];
+			if (!winpr_PathFileExists(info.cert))
+				usage(app, arg);
+		}
+		else if (strncmp(arg, options.skey, sizeof(options.skey)) == 0)
+		{
+			info.key = &arg[sizeof(options.skey)];
+			if (!winpr_PathFileExists(info.key))
 				usage(app, arg);
 		}
 		else

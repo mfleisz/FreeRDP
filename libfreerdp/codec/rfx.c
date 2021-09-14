@@ -80,7 +80,8 @@ static const UINT32 rfx_default_quantization_values[] = { 6, 6, 6, 6, 7, 7, 8, 8
 
 static void rfx_profiler_create(RFX_CONTEXT* context)
 {
-	WINPR_UNUSED(context);
+	if (!context || !context->priv)
+		return;
 	PROFILER_CREATE(context->priv->prof_rfx_decode_rgb, "rfx_decode_rgb")
 	PROFILER_CREATE(context->priv->prof_rfx_decode_component, "rfx_decode_component")
 	PROFILER_CREATE(context->priv->prof_rfx_rlgr_decode, "rfx_rlgr_decode")
@@ -100,7 +101,8 @@ static void rfx_profiler_create(RFX_CONTEXT* context)
 
 static void rfx_profiler_free(RFX_CONTEXT* context)
 {
-	WINPR_UNUSED(context);
+	if (!context || !context->priv)
+		return;
 	PROFILER_FREE(context->priv->prof_rfx_decode_rgb)
 	PROFILER_FREE(context->priv->prof_rfx_decode_component)
 	PROFILER_FREE(context->priv->prof_rfx_rlgr_decode)
@@ -120,7 +122,8 @@ static void rfx_profiler_free(RFX_CONTEXT* context)
 
 static void rfx_profiler_print(RFX_CONTEXT* context)
 {
-	WINPR_UNUSED(context);
+	if (!context || !context->priv)
+		return;
 
 	PROFILER_PRINT_HEADER
 	PROFILER_PRINT(context->priv->prof_rfx_decode_rgb)
@@ -226,14 +229,14 @@ RFX_CONTEXT* rfx_context_new_ex(BOOL encoder, UINT32 ThreadingFlags)
 	context->priv = priv = (RFX_CONTEXT_PRIV*)calloc(1, sizeof(RFX_CONTEXT_PRIV));
 
 	if (!priv)
-		goto error_priv;
+		goto fail;
 
 	priv->log = WLog_Get("com.freerdp.codec.rfx");
 	WLog_OpenAppender(priv->log);
 	priv->TilePool = ObjectPool_New(TRUE);
 
 	if (!priv->TilePool)
-		goto error_tilePool;
+		goto fail;
 
 	pool = ObjectPool_Object(priv->TilePool);
 	pool->fnObjectInit = rfx_tile_init;
@@ -265,7 +268,7 @@ RFX_CONTEXT* rfx_context_new_ex(BOOL encoder, UINT32 ThreadingFlags)
 	priv->BufferPool = BufferPool_New(TRUE, (8192 + 32) * 3, 16);
 
 	if (!priv->BufferPool)
-		goto error_BufferPool;
+		goto fail;
 
 	if (!(ThreadingFlags & THREADING_FLAGS_DISABLE_THREADS))
 	{
@@ -321,14 +324,14 @@ RFX_CONTEXT* rfx_context_new_ex(BOOL encoder, UINT32 ThreadingFlags)
 		priv->ThreadPool = CreateThreadpool(NULL);
 
 		if (!priv->ThreadPool)
-			goto error_threadPool;
+			goto fail;
 
 		InitializeThreadpoolEnvironment(&priv->ThreadPoolEnv);
 		SetThreadpoolCallbackPool(&priv->ThreadPoolEnv, priv->ThreadPool);
 
 		if (priv->MinThreadCount)
 			if (!SetThreadpoolThreadMinimum(priv->ThreadPool, priv->MinThreadCount))
-				goto error_threadPool_minimum;
+				goto fail;
 
 		if (priv->MaxThreadCount)
 			SetThreadpoolThreadMaximum(priv->ThreadPool, priv->MaxThreadCount);
@@ -349,16 +352,8 @@ RFX_CONTEXT* rfx_context_new_ex(BOOL encoder, UINT32 ThreadingFlags)
 	context->state = RFX_STATE_SEND_HEADERS;
 	context->expectedDataBlockType = WBT_FRAME_BEGIN;
 	return context;
-error_threadPool_minimum:
-	CloseThreadpool(priv->ThreadPool);
-error_threadPool:
-	BufferPool_Free(priv->BufferPool);
-error_BufferPool:
-	ObjectPool_Free(priv->TilePool);
-error_tilePool:
-	free(priv);
-error_priv:
-	free(context);
+fail:
+	rfx_context_free(context);
 	return NULL;
 }
 
@@ -377,24 +372,28 @@ void rfx_context_free(RFX_CONTEXT* context)
 	/* coverity[address_free] */
 	rfx_message_free(context, &context->currentMessage);
 	free(context->quants);
-	ObjectPool_Free(priv->TilePool);
 	rfx_profiler_print(context);
 	rfx_profiler_free(context);
 
-	if (priv->UseThreads)
+	if (priv)
 	{
-		CloseThreadpool(context->priv->ThreadPool);
-		DestroyThreadpoolEnvironment(&context->priv->ThreadPoolEnv);
-		free(priv->workObjects);
-		free(priv->tileWorkParams);
+		ObjectPool_Free(priv->TilePool);
+		if (priv->UseThreads)
+		{
+			if (priv->ThreadPool)
+				CloseThreadpool(priv->ThreadPool);
+			DestroyThreadpoolEnvironment(&priv->ThreadPoolEnv);
+			free(priv->workObjects);
+			free(priv->tileWorkParams);
 #ifdef WITH_PROFILER
 		WLog_VRB(TAG,
 		         "WARNING: Profiling results probably unusable with multithreaded RemoteFX codec!");
 #endif
-	}
+		}
 
-	BufferPool_Free(context->priv->BufferPool);
-	free(context->priv);
+		BufferPool_Free(priv->BufferPool);
+		free(priv);
+	}
 	free(context);
 }
 
@@ -435,7 +434,7 @@ BOOL rfx_context_reset(RFX_CONTEXT* context, UINT32 width, UINT32 height)
 static BOOL rfx_process_message_sync(RFX_CONTEXT* context, wStream* s)
 {
 	UINT32 magic;
-	context->decodedHeaderBlocks &= ~_RFX_DECODED_SYNC;
+	context->decodedHeaderBlocks &= ~RFX_DECODED_SYNC;
 
 	/* RFX_SYNC */
 	if (Stream_GetRemainingLength(s) < 6)
@@ -459,14 +458,14 @@ static BOOL rfx_process_message_sync(RFX_CONTEXT* context, wStream* s)
 	}
 
 	WLog_Print(context->priv->log, WLOG_DEBUG, "version 0x%08" PRIX32 "", context->version);
-	context->decodedHeaderBlocks |= _RFX_DECODED_SYNC;
+	context->decodedHeaderBlocks |= RFX_DECODED_SYNC;
 	return TRUE;
 }
 
 static BOOL rfx_process_message_codec_versions(RFX_CONTEXT* context, wStream* s)
 {
 	BYTE numCodecs;
-	context->decodedHeaderBlocks &= ~_RFX_DECODED_VERSIONS;
+	context->decodedHeaderBlocks &= ~RFX_DECODED_VERSIONS;
 
 	if (Stream_GetRemainingLength(s) < 4)
 	{
@@ -500,7 +499,7 @@ static BOOL rfx_process_message_codec_versions(RFX_CONTEXT* context, wStream* s)
 
 	WLog_Print(context->priv->log, WLOG_DEBUG, "id %" PRIu32 " version 0x%" PRIX32 ".",
 	           context->codec_id, context->codec_version);
-	context->decodedHeaderBlocks |= _RFX_DECODED_VERSIONS;
+	context->decodedHeaderBlocks |= RFX_DECODED_VERSIONS;
 	return TRUE;
 }
 
@@ -508,7 +507,7 @@ static BOOL rfx_process_message_channels(RFX_CONTEXT* context, wStream* s)
 {
 	BYTE channelId;
 	BYTE numChannels;
-	context->decodedHeaderBlocks &= ~_RFX_DECODED_CHANNELS;
+	context->decodedHeaderBlocks &= ~RFX_DECODED_CHANNELS;
 
 	if (Stream_GetRemainingLength(s) < 1)
 	{
@@ -558,7 +557,7 @@ static BOOL rfx_process_message_channels(RFX_CONTEXT* context, wStream* s)
 	WLog_Print(context->priv->log, WLOG_DEBUG,
 	           "numChannels %" PRIu8 " id %" PRIu8 ", %" PRIu16 "x%" PRIu16 ".", numChannels,
 	           channelId, context->width, context->height);
-	context->decodedHeaderBlocks |= _RFX_DECODED_CHANNELS;
+	context->decodedHeaderBlocks |= RFX_DECODED_CHANNELS;
 	return TRUE;
 }
 
@@ -567,7 +566,7 @@ static BOOL rfx_process_message_context(RFX_CONTEXT* context, wStream* s)
 	BYTE ctxId;
 	UINT16 tileSize;
 	UINT16 properties;
-	context->decodedHeaderBlocks &= ~_RFX_DECODED_CONTEXT;
+	context->decodedHeaderBlocks &= ~RFX_DECODED_CONTEXT;
 
 	if (Stream_GetRemainingLength(s) < 5)
 	{
@@ -610,7 +609,7 @@ static BOOL rfx_process_message_context(RFX_CONTEXT* context, wStream* s)
 			return FALSE;
 	}
 
-	context->decodedHeaderBlocks |= _RFX_DECODED_CONTEXT;
+	context->decodedHeaderBlocks |= RFX_DECODED_CONTEXT;
 	return TRUE;
 }
 
@@ -1076,7 +1075,7 @@ BOOL rfx_process_message(RFX_CONTEXT* context, const BYTE* data, UINT32 length, 
 			return FALSE;
 		}
 
-		if (blockType > WBT_CONTEXT && context->decodedHeaderBlocks != _RFX_DECODED_HEADERS)
+		if (blockType > WBT_CONTEXT && context->decodedHeaderBlocks != RFX_DECODED_HEADERS)
 		{
 			WLog_ERR(TAG, "%s: incomplete header blocks processing", __FUNCTION__);
 			return FALSE;
@@ -1457,7 +1456,7 @@ RFX_MESSAGE* rfx_encode_message(RFX_CONTEXT* context, const RFX_RECT* rects, siz
 	const UINT32 width = (UINT32)w;
 	const UINT32 height = (UINT32)h;
 	const UINT32 scanline = (UINT32)s;
-	UINT32 i, maxNbTiles, maxTilesX, maxTilesY;
+	UINT32 i, maxNbTiles = 0, maxTilesX, maxTilesY;
 	UINT32 xIdx, yIdx, regionNbRects;
 	UINT32 gridRelX, gridRelY, ax, ay, bytesPerPixel;
 	RFX_TILE* tile;

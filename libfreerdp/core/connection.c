@@ -352,8 +352,7 @@ BOOL rdp_client_connect(rdpRdp* rdp)
 	}
 
 	/* everything beyond this point is event-driven and non blocking */
-	rdp->transport->ReceiveCallback = rdp_recv_callback;
-	rdp->transport->ReceiveExtra = rdp;
+	transport_set_recv_callbacks(rdp->transport, rdp_recv_callback, rdp);
 	transport_set_blocking_mode(rdp->transport, FALSE);
 
 	if (rdp_get_state(rdp) != CONNECTION_STATE_NLA)
@@ -392,7 +391,9 @@ BOOL rdp_client_disconnect(rdpRdp* rdp)
 	if (!nego_disconnect(rdp->nego))
 		return FALSE;
 
-	rdp_reset(rdp);
+	if (!rdp_reset(rdp))
+		return FALSE;
+
 	rdp_client_transition_to_state(rdp, CONNECTION_STATE_INITIAL);
 
 	if (freerdp_channels_disconnect(context->channels, context->instance) != CHANNEL_RC_OK)
@@ -1516,7 +1517,7 @@ const char* rdp_state_string(CONNECTION_STATE state)
 	}
 }
 
-CONNECTION_STATE rdp_get_state(rdpRdp* rdp)
+CONNECTION_STATE rdp_get_state(const rdpRdp* rdp)
 {
 	WINPR_ASSERT(rdp);
 	return rdp->state;

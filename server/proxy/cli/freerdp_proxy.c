@@ -19,14 +19,14 @@
  * limitations under the License.
  */
 
-#include "pf_server.h"
-#include "pf_config.h"
-#include "pf_log.h"
-#include "pf_modules.h"
+#include <winpr/collections.h>
 
 #include <freerdp/version.h>
-#include <freerdp/build-config.h>
-#include <winpr/collections.h>
+#include <freerdp/freerdp.h>
+
+#include <freerdp/server/proxy/proxy_server.h>
+#include <freerdp/server/proxy/proxy_log.h>
+
 #include <stdlib.h>
 #include <signal.h>
 
@@ -34,22 +34,29 @@
 
 static proxyServer* server = NULL;
 
-static WINPR_NORETURN(void cleanup_handler(int signum))
+#if defined(_WIN32)
+static const char* strsignal(int signum)
+{
+	switch (signum)
+	{
+		case SIGINT:
+			return "SIGINT";
+		case SIGTERM:
+			return "SIGTERM";
+		default:
+			return "UNKNOWN";
+	}
+}
+#endif
+
+static void cleanup_handler(int signum)
 {
 	printf("\n");
-	WLog_INFO(TAG, "[%s]: caught signal %d, starting cleanup...", __FUNCTION__, signum);
+	WLog_INFO(TAG, "[%s]: caught signal %s [%d], starting cleanup...", __FUNCTION__,
+	          strsignal(signum), signum);
 
 	WLog_INFO(TAG, "stopping all connections.");
 	pf_server_stop(server);
-
-	WLog_INFO(TAG, "freeing loaded modules and plugins.");
-	pf_modules_free();
-
-	pf_server_config_free(server->config);
-	pf_server_free(server);
-
-	WLog_INFO(TAG, "exiting.");
-	exit(0);
 }
 
 static void pf_server_register_signal_handlers(void)
@@ -62,22 +69,14 @@ static void pf_server_register_signal_handlers(void)
 #endif
 }
 
-static BOOL is_all_required_modules_loaded(proxyConfig* config)
+static WINPR_NORETURN(void usage(const char* app))
 {
-	size_t i;
-
-	for (i = 0; i < config->RequiredPluginsCount; i++)
-	{
-		const char* plugin_name = config->RequiredPlugins[i];
-
-		if (!pf_modules_is_plugin_loaded(plugin_name))
-		{
-			WLog_ERR(TAG, "Required plugin '%s' is not loaded. stopping.", plugin_name);
-			return FALSE;
-		}
-	}
-
-	return TRUE;
+	printf("Usage:\n");
+	printf("%s -h                               Display this help text.\n", app);
+	printf("%s --help                           Display this help text.\n", app);
+	printf("%s <config ini file>                Start the proxy with <config.ini>\n", app);
+	printf("%s --dump-config <config ini file>  Create a template <config.ini>\n", app);
+	exit(0);
 }
 
 int main(int argc, char* argv[])
@@ -86,32 +85,39 @@ int main(int argc, char* argv[])
 	char* config_path = "config.ini";
 	int status = -1;
 
+	pf_server_register_signal_handlers();
+
 	WLog_INFO(TAG, "freerdp-proxy version info:");
 	WLog_INFO(TAG, "\tFreeRDP version: %s", FREERDP_VERSION_FULL);
 	WLog_INFO(TAG, "\tGit commit: %s", FREERDP_GIT_REVISION);
 	WLog_DBG(TAG, "\tBuild config: %s", freerdp_get_build_config());
 
-	if (argc >= 2)
-		config_path = argv[1];
+	if (argc < 2)
+		usage(argv[0]);
 
-	config = pf_server_config_load(config_path);
+	{
+		const char* arg = argv[1];
+
+		if (_stricmp(arg, "-h") == 0)
+			usage(argv[0]);
+		else if (_stricmp(arg, "--help") == 0)
+			usage(argv[0]);
+		else if (_stricmp(arg, "--dump-config") == 0)
+		{
+			if (argc <= 2)
+				usage(argv[0]);
+			pf_server_config_dump(argv[2]);
+			status = 0;
+			goto fail;
+		    }
+		config_path = argv[1];
+	}
+
+	config = pf_server_config_load_file(config_path);
 	if (!config)
 		goto fail;
 
 	pf_server_config_print(config);
-
-	if (!pf_modules_init(FREERDP_PROXY_PLUGINDIR, (const char**)config->Modules,
-	                     config->ModulesCount))
-	{
-		WLog_ERR(TAG, "failed to initialize proxy modules!");
-		goto fail;
-	}
-
-	pf_modules_list_loaded_plugins();
-	if (!is_all_required_modules_loaded(config))
-		goto fail;
-
-	pf_server_register_signal_handlers();
 
 	server = pf_server_new(config);
 	if (!server)
@@ -120,13 +126,14 @@ int main(int argc, char* argv[])
 	if (!pf_server_start(server))
 		goto fail;
 
-	if (WaitForSingleObject(server->thread, INFINITE) != WAIT_OBJECT_0)
+	if (!pf_server_run(server))
 		goto fail;
 
 	status = 0;
+
 fail:
 	pf_server_free(server);
-	pf_modules_free();
 	pf_server_config_free(config);
+
 	return status;
 }

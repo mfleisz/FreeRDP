@@ -726,7 +726,7 @@ static UINT handle_platform_mounts_sun(hotplug_dev* dev_array, size_t* size)
 {
 	FILE* f;
 	struct mnttab ent;
-	f = fopen("/etc/mnttab", "r");
+	f = winpr_fopen("/etc/mnttab", "r");
 	if (f == NULL)
 	{
 		WLog_ERR(TAG, "fopen failed!");
@@ -771,7 +771,7 @@ static UINT handle_platform_mounts_linux(hotplug_dev* dev_array, size_t* size)
 {
 	FILE* f;
 	struct mntent* ent;
-	f = fopen("/proc/mounts", "r");
+	f = winpr_fopen("/proc/mounts", "r");
 	if (f == NULL)
 	{
 		WLog_ERR(TAG, "fopen failed!");
@@ -1866,22 +1866,10 @@ static UINT rdpdr_virtual_channel_event_connected(rdpdrPlugin* rdpdr, LPVOID pDa
                                                   UINT32 dataLength)
 {
 	wObject* obj;
-	UINT32 status;
 
 	WINPR_ASSERT(rdpdr);
 	WINPR_UNUSED(pData);
 	WINPR_UNUSED(dataLength);
-
-	status = rdpdr->channelEntryPoints.pVirtualChannelOpenEx(rdpdr->InitHandle, &rdpdr->OpenHandle,
-	                                                         rdpdr->channelDef.name,
-	                                                         rdpdr_virtual_channel_open_event_ex);
-
-	if (status != CHANNEL_RC_OK)
-	{
-		WLog_ERR(TAG, "pVirtualChannelOpenEx failed with %s [%08" PRIX32 "]",
-		         WTSErrorToString(status), status);
-		return status;
-	}
 
 	rdpdr->queue = MessageQueue_New(NULL);
 
@@ -1901,7 +1889,9 @@ static UINT rdpdr_virtual_channel_event_connected(rdpdrPlugin* rdpdr, LPVOID pDa
 		return ERROR_INTERNAL_ERROR;
 	}
 
-	return CHANNEL_RC_OK;
+	return rdpdr->channelEntryPoints.pVirtualChannelOpenEx(rdpdr->InitHandle, &rdpdr->OpenHandle,
+	                                                       rdpdr->channelDef.name,
+	                                                       rdpdr_virtual_channel_open_event_ex);
 }
 
 /**
@@ -1918,12 +1908,15 @@ static UINT rdpdr_virtual_channel_event_disconnected(rdpdrPlugin* rdpdr)
 	if (rdpdr->OpenHandle == 0)
 		return CHANNEL_RC_OK;
 
-	if (MessageQueue_PostQuit(rdpdr->queue, 0) &&
-	    (WaitForSingleObject(rdpdr->thread, INFINITE) == WAIT_FAILED))
+	if (rdpdr->queue && rdpdr->thread)
 	{
-		error = GetLastError();
-		WLog_ERR(TAG, "WaitForSingleObject failed with error %" PRIu32 "!", error);
-		return error;
+		if (MessageQueue_PostQuit(rdpdr->queue, 0) &&
+		    (WaitForSingleObject(rdpdr->thread, INFINITE) == WAIT_FAILED))
+		{
+			error = GetLastError();
+			WLog_ERR(TAG, "WaitForSingleObject failed with error %" PRIu32 "!", error);
+			return error;
+		}
 	}
 
 	MessageQueue_Free(rdpdr->queue);
@@ -1931,6 +1924,7 @@ static UINT rdpdr_virtual_channel_event_disconnected(rdpdrPlugin* rdpdr)
 	rdpdr->queue = NULL;
 	rdpdr->thread = NULL;
 
+	WINPR_ASSERT(rdpdr->channelEntryPoints.pVirtualChannelCloseEx);
 	error = rdpdr->channelEntryPoints.pVirtualChannelCloseEx(rdpdr->InitHandle, rdpdr->OpenHandle);
 
 	if (CHANNEL_RC_OK != error)

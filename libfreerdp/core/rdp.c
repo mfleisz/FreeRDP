@@ -925,7 +925,8 @@ int rdp_recv_data_pdu(rdpRdp* rdp, wStream* s)
 		if (bulk_decompress(rdp->bulk, Stream_Pointer(s), SrcSize, &pDstData, &DstSize,
 		                    compressedType))
 		{
-			if (!(cs = StreamPool_Take(rdp->transport->ReceivePool, DstSize)))
+			cs = transport_take_from_pool(rdp->transport, DstSize);
+			if (!cs)
 			{
 				WLog_ERR(TAG, "Couldn't take stream from pool");
 				return -1;
@@ -1719,12 +1720,15 @@ BOOL rdp_send_error_info(rdpRdp* rdp)
 int rdp_check_fds(rdpRdp* rdp)
 {
 	int status;
-	rdpTransport* transport = rdp->transport;
+	rdpTsg* tsg;
+	rdpTransport* transport;
 
-	if (transport->tsg)
+	WINPR_ASSERT(rdp);
+	transport = rdp->transport;
+
+	tsg = transport_get_tsg(transport);
+	if (tsg)
 	{
-		rdpTsg* tsg = transport->tsg;
-
 		if (!tsg_check_event_handles(tsg))
 		{
 			WLog_ERR(TAG, "rdp_check_fds: tsg_check_event_handles()");
@@ -1890,7 +1894,7 @@ fail:
 	return NULL;
 }
 
-void rdp_reset(rdpRdp* rdp)
+BOOL rdp_reset(rdpRdp* rdp)
 {
 	rdpContext* context;
 	rdpSettings* settings;
@@ -1942,21 +1946,37 @@ void rdp_reset(rdpRdp* rdp)
 	}
 
 	mcs_free(rdp->mcs);
+	rdp->mcs = NULL;
+
 	nego_free(rdp->nego);
+	rdp->nego = NULL;
+
 	license_free(rdp->license);
+	rdp->license = NULL;
+
 	transport_free(rdp->transport);
+	rdp->transport = NULL;
+
 	fastpath_free(rdp->fastpath);
+	rdp->fastpath = NULL;
+
 	rdp->transport = transport_new(context);
-	if (rdp->io && rdp->transport)
-		transport_set_io_callbacks(rdp->transport, rdp->io);
+	if (rdp->transport)
+	{
+		if (rdp->io)
+			transport_set_io_callbacks(rdp->transport, rdp->io);
+
+		rdp->nego = nego_new(rdp->transport);
+		rdp->mcs = mcs_new(rdp->transport);
+		transport_set_layer(rdp->transport, TRANSPORT_LAYER_TCP);
+	}
 	rdp->license = license_new(rdp);
-	rdp->nego = nego_new(rdp->transport);
-	rdp->mcs = mcs_new(rdp->transport);
 	rdp->fastpath = fastpath_new(rdp);
-	rdp->transport->layer = TRANSPORT_LAYER_TCP;
 	rdp->errorInfo = 0;
 	rdp->deactivation_reactivation = 0;
 	rdp->finalize_sc_pdus = 0;
+
+	return rdp->transport && rdp->nego && rdp->mcs && rdp->fastpath && rdp->license;
 }
 
 /**
