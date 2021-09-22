@@ -656,6 +656,7 @@ static BOOL tls_prepare(rdpTls* tls, BIO* underlying, SSL_METHOD* method, int op
 {
 	rdpSettings* settings = tls->settings;
 	tls->ctx = SSL_CTX_new(method);
+	tls->underlying = underlying;
 
 	if (!tls->ctx)
 	{
@@ -692,7 +693,6 @@ static BOOL tls_prepare(rdpTls* tls, BIO* underlying, SSL_METHOD* method, int op
 	}
 
 	BIO_push(tls->bio, underlying);
-	tls->underlying = underlying;
 	return TRUE;
 }
 
@@ -1504,9 +1504,11 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, const char* hostname, U
 					const char* old_issuer = certificate_data_get_issuer(stored_data);
 					const char* old_fp = certificate_data_get_fingerprint(stored_data);
 					const char* old_pem = certificate_data_get_pem(stored_data);
+					const BOOL fpIsAllocated =
+					    !old_pem || !freerdp_settings_get_bool(
+					                    instance->settings, FreeRDP_CertificateCallbackPreferPEM);
 					char* fp;
-					if (old_pem && freerdp_settings_get_bool(instance->settings,
-					                                         FreeRDP_CertificateCallbackPreferPEM))
+					if (!fpIsAllocated)
 					{
 						cflags |= VERIFY_CERT_FLAG_FP_IS_PEM;
 						fp = pem;
@@ -1519,7 +1521,7 @@ int tls_verify_certificate(rdpTls* tls, CryptoCert cert, const char* hostname, U
 					accept_certificate = instance->VerifyChangedCertificateEx(
 					    instance, hostname, port, common_name, subject, issuer, pem, old_subject,
 					    old_issuer, old_fp, cflags);
-					if (!old_pem)
+					if (fpIsAllocated)
 						free(fp);
 				}
 #if defined(WITH_FREERDP_DEPRECATED)
@@ -1672,7 +1674,10 @@ void tls_free(rdpTls* tls)
 
 	/* tls->underlying is a stacked BIO under tls->bio.
 	 * BIO_free_all will free recursivly. */
-	BIO_free_all(tls->bio);
+	if (tls->bio)
+		BIO_free_all(tls->bio);
+	else if (tls->underlying)
+		BIO_free_all(tls->underlying);
 	tls->bio = NULL;
 	tls->underlying = NULL;
 

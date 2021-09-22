@@ -306,14 +306,14 @@ BOOL freerdp_peer_set_local_and_hostname(freerdp_peer* client,
 
 	if (peer_addr->ss_family == AF_INET)
 	{
-		sin_addr = &(((struct sockaddr_in*)&peer_addr)->sin_addr);
+		sin_addr = &(((struct sockaddr_in*)peer_addr)->sin_addr);
 
 		if ((*(UINT32*)sin_addr) == 0x0100007f)
 			client->local = TRUE;
 	}
 	else if (peer_addr->ss_family == AF_INET6)
 	{
-		sin_addr = &(((struct sockaddr_in6*)&peer_addr)->sin6_addr);
+		sin_addr = &(((struct sockaddr_in6*)peer_addr)->sin6_addr);
 
 		if (memcmp(sin_addr, localhost6_bytes, 16) == 0)
 			client->local = TRUE;
@@ -352,6 +352,7 @@ static BOOL freerdp_listener_check_fds(freerdp_listener* instance)
 
 		if (peer_sockfd == -1)
 		{
+			char buffer[8192] = { 0 };
 #ifdef _WIN32
 			int wsa_error = WSAGetLastError();
 
@@ -365,7 +366,7 @@ static BOOL freerdp_listener_check_fds(freerdp_listener* instance)
 				continue;
 
 #endif
-			WLog_DBG(TAG, "accept");
+			WLog_WARN(TAG, "accept failed with %s", winpr_strerror(errno, buffer, sizeof(buffer)));
 			freerdp_peer_free(client);
 			return FALSE;
 		}

@@ -195,14 +195,19 @@ static BOOL rdp_client_reset_codecs(rdpContext* context)
 		return FALSE;
 
 	settings = context->settings;
-	context->codecs = codecs_new(context);
 
-	if (!context->codecs)
-		return FALSE;
+	if (!freerdp_settings_get_bool(settings, FreeRDP_DeactivateClientDecoding))
+	{
+		codecs_free(context->codecs);
+		context->codecs = codecs_new(context);
 
-	if (!freerdp_client_codecs_prepare(context->codecs, freerdp_settings_get_codecs_flags(settings),
-	                                   settings->DesktopWidth, settings->DesktopHeight))
-		return FALSE;
+		if (!context->codecs)
+			return FALSE;
+
+		if (!freerdp_client_codecs_prepare(context->codecs,
+		                                   freerdp_settings_get_codecs_flags(settings),
+		                                   settings->DesktopWidth, settings->DesktopHeight))
+			return FALSE;
 
 /* Runtime H264 detection. (only available if dynamic backend loading is defined)
  * If no backend is available disable it before the channel is loaded.
@@ -215,6 +220,8 @@ static BOOL rdp_client_reset_codecs(rdpContext* context)
 		settings->GfxAVC444v2 = FALSE;
 	}
 #endif
+	}
+
 	return TRUE;
 }
 
@@ -229,11 +236,16 @@ BOOL rdp_client_connect(rdpRdp* rdp)
 {
 	UINT32 SelectedProtocol;
 	BOOL status;
-	rdpSettings* settings = rdp->settings;
+	rdpSettings* settings;
 	/* make sure SSL is initialize for earlier enough for crypto, by taking advantage of winpr SSL
 	 * FIPS flag for openssl initialization */
 	DWORD flags = WINPR_SSL_INIT_DEFAULT;
 	UINT32 timeout;
+
+	WINPR_ASSERT(rdp);
+
+	settings = rdp->settings;
+	WINPR_ASSERT(settings);
 
 	if (!rdp_client_reset_codecs(rdp->context))
 		return FALSE;
@@ -388,8 +400,11 @@ BOOL rdp_client_disconnect(rdpRdp* rdp)
 
 	context = rdp->context;
 
-	if (!nego_disconnect(rdp->nego))
-		return FALSE;
+	if (rdp->nego)
+	{
+		if (!nego_disconnect(rdp->nego))
+			return FALSE;
+	}
 
 	if (!rdp_reset(rdp))
 		return FALSE;
@@ -411,7 +426,11 @@ BOOL rdp_client_disconnect_and_clear(rdpRdp* rdp)
 	if (!rdp_client_disconnect(rdp))
 		return FALSE;
 
+	WINPR_ASSERT(rdp);
+
 	context = rdp->context;
+	WINPR_ASSERT(context);
+
 	context->LastError = FREERDP_ERROR_SUCCESS;
 	clearChannelError(context);
 	ResetEvent(context->abortEvent);
@@ -523,16 +542,16 @@ BOOL rdp_client_redirect(rdpRdp* rdp)
 	BOOL status;
 	rdpSettings* settings;
 
-	if (!rdp || !rdp->settings)
-		return FALSE;
-
-	settings = rdp->settings;
-
 	if (!rdp_client_disconnect_and_clear(rdp))
 		return FALSE;
 
 	if (rdp_redirection_apply_settings(rdp) != 0)
 		return FALSE;
+
+	WINPR_ASSERT(rdp);
+
+	settings = rdp->settings;
+	WINPR_ASSERT(settings);
 
 	if (settings->RedirectionFlags & LB_LOAD_BALANCE_INFO)
 	{
@@ -596,9 +615,6 @@ BOOL rdp_client_redirect(rdpRdp* rdp)
 BOOL rdp_client_reconnect(rdpRdp* rdp)
 {
 	BOOL status;
-
-	if (!rdp || !rdp->context || !rdp->context->channels)
-		return FALSE;
 
 	if (!rdp_client_disconnect_and_clear(rdp))
 		return FALSE;
@@ -1179,8 +1195,18 @@ BOOL rdp_server_accept_nego(rdpRdp* rdp, wStream* s)
 	UINT32 SelectedProtocol = 0;
 	UINT32 RequestedProtocols;
 	BOOL status;
-	rdpSettings* settings = rdp->settings;
-	rdpNego* nego = rdp->nego;
+	rdpSettings* settings;
+	rdpNego* nego;
+
+	WINPR_ASSERT(rdp);
+	WINPR_ASSERT(s);
+
+	settings = rdp->settings;
+	WINPR_ASSERT(settings);
+
+	nego = rdp->nego;
+	WINPR_ASSERT(nego);
+
 	transport_set_blocking_mode(rdp->transport, TRUE);
 
 	if (!nego_read_request(nego, s))
@@ -1534,4 +1560,32 @@ const char* rdp_get_state_string(rdpRdp* rdp)
 {
 	int state = rdp_get_state(rdp);
 	return rdp_state_string(state);
+}
+
+BOOL rdp_channels_from_mcs(rdpSettings* settings, const rdpRdp* rdp)
+{
+	size_t x;
+	const rdpMcs* mcs;
+
+	WINPR_ASSERT(rdp);
+
+	mcs = rdp->mcs;
+	WINPR_ASSERT(mcs);
+
+	if (!freerdp_settings_set_pointer_len(settings, FreeRDP_ChannelDefArray, NULL,
+	                                      mcs->channelCount))
+		return FALSE;
+
+	for (x = 0; x < mcs->channelCount; x++)
+	{
+		const rdpMcsChannel* mchannel = &mcs->channels[x];
+		CHANNEL_DEF cur = { 0 };
+
+		memcpy(cur.name, mchannel->Name, sizeof(cur.name));
+		cur.options = mchannel->options;
+		if (!freerdp_settings_set_pointer_array(settings, FreeRDP_ChannelDefArray, x, &cur))
+			return FALSE;
+	}
+
+	return TRUE;
 }

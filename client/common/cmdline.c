@@ -44,6 +44,7 @@
 #include <freerdp/locale/keyboard.h>
 #include <freerdp/utils/passphrase.h>
 #include <freerdp/channels/urbdrc.h>
+#include <freerdp/channels/rdpdr.h>
 
 #include <freerdp/client/cmdline.h>
 #include <freerdp/version.h>
@@ -1631,6 +1632,10 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 	arg = largs;
 	errno = 0;
 
+	/* Disable unicode input unless requested. */
+	if (!freerdp_settings_set_bool(settings, FreeRDP_UnicodeInput, FALSE))
+		return COMMAND_LINE_ERROR_MEMORY;
+
 	do
 	{
 		BOOL enable = arg->Value ? TRUE : FALSE;
@@ -2053,6 +2058,11 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 
 			settings->KeyboardType = (UINT32)val;
 		}
+		CommandLineSwitchCase(arg, "kbd-unicode")
+		{
+			if (!freerdp_settings_set_bool(settings, FreeRDP_UnicodeInput, enable))
+				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
+		}
 		CommandLineSwitchCase(arg, "kbd-subtype")
 		{
 			LONGLONG val;
@@ -2390,6 +2400,10 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		CommandLineSwitchCase(arg, "drives")
 		{
 			settings->RedirectDrives = enable;
+		}
+		CommandLineSwitchCase(arg, "disable-output")
+		{
+			freerdp_settings_set_bool(settings, FreeRDP_DeactivateClientDecoding, enable);
 		}
 		CommandLineSwitchCase(arg, "home-drive")
 		{
@@ -3676,7 +3690,8 @@ BOOL freerdp_client_load_addins(rdpChannels* channels, rdpSettings* settings)
 
 	if (settings->DeviceRedirection)
 	{
-		if (!freerdp_client_load_static_channel_addin(channels, settings, "rdpdr", settings))
+		if (!freerdp_client_load_static_channel_addin(channels, settings, RDPDR_SVC_CHANNEL_NAME,
+		                                              settings))
 			return FALSE;
 
 		if (!freerdp_static_channel_collection_find(settings, RDPSND_CHANNEL_NAME) &&

@@ -221,6 +221,9 @@ static const COMMAND_LINE_ARGUMENT_A args[] = {
 	{ "kbd-subtype", COMMAND_LINE_VALUE_REQUIRED, "<id>", NULL, NULL, -1, NULL,
 	  "Keyboard subtype" },
 	{ "kbd-type", COMMAND_LINE_VALUE_REQUIRED, "<id>", NULL, NULL, -1, NULL, "Keyboard type" },
+	{ "kbd-unicode", COMMAND_LINE_VALUE_FLAG, "", NULL, NULL, -1, NULL,
+	  "Send unicode symbols, e.g. use the local keyboard map. ATTENTION: Does not work with every "
+	  "RDP server!" },
 	{ "load-balance-info", COMMAND_LINE_VALUE_REQUIRED, "<info-string>", NULL, NULL, -1, NULL,
 	  "Load balance info" },
 	{ "log-filters", COMMAND_LINE_VALUE_REQUIRED, "<tag>:<level>[,<tag>:<level>[,...]]", NULL, NULL,
@@ -345,6 +348,9 @@ static const COMMAND_LINE_ARGUMENT_A args[] = {
 	  "SPN authentication service class" },
 	{ "ssh-agent", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, "ssh-agent",
 	  "SSH Agent forwarding channel" },
+	{ "disable-output", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, NULL,
+	  "Deactivate all graphics decoding in the client session. Useful for load tests with many "
+	  "simultaneous connections" },
 	{ "t", COMMAND_LINE_VALUE_REQUIRED, "<title>", NULL, NULL, -1, "title", "Window title" },
 	{ "themes", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL, "themes" },
 	{ "timeout", COMMAND_LINE_VALUE_REQUIRED, "<time in ms>", "9000", NULL, -1, "timeout",

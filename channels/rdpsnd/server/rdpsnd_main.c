@@ -159,7 +159,7 @@ static UINT rdpsnd_server_recv_formats(RdpsndServerContext* context, wStream* s)
 	Stream_Seek_UINT8(s);                               /* bPad */
 
 	/* this check is only a guess as cbSize can influence the size of a format record */
-	if (Stream_GetRemainingLength(s) < context->num_client_formats * 18ULL)
+	if (Stream_GetRemainingLength(s) / 18 < context->num_client_formats)
 	{
 		WLog_ERR(TAG, "not enough data in stream!");
 		return ERROR_INVALID_DATA;
@@ -228,14 +228,15 @@ out_free:
 
 static DWORD WINAPI rdpsnd_server_thread(LPVOID arg)
 {
-	DWORD nCount, status;
-	HANDLE events[8];
-	RdpsndServerContext* context;
+	DWORD nCount = 0, status;
+	HANDLE events[2] = { 0 };
+	RdpsndServerContext* context = (RdpsndServerContext*)arg;
 	UINT error = CHANNEL_RC_OK;
-	context = (RdpsndServerContext*)arg;
-	nCount = 0;
+	WINPR_ASSERT(context);
 	events[nCount++] = context->priv->channelEvent;
 	events[nCount++] = context->priv->StopEvent;
+
+	WINPR_ASSERT(nCount <= ARRAYSIZE(events));
 
 	while (TRUE)
 	{
@@ -762,6 +763,8 @@ out_close:
 static UINT rdpsnd_server_stop(RdpsndServerContext* context)
 {
 	UINT error = CHANNEL_RC_OK;
+	if (!context->priv->StopEvent)
+		return error;
 
 	if (context->priv->ownThread)
 	{
@@ -778,13 +781,24 @@ static UINT rdpsnd_server_stop(RdpsndServerContext* context)
 
 			CloseHandle(context->priv->Thread);
 			CloseHandle(context->priv->StopEvent);
+			context->priv->Thread = NULL;
+			context->priv->StopEvent = NULL;
 		}
 	}
 
 	DeleteCriticalSection(&context->priv->lock);
 
 	if (context->priv->rdpsnd_pdu)
+	{
 		Stream_Free(context->priv->rdpsnd_pdu, TRUE);
+		context->priv->rdpsnd_pdu = NULL;
+	}
+
+	if (context->priv->ChannelHandle)
+	{
+		WTSVirtualChannelClose(context->priv->ChannelHandle);
+		context->priv->ChannelHandle = NULL;
+	}
 
 	return error;
 }
@@ -859,8 +873,7 @@ void rdpsnd_server_context_free(RdpsndServerContext* context)
 	if (!context)
 		return;
 
-	if (context->priv->ChannelHandle)
-		WTSVirtualChannelClose(context->priv->ChannelHandle);
+	rdpsnd_server_stop(context);
 
 	free(context->priv->out_buffer);
 
