@@ -25,32 +25,16 @@ set(MODULE_PREFIX "FREERDP_SERVER_PROXY")
 
 set(${MODULE_PREFIX}_SRCS
   pf_context.c
-  pf_channels.c
-  pf_channels.h
   pf_client.c
   pf_client.h
   pf_input.c
   pf_input.h
   pf_update.c
   pf_update.h
-  pf_rail.c
-  pf_rail.h
-  pf_rdpgfx.c
-  pf_rdpgfx.h
-  pf_disp.c
-  pf_disp.h
   pf_server.c
   pf_server.h
-  pf_gdi.c
-  pf_gdi.h
   pf_config.c
-  pf_graphics.c
-  pf_graphics.h
   pf_modules.c
-  pf_cliprdr.c
-  pf_cliprdr.h
-  pf_rdpsnd.c
-  pf_rdpsnd.h
   pf_utils.h
   pf_utils.c
   )
@@ -96,11 +80,11 @@ set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} winpr freerdp)
 target_link_libraries(${MODULE_NAME} ${${MODULE_PREFIX}_LIBS})
 install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT server EXPORT FreeRDP-ProxyTargets)
 if (WITH_DEBUG_SYMBOLS AND MSVC)
-    install(FILES ${CMAKE_PDB_BINARY_DIR}/${MODULE_NAME}.pdb DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT symbols)
+    install(FILES ${CMAKE_PDB_BINARY_DIR}/${MODULE_NAME}${FREERDP_VERSION_MAJOR}.pdb DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT symbols)
 endif()
 # pkg-config
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/freerdp-proxy.pc.in ${CMAKE_CURRENT_BINARY_DIR}/freerdp-server-proxy${FREERDP_VERSION_MAJOR}.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/freerdp-server-proxy${FREERDP_VERSION_MAJOR}.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/freerdp-proxy.pc.in ${CMAKE_CURRENT_BINARY_DIR}/${MODULE_NAME}${FREERDP_VERSION_MAJOR}.pc @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${MODULE_NAME}${FREERDP_VERSION_MAJOR}.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
 export(PACKAGE freerdp-proxy)
 
