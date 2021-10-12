@@ -425,13 +425,16 @@ static BOOL audin_open_device(AUDIN_PLUGIN* audin, AUDIN_CHANNEL_CALLBACK* callb
 		format.cbSize = 0;
 		for (x = 0; x < ARRAYSIZE(samplerates); x++)
 		{
+			size_t y;
 			format.nSamplesPerSec = samplerates[x];
-			format.nChannels = audin->format->nChannels;
-			test = IFCALLRESULT(FALSE, audin->device->FormatSupported, audin->device, &format);
-			if (test)
-				break;
-			format.nChannels = 3 - format.nChannels;
-			test = IFCALLRESULT(FALSE, audin->device->FormatSupported, audin->device, &format);
+			for (y = audin->format->nChannels; y > 0; y--)
+			{
+				format.nChannels = y;
+				format.nBlockAlign = 2 * format.nChannels;
+				test = IFCALLRESULT(FALSE, audin->device->FormatSupported, audin->device, &format);
+				if (test)
+					break;
+			}
 			if (test)
 				break;
 		}
@@ -447,11 +450,8 @@ static BOOL audin_open_device(AUDIN_PLUGIN* audin, AUDIN_CHANNEL_CALLBACK* callb
 		return FALSE;
 	}
 
-	if (!supported)
-	{
-		if (!freerdp_dsp_context_reset(audin->dsp_context, audin->format, audin->FramesPerPacket))
-			return FALSE;
-	}
+	if (!freerdp_dsp_context_reset(audin->dsp_context, audin->format, audin->FramesPerPacket))
+		return FALSE;
 
 	IFCALLRET(audin->device->Open, error, audin->device, audin_receive_wave_data, callback);
 
@@ -817,7 +817,7 @@ static UINT audin_load_device_plugin(AUDIN_PLUGIN* audin, const char* name, cons
 		return ERROR_INVALID_FUNCTION;
 	}
 
-	entryPoints.plugin = (IWTSPlugin*)audin;
+	entryPoints.plugin = &audin->iface;
 	entryPoints.pRegisterAudinDevice = audin_register_device_plugin;
 	entryPoints.args = args;
 	entryPoints.rdpcontext = audin->rdpcontext;
@@ -1097,11 +1097,11 @@ UINT DVCPluginEntry(IDRDYNVC_ENTRY_POINTS* pEntryPoints)
 		goto out;
 	}
 
-	error = pEntryPoints->RegisterPlugin(pEntryPoints, "audin", (IWTSPlugin*)audin);
+	error = pEntryPoints->RegisterPlugin(pEntryPoints, "audin", &audin->iface);
 	if (error == CHANNEL_RC_OK)
 		return error;
 
 out:
-	audin_plugin_terminated((IWTSPlugin*)audin);
+	audin_plugin_terminated(&audin->iface);
 	return error;
 }
