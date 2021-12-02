@@ -555,7 +555,8 @@ BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length)
 	while (offset < length)
 	{
 		size_t rest;
-		wStream sub;
+		wStream subbuffer;
+		wStream* sub;
 
 		if (!gcc_read_user_data_header(s, &type, &blockLength))
 		{
@@ -563,7 +564,7 @@ BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length)
 			return FALSE;
 		}
 		holdp = Stream_Pointer(s);
-		Stream_StaticInit(&sub, holdp, blockLength - 4);
+		sub = Stream_StaticInit(&subbuffer, holdp, blockLength - 4);
 		if (!Stream_SafeSeek(s, blockLength - 4))
 		{
 			WLog_ERR(TAG, "gcc_read_server_data_blocks: stream too short");
@@ -574,7 +575,7 @@ BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length)
 		switch (type)
 		{
 			case SC_CORE:
-				if (!gcc_read_server_core_data(&sub, mcs))
+				if (!gcc_read_server_core_data(sub, mcs))
 				{
 					WLog_ERR(TAG, "gcc_read_server_data_blocks: gcc_read_server_core_data failed");
 					return FALSE;
@@ -583,7 +584,7 @@ BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length)
 				break;
 
 			case SC_SECURITY:
-				if (!gcc_read_server_security_data(&sub, mcs))
+				if (!gcc_read_server_security_data(sub, mcs))
 				{
 					WLog_ERR(TAG,
 					         "gcc_read_server_data_blocks: gcc_read_server_security_data failed");
@@ -593,7 +594,7 @@ BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length)
 				break;
 
 			case SC_NET:
-				if (!gcc_read_server_network_data(&sub, mcs))
+				if (!gcc_read_server_network_data(sub, mcs))
 				{
 					WLog_ERR(TAG,
 					         "gcc_read_server_data_blocks: gcc_read_server_network_data failed");
@@ -603,7 +604,7 @@ BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length)
 				break;
 
 			case SC_MCS_MSGCHANNEL:
-				if (!gcc_read_server_message_channel_data(&sub, mcs))
+				if (!gcc_read_server_message_channel_data(sub, mcs))
 				{
 					WLog_ERR(
 					    TAG,
@@ -614,7 +615,7 @@ BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length)
 				break;
 
 			case SC_MULTITRANSPORT:
-				if (!gcc_read_server_multitransport_channel_data(&sub, mcs))
+				if (!gcc_read_server_multitransport_channel_data(sub, mcs))
 				{
 					WLog_ERR(TAG, "gcc_read_server_data_blocks: "
 					              "gcc_read_server_multitransport_channel_data failed");
@@ -628,7 +629,7 @@ BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length)
 				break;
 		}
 
-		rest = Stream_GetRemainingLength(&sub);
+		rest = Stream_GetRemainingLength(sub);
 		if (rest > 0)
 		{
 			WLog_WARN(
@@ -1344,9 +1345,8 @@ BOOL gcc_read_server_security_data(wStream* s, rdpMcs* mcs)
 		return FALSE;
 
 	/* serverRandom */
-	settings->ServerRandom = (BYTE*)malloc(settings->ServerRandomLength);
-
-	if (!settings->ServerRandom)
+	if (!freerdp_settings_set_pointer_len(settings, FreeRDP_ServerRandom, NULL,
+										  settings->ServerRandomLength))
 		goto fail;
 
 	Stream_Read(s, settings->ServerRandom, settings->ServerRandomLength);
@@ -1355,12 +1355,12 @@ BOOL gcc_read_server_security_data(wStream* s, rdpMcs* mcs)
 		goto fail;
 
 	/* serverCertificate */
-	settings->ServerCertificate = (BYTE*)malloc(settings->ServerCertificateLength);
-
-	if (!settings->ServerCertificate)
+	if (!freerdp_settings_set_pointer_len(settings, FreeRDP_ServerCertificate, NULL,
+										 settings->ServerCertificateLength))
 		goto fail;
 
 	Stream_Read(s, settings->ServerCertificate, settings->ServerCertificateLength);
+
 	if (!freerdp_settings_set_pointer_len(settings, FreeRDP_RdpServerCertificate, certificate_new(),
 	                                      sizeof(rdpCertificate)))
 		goto fail;

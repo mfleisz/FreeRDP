@@ -360,6 +360,9 @@ BOOL rdp_set_error_info(rdpRdp* rdp, UINT32 errorInfo)
 		}
 		else
 			WLog_ERR(TAG, "%s missing context=%p", __FUNCTION__, context);
+
+		/* Ensure the connection is terminated */
+		freerdp_abort_connect(context->instance);
 	}
 	else
 	{
@@ -879,10 +882,10 @@ static BOOL rdp_recv_monitor_layout_pdu(rdpRdp* rdp, wStream* s)
 
 	for (monitor = monitorDefArray, index = 0; index < monitorCount; index++, monitor++)
 	{
-		Stream_Read_UINT32(s, monitor->left);   /* left (4 bytes) */
-		Stream_Read_UINT32(s, monitor->top);    /* top (4 bytes) */
-		Stream_Read_UINT32(s, monitor->right);  /* right (4 bytes) */
-		Stream_Read_UINT32(s, monitor->bottom); /* bottom (4 bytes) */
+		Stream_Read_INT32(s, monitor->left);    /* left (4 bytes) */
+		Stream_Read_INT32(s, monitor->top);     /* top (4 bytes) */
+		Stream_Read_INT32(s, monitor->right);   /* right (4 bytes) */
+		Stream_Read_INT32(s, monitor->bottom);  /* bottom (4 bytes) */
 		Stream_Read_UINT32(s, monitor->flags);  /* flags (4 bytes) */
 	}
 
@@ -1367,7 +1370,8 @@ static int rdp_recv_tpkt_pdu(rdpRdp* rdp, wStream* s)
 	{
 		while (Stream_GetRemainingLength(s) > 3)
 		{
-			wStream sub;
+			wStream subbuffer;
+			wStream* sub;
 			size_t diff;
 			UINT16 remain;
 
@@ -1377,7 +1381,7 @@ static int rdp_recv_tpkt_pdu(rdpRdp* rdp, wStream* s)
 				return -1;
 			}
 
-			Stream_StaticInit(&sub, Stream_Pointer(s), remain);
+			sub = Stream_StaticInit(&subbuffer, Stream_Pointer(s), remain);
 			if (!Stream_SafeSeek(s, remain))
 				return -1;
 
@@ -1387,13 +1391,13 @@ static int rdp_recv_tpkt_pdu(rdpRdp* rdp, wStream* s)
 			switch (pduType)
 			{
 				case PDU_TYPE_DATA:
-					rc = rdp_recv_data_pdu(rdp, &sub);
+					rc = rdp_recv_data_pdu(rdp, sub);
 					if (rc < 0)
 						return rc;
 					break;
 
 				case PDU_TYPE_DEACTIVATE_ALL:
-					if (!rdp_recv_deactivate_all(rdp, &sub))
+					if (!rdp_recv_deactivate_all(rdp, sub))
 					{
 						WLog_ERR(TAG, "rdp_recv_tpkt_pdu: rdp_recv_deactivate_all() fail");
 						return -1;
@@ -1402,14 +1406,14 @@ static int rdp_recv_tpkt_pdu(rdpRdp* rdp, wStream* s)
 					break;
 
 				case PDU_TYPE_SERVER_REDIRECTION:
-					return rdp_recv_enhanced_security_redirection_packet(rdp, &sub);
+					return rdp_recv_enhanced_security_redirection_packet(rdp, sub);
 
 				case PDU_TYPE_FLOW_RESPONSE:
 				case PDU_TYPE_FLOW_STOP:
 				case PDU_TYPE_FLOW_TEST:
 					WLog_DBG(TAG, "flow message 0x%04" PRIX16 "", pduType);
 					/* http://msdn.microsoft.com/en-us/library/cc240576.aspx */
-					if (!Stream_SafeSeek(&sub, remain))
+					if (!Stream_SafeSeek(sub, remain))
 						return -1;
 					break;
 
@@ -1418,7 +1422,7 @@ static int rdp_recv_tpkt_pdu(rdpRdp* rdp, wStream* s)
 					break;
 			}
 
-			diff = Stream_GetRemainingLength(&sub);
+			diff = Stream_GetRemainingLength(sub);
 			if (diff > 0)
 			{
 				WLog_WARN(TAG,
@@ -1780,7 +1784,6 @@ rdpRdp* rdp_new(rdpContext* context)
 {
 	rdpRdp* rdp;
 	DWORD flags;
-	BOOL newSettings = FALSE;
 	rdp = (rdpRdp*)calloc(1, sizeof(rdpRdp));
 
 	if (!rdp)
@@ -1800,8 +1803,6 @@ rdpRdp* rdp_new(rdpContext* context)
 
 		if (!context->settings)
 			goto fail;
-
-		newSettings = TRUE;
 	}
 
 	rdp->settings = context->settings;

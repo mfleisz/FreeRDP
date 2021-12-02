@@ -31,6 +31,8 @@
 #include "uwac-utils.h"
 #include "uwac-os.h"
 
+#include "config.h"
+
 #define UWAC_INITIAL_BUFFERS 3
 
 static int bppFromShmFormat(enum wl_shm_format format)
@@ -813,4 +815,10 @@ void UwacWindowSetTitle(UwacWindow* window, const char* name)
 		xdg_toplevel_set_title(window->xdg_toplevel, name);
 	else if (window->shell_surface)
 		wl_shell_surface_set_title(window->shell_surface, name);
+}
+
+void UwacWindowSetAppId(UwacWindow* window, const char* app_id)
+{
+	if (window->xdg_toplevel)
+		xdg_toplevel_set_app_id(window->xdg_toplevel, app_id);
 }

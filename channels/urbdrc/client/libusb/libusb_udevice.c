@@ -494,24 +494,22 @@ static int func_claim_all_interface(URBDRC_PLUGIN* urbdrc, LIBUSB_DEVICE_HANDLE*
 static LIBUSB_DEVICE* udev_get_libusb_dev(libusb_context* context, uint8_t bus_number,
                                           uint8_t dev_number)
 {
-	ssize_t i, total_device;
-	LIBUSB_DEVICE** libusb_list;
+	ssize_t i;
+	LIBUSB_DEVICE** libusb_list = NULL;
 	LIBUSB_DEVICE* device = NULL;
-	total_device = libusb_get_device_list(context, &libusb_list);
+	const ssize_t total_device = libusb_get_device_list(context, &libusb_list);
 
 	for (i = 0; i < total_device; i++)
 	{
-		uint8_t cbus = libusb_get_bus_number(libusb_list[i]);
-		uint8_t caddr = libusb_get_device_address(libusb_list[i]);
-
-		if ((bus_number == cbus) && (dev_number == caddr))
-		{
-			device = libusb_list[i];
-			break;
-		}
+		LIBUSB_DEVICE* dev = libusb_list[i];
+		if ((bus_number == libusb_get_bus_number(dev)) &&
+		    (dev_number == libusb_get_device_address(dev)))
+			device = dev;
+		else
+			libusb_unref_device(dev);
 	}
 
-	libusb_free_device_list(libusb_list, 1);
+	libusb_free_device_list(libusb_list, 0);
 	return device;
 }
 
@@ -532,7 +530,6 @@ static LIBUSB_DEVICE_DESCRIPTOR* udev_new_descript(URBDRC_PLUGIN* urbdrc, LIBUSB
 
 	return descriptor;
 }
-
 
 static int libusb_udev_select_interface(IUDEVICE* idev, BYTE InterfaceNumber, BYTE AlternateSetting)
 {
@@ -923,11 +920,17 @@ static int libusb_udev_os_feature_descriptor_request(IUDEVICE* idev, UINT32 Requ
                                                      BYTE Recipient, BYTE InterfaceNumber,
                                                      BYTE Ms_PageIndex, UINT16 Ms_featureDescIndex,
                                                      UINT32* UsbdStatus, UINT32* BufferSize,
-                                                     BYTE* Buffer, int Timeout)
+                                                     BYTE* Buffer, UINT32 Timeout)
 {
 	UDEVICE* pdev = (UDEVICE*)idev;
 	BYTE ms_string_desc[0x13] = { 0 };
 	int error = 0;
+
+	WINPR_ASSERT(idev);
+	WINPR_ASSERT(UsbdStatus);
+	WINPR_ASSERT(BufferSize);
+	WINPR_ASSERT(*BufferSize <= UINT16_MAX);
+
 	/*
 	pdev->request_queue->register_request(pdev->request_queue, RequestId, NULL, 0);
 	*/
@@ -941,14 +944,14 @@ static int libusb_udev_os_feature_descriptor_request(IUDEVICE* idev, UINT32 Requ
 	{
 		const BYTE bMS_Vendorcode = ms_string_desc[16];
 		/** get os descriptor */
-		error = libusb_control_transfer(pdev->libusb_handle,
-		                                LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR | Recipient,
-		                                bMS_Vendorcode, (InterfaceNumber << 8) | Ms_PageIndex,
-		                                Ms_featureDescIndex, Buffer, *BufferSize, Timeout);
+		error = libusb_control_transfer(
+		    pdev->libusb_handle, LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR | Recipient,
+		    bMS_Vendorcode, (UINT16)((InterfaceNumber << 8) | Ms_PageIndex), Ms_featureDescIndex,
+		    Buffer, (UINT16)*BufferSize, Timeout);
 		log_libusb_result(pdev->urbdrc->log, WLOG_DEBUG, "libusb_control_transfer", error);
 
 		if (error >= 0)
-			*BufferSize = error;
+			*BufferSize = (UINT32)error;
 	}
 
 	if (error < 0)
@@ -1023,6 +1026,9 @@ static BOOL libusb_udev_detach_kernel_driver(IUDEVICE* idev)
 	if (!pdev || !pdev->LibusbConfig || !pdev->libusb_handle || !pdev->urbdrc)
 		return FALSE;
 
+#ifdef _WIN32
+	return TRUE;
+#else
 	urbdrc = pdev->urbdrc;
 
 	if ((pdev->status & URBDRC_DEVICE_DETACH_KERNEL) == 0)
@@ -1043,6 +1049,7 @@ static BOOL libusb_udev_detach_kernel_driver(IUDEVICE* idev)
 	}
 
 	return TRUE;
+#endif
 }
 
 static BOOL libusb_udev_attach_kernel_driver(IUDEVICE* idev)
@@ -1059,12 +1066,14 @@ static BOOL libusb_udev_attach_kernel_driver(IUDEVICE* idev)
 
 		log_libusb_result(pdev->urbdrc->log, WLOG_DEBUG, "libusb_release_interface", err);
 
+#ifndef _WIN32
 		if (err != LIBUSB_ERROR_NO_DEVICE)
 		{
 			err = libusb_attach_kernel_driver(pdev->libusb_handle, i);
 			log_libusb_result(pdev->urbdrc->log, WLOG_DEBUG, "libusb_attach_kernel_driver if=%d",
 			                  err, i);
 		}
+#endif
 	}
 
 	return TRUE;
@@ -1201,6 +1210,7 @@ static int libusb_udev_isoch_transfer(IUDEVICE* idev, URBDRC_CHANNEL_CALLBACK* c
                                       UINT32 NumberOfPackets, UINT32 BufferSize, const BYTE* Buffer,
                                       t_isoch_transfer_cb cb, UINT32 Timeout)
 {
+	int rc;
 	UINT32 iso_packet_size;
 	UDEVICE* pdev = (UDEVICE*)idev;
 	ASYNC_TRANSFER_USER_DATA* user_data;
@@ -1226,7 +1236,7 @@ static int libusb_udev_isoch_transfer(IUDEVICE* idev, URBDRC_CHANNEL_CALLBACK* c
 		Stream_Seek(user_data->data, (NumberOfPackets * 12));
 
 	iso_packet_size = BufferSize / NumberOfPackets;
-	iso_transfer = libusb_alloc_transfer(NumberOfPackets);
+	iso_transfer = libusb_alloc_transfer((int)NumberOfPackets);
 
 	if (iso_transfer == NULL)
 	{
@@ -1250,7 +1260,10 @@ static int libusb_udev_isoch_transfer(IUDEVICE* idev, URBDRC_CHANNEL_CALLBACK* c
 		request_free(iso_transfer);
 		return -1;
 	}
-	return libusb_submit_transfer(iso_transfer);
+	rc = libusb_submit_transfer(iso_transfer);
+	if (log_libusb_result(urbdrc->log, WLOG_ERROR, "", rc))
+		return -1;
+	return rc;
 }
 
 static BOOL libusb_udev_control_transfer(IUDEVICE* idev, UINT32 RequestId, UINT32 EndpointAddress,
@@ -1261,11 +1274,14 @@ static BOOL libusb_udev_control_transfer(IUDEVICE* idev, UINT32 RequestId, UINT3
 	int status = 0;
 	UDEVICE* pdev = (UDEVICE*)idev;
 
+	WINPR_ASSERT(BufferSize);
+	WINPR_ASSERT(*BufferSize <= UINT16_MAX);
+
 	if (!pdev || !pdev->urbdrc)
 		return FALSE;
 
 	status = libusb_control_transfer(pdev->libusb_handle, bmRequestType, Request, Value, Index,
-	                                 Buffer, *BufferSize, Timeout);
+	                                 Buffer, (UINT16)*BufferSize, Timeout);
 
 	if (status >= 0)
 		*BufferSize = (UINT32)status;
@@ -1284,6 +1300,7 @@ static int libusb_udev_bulk_or_interrupt_transfer(IUDEVICE* idev, URBDRC_CHANNEL
                                                   BOOL NoAck, UINT32 BufferSize, const BYTE* data,
                                                   t_isoch_transfer_cb cb, UINT32 Timeout)
 {
+	int rc;
 	UINT32 transfer_type;
 	UDEVICE* pdev = (UDEVICE*)idev;
 	const LIBUSB_ENDPOINT_DESCEIPTOR* ep_desc;
@@ -1360,7 +1377,10 @@ static int libusb_udev_bulk_or_interrupt_transfer(IUDEVICE* idev, URBDRC_CHANNEL
 		request_free(transfer);
 		return -1;
 	}
-	return libusb_submit_transfer(transfer);
+	rc = libusb_submit_transfer(transfer);
+	if (log_libusb_result(urbdrc->log, WLOG_ERROR, "", rc))
+		return -1;
+	return rc;
 }
 
 static int func_cancel_xact_request(URBDRC_PLUGIN* urbdrc, struct libusb_transfer* transfer)
@@ -1480,11 +1500,17 @@ static void udev_free(IUDEVICE* idev)
 		log_libusb_result(urbdrc->log, WLOG_ERROR, "libusb_reset_device", rc);
 	}
 
+	/* HACK: We need to wait until the cancel transfer has been processed by
+	 * poll_libusb_events
+	 */
+	Sleep(100);
+
 	/* release all interface and  attach kernel driver */
 	udev->iface.attach_kernel_driver(idev);
 	ArrayList_Free(udev->request_queue);
 	/* free the config descriptor that send from windows */
 	msusb_msconfig_free(udev->MsConfig);
+	libusb_unref_device(udev->libusb_dev);
 	libusb_close(udev->libusb_handle);
 	libusb_close(udev->hub_handle);
 	free(udev->devDescriptor);
@@ -1493,6 +1519,8 @@ static void udev_free(IUDEVICE* idev)
 
 static void udev_load_interface(UDEVICE* pdev)
 {
+	WINPR_ASSERT(pdev);
+
 	/* load interface */
 	/* Basic */
 	BASIC_STATE_FUNC_REGISTER(channelManager, pdev);
@@ -1533,77 +1561,93 @@ static void udev_load_interface(UDEVICE* pdev)
 	pdev->iface.free = udev_free;
 }
 
+static int udev_get_device_handle(URBDRC_PLUGIN* urbdrc, libusb_context* ctx, UDEVICE* pdev,
+                                  UINT16 bus_number, UINT16 dev_number)
+{
+	int error = -1;
+	ssize_t i;
+	uint8_t port_numbers[16] = { 0 };
+	LIBUSB_DEVICE** libusb_list = NULL;
+	const ssize_t total_device = libusb_get_device_list(ctx, &libusb_list);
+
+	WINPR_ASSERT(urbdrc);
+
+	/* Look for device. */
+	for (i = 0; i < total_device; i++)
+	{
+		LIBUSB_DEVICE* dev = libusb_list[i];
+
+		if ((bus_number != libusb_get_bus_number(dev)) ||
+		    (dev_number != libusb_get_device_address(dev)))
+			libusb_unref_device(dev);
+		else
+		{
+			error = libusb_open(dev, &pdev->libusb_handle);
+
+			if (log_libusb_result(urbdrc->log, WLOG_ERROR, "libusb_open", error))
+			{
+				libusb_unref_device(dev);
+				continue;
+			}
+
+			/* get port number */
+			error = libusb_get_port_numbers(dev, port_numbers, sizeof(port_numbers));
+			if (error < 1)
+			{
+				/* Prevent open hub, treat as error. */
+				log_libusb_result(urbdrc->log, WLOG_ERROR, "libusb_get_port_numbers", error);
+				libusb_unref_device(dev);
+				continue;
+			}
+
+			pdev->port_number = port_numbers[(error - 1)];
+			error = 0;
+			WLog_Print(urbdrc->log, WLOG_DEBUG, "  Port: %d", pdev->port_number);
+			/* gen device path */
+			sprintf(pdev->path, "%" PRIu16 "-%d", bus_number, pdev->port_number);
+
+			WLog_Print(urbdrc->log, WLOG_DEBUG, "  DevPath: %s", pdev->path);
+		}
+	}
+	libusb_free_device_list(libusb_list, 0);
+
+	if (error < 0)
+		return -1;
+	return 0;
+}
+
 static int udev_get_hub_handle(URBDRC_PLUGIN* urbdrc, libusb_context* ctx, UDEVICE* pdev,
                                UINT16 bus_number, UINT16 dev_number)
 {
-	int error;
-	ssize_t i, total_device;
-	uint8_t port_numbers[16];
-	LIBUSB_DEVICE** libusb_list;
-	total_device = libusb_get_device_list(ctx, &libusb_list);
-	/* Look for device. */
-	error = -1;
+	int error = -1;
+	ssize_t i;
+	LIBUSB_DEVICE** libusb_list = NULL;
+	LIBUSB_DEVICE_HANDLE* handle = NULL;
+	const ssize_t total_device = libusb_get_device_list(ctx, &libusb_list);
 
-	for (i = 0; i < total_device; i++)
-	{
-		LIBUSB_DEVICE_HANDLE* handle;
-		uint8_t cbus = libusb_get_bus_number(libusb_list[i]);
-		uint8_t caddr = libusb_get_device_address(libusb_list[i]);
-
-		if ((bus_number != cbus) || (dev_number != caddr))
-			continue;
-
-		error = libusb_open(libusb_list[i], &handle);
-
-		if (log_libusb_result(urbdrc->log, WLOG_ERROR, "libusb_open", error))
-			break;
-
-		/* get port number */
-		error = libusb_get_port_numbers(libusb_list[i], port_numbers, sizeof(port_numbers));
-		libusb_close(handle);
-
-		if (error < 1)
-		{
-			/* Prevent open hub, treat as error. */
-			log_libusb_result(urbdrc->log, WLOG_ERROR, "libusb_get_port_numbers", error);
-			break;
-		}
-
-		pdev->port_number = port_numbers[(error - 1)];
-		error = 0;
-		WLog_Print(urbdrc->log, WLOG_DEBUG, "  Port: %d", pdev->port_number);
-		/* gen device path */
-		sprintf(pdev->path, "%" PRIu16 "-%d", bus_number, pdev->port_number);
-
-		WLog_Print(urbdrc->log, WLOG_DEBUG, "  DevPath: %s", pdev->path);
-		break;
-	}
+	WINPR_ASSERT(urbdrc);
 
 	/* Look for device hub. */
-	if (error == 0)
+	for (i = 0; i < total_device; i++)
 	{
-		error = -1;
+		LIBUSB_DEVICE* dev = libusb_list[i];
 
-		for (i = 0; i < total_device; i++)
+		if ((bus_number != libusb_get_bus_number(dev)) ||
+		    (1 != libusb_get_device_address(dev))) /* Root hub allways first on bus. */
+			libusb_unref_device(dev);
+		else
 		{
-			LIBUSB_DEVICE_HANDLE* handle;
-			uint8_t cbus = libusb_get_bus_number(libusb_list[i]);
-			uint8_t caddr = libusb_get_device_address(libusb_list[i]);
-
-			if ((bus_number != cbus) || (1 != caddr)) /* Root hub allways first on bus. */
-				continue;
-
 			WLog_Print(urbdrc->log, WLOG_DEBUG, "  Open hub: %" PRIu16 "", bus_number);
-			error = libusb_open(libusb_list[i], &handle);
+			error = libusb_open(dev, &handle);
 
 			if (!log_libusb_result(urbdrc->log, WLOG_ERROR, "libusb_open", error))
 				pdev->hub_handle = handle;
-
-			break;
+			else
+				libusb_unref_device(dev);
 		}
 	}
 
-	libusb_free_device_list(libusb_list, 1);
+	libusb_free_device_list(libusb_list, 0);
 
 	if (error < 0)
 		return -1;
@@ -1632,6 +1676,9 @@ static IUDEVICE* udev_init(URBDRC_PLUGIN* urbdrc, libusb_context* context, LIBUS
 	LIBUSB_DEVICE_DESCRIPTOR* devDescriptor;
 	LIBUSB_CONFIG_DESCRIPTOR* config_temp;
 	LIBUSB_INTERFACE_DESCRIPTOR interface_temp;
+
+	WINPR_ASSERT(urbdrc);
+
 	pdev = (PUDEVICE)calloc(1, sizeof(UDEVICE));
 
 	if (!pdev)
@@ -1651,29 +1698,25 @@ static IUDEVICE* udev_init(URBDRC_PLUGIN* urbdrc, libusb_context* context, LIBUS
 	if (urbdrc->listener_callback)
 		udev_set_channelManager(&pdev->iface, urbdrc->listener_callback->channel_mgr);
 
+	/* Get DEVICE handle */
+	status = udev_get_device_handle(urbdrc, context, pdev, bus_number, dev_number);
+	if (status != LIBUSB_SUCCESS)
+	{
+		struct libusb_device_descriptor desc;
+		const uint8_t port = libusb_get_port_number(pdev->libusb_dev);
+		libusb_get_device_descriptor(pdev->libusb_dev, &desc);
+
+		log_libusb_result(urbdrc->log, WLOG_ERROR,
+		                  "libusb_open [b=0x%02X,p=0x%02X,a=0x%02X,VID=0x%04X,PID=0x%04X]", status,
+		                  bus_number, port, dev_number, desc.idVendor, desc.idProduct);
+		goto fail;
+	}
+
 	/* Get HUB handle */
 	status = udev_get_hub_handle(urbdrc, context, pdev, bus_number, dev_number);
 
 	if (status < 0)
 		pdev->hub_handle = NULL;
-
-	{
-		struct libusb_device_descriptor desc;
-		const uint8_t bus = libusb_get_bus_number(pdev->libusb_dev);
-		const uint8_t port = libusb_get_port_number(pdev->libusb_dev);
-		const uint8_t addr = libusb_get_device_address(pdev->libusb_dev);
-		libusb_get_device_descriptor(pdev->libusb_dev, &desc);
-
-		status = libusb_open(pdev->libusb_dev, &pdev->libusb_handle);
-
-		if (status != LIBUSB_SUCCESS)
-		{
-			log_libusb_result(urbdrc->log, WLOG_ERROR,
-			                  "libusb_open [b=0x%02X,p=0x%02X,a=0x%02X,VID=0x%04X,PID=0x%04X]",
-			                  status, bus, port, addr, desc.idVendor, desc.idProduct);
-			goto fail;
-		}
-	}
 
 	pdev->devDescriptor = udev_new_descript(urbdrc, pdev->libusb_dev);
 
@@ -1745,8 +1788,6 @@ size_t udev_new_by_id(URBDRC_PLUGIN* urbdrc, libusb_context* ctx, UINT16 idVendo
 {
 	LIBUSB_DEVICE** libusb_list;
 	UDEVICE** array;
-	UINT16 bus_number;
-	UINT16 dev_number;
 	ssize_t i, total_device;
 	size_t num = 0;
 
@@ -1756,30 +1797,35 @@ size_t udev_new_by_id(URBDRC_PLUGIN* urbdrc, libusb_context* ctx, UINT16 idVendo
 	WLog_Print(urbdrc->log, WLOG_INFO, "VID: 0x%04" PRIX16 ", PID: 0x%04" PRIX16 "", idVendor,
 	           idProduct);
 	total_device = libusb_get_device_list(ctx, &libusb_list);
-	array = (UDEVICE**)calloc(total_device, sizeof(UDEVICE*));
+	if (total_device < 0)
+		return 0;
+
+	array = (UDEVICE**)calloc((size_t)total_device, sizeof(UDEVICE*));
 
 	if (!array)
 		goto fail;
 
 	for (i = 0; i < total_device; i++)
 	{
-		LIBUSB_DEVICE_DESCRIPTOR* descriptor = udev_new_descript(urbdrc, libusb_list[i]);
+		LIBUSB_DEVICE* dev = libusb_list[i];
+		LIBUSB_DEVICE_DESCRIPTOR* descriptor = udev_new_descript(urbdrc, dev);
 
 		if ((descriptor->idVendor == idVendor) && (descriptor->idProduct == idProduct))
 		{
-			bus_number = libusb_get_bus_number(libusb_list[i]);
-			dev_number = libusb_get_device_address(libusb_list[i]);
-			array[num] = (PUDEVICE)udev_init(urbdrc, ctx, libusb_list[i], bus_number, dev_number);
+			array[num] = (PUDEVICE)udev_init(urbdrc, ctx, dev, libusb_get_bus_number(dev),
+			                                 libusb_get_device_address(dev));
 
 			if (array[num] != NULL)
 				num++;
 		}
+		else
+			libusb_unref_device(dev);
 
 		free(descriptor);
 	}
 
 fail:
-	libusb_free_device_list(libusb_list, 1);
+	libusb_free_device_list(libusb_list, 0);
 	*devArray = (IUDEVICE**)array;
 	return num;
 }

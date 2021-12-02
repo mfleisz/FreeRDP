@@ -2414,13 +2414,6 @@ INT32 progressive_decompress(PROGRESSIVE_CONTEXT* progressive, const BYTE* pSrcD
 	REGION16 clippingRects, updateRegion;
 	PROGRESSIVE_BLOCK_REGION* region = &progressive->region;
 	PROGRESSIVE_SURFACE_CONTEXT* surface = progressive_get_surface_data(progressive, surfaceId);
-	union
-	{
-		const BYTE* cbp;
-		BYTE* bp;
-	} sconv;
-
-	sconv.cbp = pSrcData;
 
 	if (!surface)
 	{
@@ -2435,8 +2428,7 @@ INT32 progressive_decompress(PROGRESSIVE_CONTEXT* progressive, const BYTE* pSrcD
 		surface->numUpdatedTiles = 0;
 	}
 
-	Stream_StaticInit(&ss, sconv.bp, SrcSize);
-	s = &ss;
+	s = Stream_StaticConstInit(&ss, pSrcData, SrcSize);
 
 	switch (DstFormat)
 	{
@@ -2688,11 +2680,6 @@ int progressive_compress(PROGRESSIVE_CONTEXT* progressive, const BYTE* pSrcData,
 			rect->y = r->top;
 			rect->width = r->right - r->left;
 			rect->height = r->bottom - r->top;
-
-			WINPR_ASSERT(rect->x % 64 == 0);
-			WINPR_ASSERT(rect->y % 64 == 0);
-			WINPR_ASSERT(rect->width <= 64);
-			WINPR_ASSERT(rect->height <= 64);
 		}
 	}
 	else

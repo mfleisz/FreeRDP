@@ -478,10 +478,6 @@ if(APPLE)
 		endif()
 		set(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${FREERDP_IOS_EXTERNAL_SSL_PATH})
 		set_property(GLOBAL PROPERTY XCODE_ATTRIBUTE_SKIP_INSTALL YES)
-	else(IOS)
-		if(NOT DEFINED CMAKE_OSX_ARCHITECTURES)
-			set(CMAKE_OSX_ARCHITECTURES i386 x86_64)
-		endif()
 	endif(IOS)
 
 # Temporarily disabled, causes the cmake script to be reexecuted, causing the compilation to fail.
@@ -873,6 +869,7 @@ endif()
 set(FREERDP_ADDIN_PATH "${FREERDP_PLUGIN_PATH}")
 
 # Path to put extensions
+set(FREERDP_EXTENSION_REL_PATH "${CMAKE_INSTALL_LIBDIR}/freerdp${FREERDP_VERSION_MAJOR}/extensions")
 set(FREERDP_EXTENSION_PATH "${CMAKE_INSTALL_FULL_LIBDIR}/freerdp${FREERDP_VERSION_MAJOR}/extensions")
 
 # Proxy plugins path
@@ -896,6 +893,10 @@ else (APPLE)
 	set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 	if (NOT FREEBSD)
 		set(CMAKE_INSTALL_RPATH "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}:\$ORIGIN/..")
+		option(WITH_ADD_PLUGIN_TO_RPATH "Add extension and plugin path to RPATH" OFF)
+		if (WITH_ADD_PLUGIN_TO_RPATH)
+			set(CMAKE_INSTALL_RPATH "\$ORIGIN/../${FREERDP_EXTENSION_REL_PATH}:\$ORIGIN/../${FREERDP_PLUGIN_PATH}:${CMAKE_INSTALL_RPATH}")
+		endif()
 	endif()
 endif(APPLE)
 

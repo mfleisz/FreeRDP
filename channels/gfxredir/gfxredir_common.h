@@ -1,8 +1,8 @@
 /**
  * FreeRDP: A Remote Desktop Protocol Implementation
- * FreeRDP Client Compatibility
+ * RDPXXXX Remote App Graphics Redirection Virtual Channel Extension
  *
- * Copyright 2012 Marc-Andre Moreau <marcandre.moreau@gmail.com>
+ * Copyright 2020 Microsoft
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,16 @@
  * limitations under the License.
  */
 
-#ifndef FREERDP_CLIENT_COMMON_COMPATIBILITY_H
-#define FREERDP_CLIENT_COMMON_COMPATIBILITY_H
+#ifndef FREERDP_CHANNEL_GFXREDIR_COMMON_H
+#define FREERDP_CHANNEL_GFXREDIR_COMMON_H
 
+#include <winpr/crt.h>
+#include <winpr/stream.h>
+
+#include <freerdp/channels/gfxredir.h>
 #include <freerdp/api.h>
-#include <freerdp/freerdp.h>
 
-FREERDP_LOCAL int freerdp_detect_old_command_line_syntax(int argc, char** argv, size_t* count);
-FREERDP_LOCAL int freerdp_client_parse_old_command_line_arguments(int argc, char** argv,
-                                                                  rdpSettings* settings);
+FREERDP_LOCAL UINT gfxredir_read_header(wStream* s, GFXREDIR_HEADER* header);
+FREERDP_LOCAL UINT gfxredir_write_header(wStream* s, const GFXREDIR_HEADER* header);
 
-#endif /* FREERDP_CLIENT_COMMON_COMPATIBILITY_H */
+#endif /* FREERDP_CHANNEL_GFXREDIR_COMMON_H */

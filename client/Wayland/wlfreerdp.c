@@ -24,6 +24,8 @@
 #include <locale.h>
 #include <float.h>
 
+#include <winpr/sysinfo.h>
+
 #include <freerdp/client/cmdline.h>
 #include <freerdp/channels/channels.h>
 #include <freerdp/gdi/gdi.h>
@@ -225,6 +227,7 @@ static BOOL wl_post_connect(freerdp* instance)
 	wlfContext* context;
 	rdpSettings* settings;
 	char* title = "FreeRDP";
+	char* app_id = "wlfreerdp";
 	UINT32 w, h;
 
 	if (!instance || !instance->context)
@@ -266,6 +269,7 @@ static BOOL wl_post_connect(freerdp* instance)
 
 	UwacWindowSetFullscreenState(window, NULL, instance->context->settings->Fullscreen);
 	UwacWindowSetTitle(window, title);
+	UwacWindowSetAppId(window, app_id);
 	UwacWindowSetOpaqueRegion(context->window, 0, 0, w, h);
 	instance->update->BeginPaint = wl_begin_paint;
 	instance->update->EndPaint = wl_end_paint;
@@ -464,9 +468,13 @@ static BOOL handle_window_events(freerdp* instance)
 static int wlfreerdp_run(freerdp* instance)
 {
 	wlfContext* context;
-	DWORD count;
 	HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
 	DWORD status = WAIT_ABANDONED;
+	HANDLE timer = NULL;
+	LARGE_INTEGER due;
+
+	TimerEventArgs timerEvent;
+	EventArgsInit(&timerEvent, "xfreerdp");
 
 	if (!instance)
 		return -1;
@@ -482,13 +490,30 @@ static int wlfreerdp_run(freerdp* instance)
 		return -1;
 	}
 
+	timer = CreateWaitableTimerA(NULL, FALSE, "mainloop-periodic-timer");
+
+	if (!timer)
+	{
+		WLog_ERR(TAG, "failed to create timer");
+		goto disconnect;
+	}
+
+	due.QuadPart = 0;
+
+	if (!SetWaitableTimer(timer, &due, 20, NULL, NULL, FALSE))
+	{
+		goto disconnect;
+	}
+
 	while (!freerdp_shall_disconnect(instance))
 	{
-		handles[0] = context->displayHandle;
-		count =
-		    freerdp_get_event_handles(instance->context, &handles[1], ARRAYSIZE(handles) - 1) + 1;
+		DWORD count = 0;
+		handles[count++] = timer;
+		handles[count++] = context->displayHandle;
+		count += freerdp_get_event_handles(instance->context, &handles[count],
+		                                   ARRAYSIZE(handles) - count);
 
-		if (count <= 1)
+		if (count <= 2)
 		{
 			WLog_Print(context->log, WLOG_ERROR, "Failed to get FreeRDP file descriptor");
 			break;
@@ -533,8 +558,17 @@ static int wlfreerdp_run(freerdp* instance)
 
 			break;
 		}
+
+		if ((status != WAIT_TIMEOUT) && (status == WAIT_OBJECT_0))
+		{
+			timerEvent.now = GetTickCount64();
+			PubSub_OnTimer(context->context.pubSub, context, &timerEvent);
+		}
 	}
 
+disconnect:
+	if (timer)
+		CloseHandle(timer);
 	freerdp_disconnect(instance);
 	return status;
 }

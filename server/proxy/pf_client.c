@@ -130,8 +130,7 @@ static BOOL pf_client_load_rdpsnd(pClientContext* pc)
 	 */
 	if (!freerdp_static_channel_collection_find(context->settings, RDPSND_CHANNEL_NAME))
 	{
-		char* params[2];
-		params[0] = RDPSND_CHANNEL_NAME;
+		const char* params[2] = { RDPSND_CHANNEL_NAME };
 
 		if (config->AudioOutput &&
 		    WTSVirtualChannelManagerIsChannelJoined(ps->vcm, RDPSND_CHANNEL_NAME))
@@ -139,7 +138,7 @@ static BOOL pf_client_load_rdpsnd(pClientContext* pc)
 		else
 			params[1] = "sys:fake";
 
-		if (!freerdp_client_add_static_channel(context->settings, 2, (char**)params))
+		if (!freerdp_client_add_static_channel(context->settings, ARRAYSIZE(params), params))
 			return FALSE;
 	}
 
@@ -282,7 +281,7 @@ static BOOL pf_client_pre_connect(freerdp* instance)
 
 		/* Filter out channels we do not want */
 		{
-			CHANNEL_DEF* channels = (CHANNEL_DEF*)freerdp_settings_get_pointer_array(
+			CHANNEL_DEF* channels = (CHANNEL_DEF*)freerdp_settings_get_pointer_array_writable(
 			    settings, FreeRDP_ChannelDefArray, 0);
 			size_t x, size = freerdp_settings_get_uint32(settings, FreeRDP_ChannelCount);
 
@@ -379,13 +378,13 @@ static BOOL pf_client_receive_channel_data_hook(freerdp* instance, UINT16 channe
 			    (strncmp(channel_name, DRDYNVC_SVC_CHANNEL_NAME, CHANNEL_NAME_LEN + 1) == 0))
 			{
 				BYTE cmd, first;
-				wStream s;
+				wStream *s, sbuffer;
 
-				Stream_StaticInit(&s, xdata, xsize);
-				if (Stream_Length(&s) < 1)
+				s = Stream_StaticConstInit(&sbuffer, xdata, xsize);
+				if (Stream_Length(s) < 1)
 					return FALSE;
 
-				Stream_Read_UINT8(&s, first);
+				Stream_Read_UINT8(s, first);
 				cmd = first >> 4;
 
 				if (cmd == CREATE_REQUEST_PDU)
@@ -398,26 +397,26 @@ static BOOL pf_client_receive_channel_data_hook(freerdp* instance, UINT16 channe
 					switch (cbId)
 					{
 						case 0x00:
-							if (Stream_GetRemainingLength(&s) < 1)
+							if (Stream_GetRemainingLength(s) < 1)
 								return FALSE;
-							Stream_Read_UINT8(&s, dynChannelId);
+							Stream_Read_UINT8(s, dynChannelId);
 							break;
 						case 0x01:
-							if (Stream_GetRemainingLength(&s) < 2)
+							if (Stream_GetRemainingLength(s) < 2)
 								return FALSE;
-							Stream_Read_UINT16(&s, dynChannelId);
+							Stream_Read_UINT16(s, dynChannelId);
 							break;
 						case 0x02:
-							if (Stream_GetRemainingLength(&s) < 4)
+							if (Stream_GetRemainingLength(s) < 4)
 								return FALSE;
-							Stream_Read_UINT32(&s, dynChannelId);
+							Stream_Read_UINT32(s, dynChannelId);
 							break;
 						default:
 							return FALSE;
 					}
 
-					name = (const char*)Stream_Pointer(&s);
-					nameLen = Stream_GetRemainingLength(&s);
+					name = (const char*)Stream_Pointer(s);
+					nameLen = Stream_GetRemainingLength(s);
 					len = strnlen(name, nameLen);
 					if ((len == 0) || (len == nameLen))
 						return FALSE;
@@ -696,12 +695,12 @@ static BOOL pf_client_connect(freerdp* instance)
 
 	if (!freerdp_connect(instance))
 	{
+		pf_modules_run_hook(pc->pdata->module, HOOK_TYPE_CLIENT_LOGIN_FAILURE, pc->pdata, pc);
+
 		if (!retry)
 			goto out;
 
 		PROXY_LOG_ERR(TAG, pc, "failed to connect with NLA. retrying to connect without NLA");
-		pf_modules_run_hook(pc->pdata->module, HOOK_TYPE_CLIENT_LOGIN_FAILURE, pc->pdata, pc);
-
 		if (!pf_client_connect_without_nla(pc))
 		{
 			PROXY_LOG_ERR(TAG, pc, "pf_client_connect_without_nla failed!");

@@ -38,13 +38,16 @@ static BOOL scale_signed_coordinates(rdpContext* context, int32_t* x, int32_t* y
                                      BOOL fromLocalToRDP)
 {
 	BOOL rc;
-	UINT32 ux = (UINT32)x;
-	UINT32 uy = (UINT32)y;
+	UINT32 ux;
+	UINT32 uy;
 	WINPR_ASSERT(context);
 	WINPR_ASSERT(x);
 	WINPR_ASSERT(y);
 	WINPR_ASSERT(*x >= 0);
 	WINPR_ASSERT(*y >= 0);
+
+	ux = (UINT32)*x;
+	uy = (UINT32)*y;
 	rc = wlf_scale_coordinates(context, &ux, &uy, fromLocalToRDP);
 	WINPR_ASSERT(ux < INT32_MAX);
 	WINPR_ASSERT(uy < INT32_MAX);
@@ -419,10 +422,7 @@ BOOL wlf_handle_touch_up(freerdp* instance, const UwacTouchUp* ev)
 
 		WINPR_ASSERT(x <= UINT16_MAX);
 		WINPR_ASSERT(y <= UINT16_MAX);
-		if ((flags & ~PTR_FLAGS_DOWN) != 0)
-			return freerdp_input_send_mouse_event(instance->input, flags, (UINT16)x, (UINT16)y);
-
-		return TRUE;
+		return freerdp_input_send_mouse_event(instance->input, flags, (UINT16)x, (UINT16)y);
 	}
 
 	if (!rdpei)
@@ -470,7 +470,6 @@ BOOL wlf_handle_touch_down(freerdp* instance, const UwacTouchDown* ev)
 		return FALSE;
 
 	RdpeiClientContext* rdpei = wlf->rdpei;
-	WINPR_ASSERT(rdpei);
 
 	// Emulate mouse click if touch is not possible, like in login screen
 	if (!rdpei)
@@ -479,15 +478,15 @@ BOOL wlf_handle_touch_down(freerdp* instance, const UwacTouchDown* ev)
 
 		UINT16 flags = 0;
 		flags |= PTR_FLAGS_DOWN;
+		flags |= PTR_FLAGS_MOVE;
 		flags |= PTR_FLAGS_BUTTON1;
 
 		WINPR_ASSERT(x <= UINT16_MAX);
 		WINPR_ASSERT(y <= UINT16_MAX);
-		if ((flags & ~PTR_FLAGS_DOWN) != 0)
-			return freerdp_input_send_mouse_event(instance->input, flags, (UINT16)x, (UINT16)y);
-
-		return FALSE;
+		return freerdp_input_send_mouse_event(instance->input, flags, (UINT16)x, (UINT16)y);
 	}
+
+	WINPR_ASSERT(rdpei);
 
 	WINPR_ASSERT(rdpei->TouchBegin);
 	rdpei->TouchBegin(rdpei, touchId, x, y, &contactId);
@@ -537,7 +536,12 @@ BOOL wlf_handle_touch_motion(freerdp* instance, const UwacTouchMotion* ev)
 
 	if (wlf->contacts[i].emulate_mouse == TRUE)
 	{
-		return TRUE;
+		UINT16 flags = 0;
+		flags |= PTR_FLAGS_MOVE;
+
+		WINPR_ASSERT(x <= UINT16_MAX);
+		WINPR_ASSERT(y <= UINT16_MAX);
+		return freerdp_input_send_mouse_event(instance->input, flags, (UINT16)x, (UINT16)y);
 	}
 
 	if (!rdpei)

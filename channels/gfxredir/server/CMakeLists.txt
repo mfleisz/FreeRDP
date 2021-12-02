@@ -1,7 +1,7 @@
-# WinPR: Windows Portable Runtime
-# libwinpr-asn1 cmake build script
+# FreeRDP: A Remote Desktop Protocol Implementation
+# FreeRDP cmake build script
 #
-# Copyright 2012 Marc-Andre Moreau <marcandre.moreau@gmail.com>
+# Copyright 2020 Microsoft
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,8 +15,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-winpr_module_add(asn1.c)
+define_channel_server("gfxredir")
 
-if(BUILD_TESTING)
-	add_subdirectory(test)
-endif()
+set(${MODULE_PREFIX}_SRCS
+	gfxredir_main.c
+	gfxredir_main.h
+	../gfxredir_common.c
+	../gfxredir_common.h
+	)
+
+include_directories(..)
+
+add_channel_server_library(${MODULE_PREFIX} ${MODULE_NAME} ${CHANNEL_NAME} FALSE "DVCPluginEntry")
+
+target_link_libraries(${MODULE_NAME} freerdp)
+set_property(TARGET ${MODULE_NAME} PROPERTY FOLDER "Channels/${CHANNEL_NAME}/Server")

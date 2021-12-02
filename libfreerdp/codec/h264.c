@@ -43,6 +43,7 @@ BOOL avc420_ensure_buffer(H264_CONTEXT* h264, UINT32 stride, UINT32 width, UINT3
 {
 	size_t x;
 	BOOL isNull = FALSE;
+	UINT32 pheight = height;
 
 	if (!h264)
 		return FALSE;
@@ -53,8 +54,8 @@ BOOL avc420_ensure_buffer(H264_CONTEXT* h264, UINT32 stride, UINT32 width, UINT3
 	if (stride % 16 != 0)
 		stride += 16 - stride % 16;
 
-	if (height % 16 != 0)
-		height += 16 - height % 16;
+	if (pheight % 16 != 0)
+		pheight += 16 - pheight % 16;
 
 	for (x = 0; x < 3; x++)
 	{
@@ -65,7 +66,6 @@ BOOL avc420_ensure_buffer(H264_CONTEXT* h264, UINT32 stride, UINT32 width, UINT3
 	if (isNull || (width != h264->width) || (height != h264->height) ||
 	    (stride != h264->iStride[0]))
 	{
-
 		h264->iStride[0] = stride;
 		h264->iStride[1] = (stride + 1) / 2;
 		h264->iStride[2] = (stride + 1) / 2;
@@ -74,8 +74,8 @@ BOOL avc420_ensure_buffer(H264_CONTEXT* h264, UINT32 stride, UINT32 width, UINT3
 
 		for (x = 0; x < 3; x++)
 		{
-			BYTE* tmp1 = _aligned_recalloc(h264->pYUVData[x], h264->iStride[x], height, 16);
-			BYTE* tmp2 = _aligned_recalloc(h264->pOldYUVData[x], h264->iStride[x], height, 16);
+			BYTE* tmp1 = _aligned_recalloc(h264->pYUVData[x], h264->iStride[x], pheight, 16);
+			BYTE* tmp2 = _aligned_recalloc(h264->pOldYUVData[x], h264->iStride[x], pheight, 16);
 			if (tmp1)
 				h264->pYUVData[x] = tmp1;
 			if (tmp2)
@@ -109,8 +109,8 @@ INT32 avc420_decompress(H264_CONTEXT* h264, const BYTE* pSrcData, UINT32 SrcSize
 	pYUVData[0] = h264->pYUVData[0];
 	pYUVData[1] = h264->pYUVData[1];
 	pYUVData[2] = h264->pYUVData[2];
-	if (!yuv420_context_decode(h264->yuv, pYUVData, h264->iStride, DstFormat, pDstData, nDstStep,
-	                           regionRects, numRegionRects))
+	if (!yuv420_context_decode(h264->yuv, pYUVData, h264->iStride, h264->height, DstFormat,
+	                           pDstData, nDstStep, regionRects, numRegionRects))
 		return -1002;
 
 	return 1;
@@ -450,8 +450,8 @@ static BOOL avc444_process_rects(H264_CONTEXT* h264, const BYTE* pSrcData, UINT3
 	pYUVDstData[0] = ppYUVDstData[0];
 	pYUVDstData[1] = ppYUVDstData[1];
 	pYUVDstData[2] = ppYUVDstData[2];
-	if (!yuv444_context_decode(h264->yuv, type, pYUVData, piStride, pYUVDstData, piDstStride,
-	                           DstFormat, pDstData, nDstStep, rects, nrRects))
+	if (!yuv444_context_decode(h264->yuv, type, pYUVData, piStride, h264->height, pYUVDstData,
+	                           piDstStride, DstFormat, pDstData, nDstStep, rects, nrRects))
 		return FALSE;
 
 	return TRUE;
@@ -667,7 +667,8 @@ void h264_context_free(H264_CONTEXT* h264)
 	if (h264)
 	{
 		size_t x;
-		h264->subsystem->Uninit(h264);
+		if (h264->subsystem)
+			h264->subsystem->Uninit(h264);
 
 		for (x = 0; x < 3; x++)
 		{

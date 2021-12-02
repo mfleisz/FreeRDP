@@ -35,8 +35,8 @@ set(${MODULE_PREFIX}_SRCS
 	wf_client.h
 	wf_floatbar.c
 	wf_floatbar.h
-	wfreerdp.rc
-	resource.h)
+	resource/wfreerdp.rc
+	resource/resource.h)
 
 # On windows create dll version information.
 # Vendor, product and year are already set in top level CMakeLists.txt
@@ -58,21 +58,37 @@ if (WIN32 AND BUILD_SHARED_LIBS)
   set ( ${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS} ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
 endif()
 
+option(WITH_WINDOWS_CERT_STORE "Build ${MODULE_NAME} with additional certificate validation against windows certificate store" ON)
+if(WITH_WINDOWS_CERT_STORE)
+  add_definitions("-DWITH_WINDOWS_CERT_STORE")
+endif()
+
+option(WITH_WIN_CONSOLE "Build ${MODULE_NAME} with console support" OFF)
+if(WITH_WIN_CONSOLE)
+  add_definitions("-DWITH_WIN_CONSOLE")
+  set(WIN32_GUI_FLAG "")
+else()
+  set(WIN32_GUI_FLAG "WIN32")
+endif()
+
+option(WITH_PROGRESS_BAR "Build ${MODULE_NAME} with connect progress bar (Windows 7+ or 2008 R2+)" ON)
+if(WITH_PROGRESS_BAR)
+  add_definitions("-DWITH_PROGRESS_BAR")
+endif()
 
 if(WITH_CLIENT_INTERFACE)
-        set_target_properties(${MODULE_NAME} PROPERTIES OUTPUT_NAME ${MODULE_NAME}${FREERDP_API_VERSION})
 	if(CLIENT_INTERFACE_SHARED)
 		add_library(${MODULE_NAME} SHARED ${${MODULE_PREFIX}_SRCS})
 	else()
 		add_library(${MODULE_NAME} ${${MODULE_PREFIX}_SRCS})
 	endif()
 	if (WITH_LIBRARY_VERSIONING)
-            set_target_properties(${MODULE_NAME} PROPERTIES VERSION ${FREERDP_VERSION} SOVERSION ${FREERDP_API_VERSION})
-        endif()
-
+        set_target_properties(${MODULE_NAME} PROPERTIES VERSION ${FREERDP_VERSION} SOVERSION ${FREERDP_API_VERSION})
+    endif()
+    set_target_properties(${MODULE_NAME} PROPERTIES OUTPUT_NAME ${MODULE_NAME}${FREERDP_API_VERSION})
 else()
 	set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS} cli/wfreerdp.c cli/wfreerdp.h)
-	add_executable(${MODULE_NAME} WIN32 ${${MODULE_PREFIX}_SRCS})
+	add_executable(${MODULE_NAME} ${WIN32_GUI_FLAG} ${${MODULE_PREFIX}_SRCS})
 	include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 	set_target_properties(${MODULE_NAME} PROPERTIES OUTPUT_NAME "wfreerdp")
 endif()

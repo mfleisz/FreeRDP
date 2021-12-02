@@ -982,7 +982,7 @@ printer_DeviceServiceEntry
 		return ERROR_INVALID_PARAMETER;
 
 	device = (RDPDR_PRINTER*)pEntryPoints->device;
-	name = device->Name;
+	name = device->device.Name;
 	driver_name = _strdup(device->DriverName);
 
 	/* Secondary argument is one of the following:
@@ -1042,10 +1042,11 @@ printer_DeviceServiceEntry
 			goto fail;
 		}
 
-		if ((error = printer_register(pEntryPoints, printer)))
+		error = printer_register(pEntryPoints, printer);
+		printer->ReleaseRef(printer);
+		if (error)
 		{
 			WLog_ERR(TAG, "printer_register failed with error %" PRIu32 "!", error);
-			printer->ReleaseRef(printer);
 			goto fail;
 		}
 	}

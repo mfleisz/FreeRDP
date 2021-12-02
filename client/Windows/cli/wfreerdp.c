@@ -36,7 +36,7 @@
 #include <freerdp/client/channels.h>
 #include <freerdp/channels/channels.h>
 
-#include "resource.h"
+#include "../resource/resource.h"
 
 #include "wf_client.h"
 
@@ -142,3 +142,10 @@ out:
 	LocalFree(args);
 	return ret;
 }
+
+#ifdef WITH_WIN_CONSOLE
+int main()
+{
+	return WinMain(NULL, NULL, NULL, 0);
+}
+#endif

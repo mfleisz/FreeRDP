@@ -711,7 +711,9 @@ static BOOL rdp_write_info_packet(rdpRdp* rdp, wStream* s)
 
 	if (!settings->RemoteAssistanceMode)
 	{
-		if (settings->RedirectionPassword && settings->RedirectionPasswordLength > 0)
+		/* Ignore redirection password if we´re using smartcard and have the pin as password */
+		if (((flags & INFO_PASSWORD_IS_SC_PIN) == 0) && settings->RedirectionPassword &&
+		    (settings->RedirectionPasswordLength > 0))
 		{
 			union {
 				BYTE* bp;
@@ -1003,15 +1005,22 @@ static BOOL rdp_recv_logon_info_v2(rdpRdp* rdp, wStream* s, logon_info* info)
 	UINT32 Size;
 	UINT32 cbDomain;
 	UINT32 cbUserName;
+	const size_t logonInfoV2Size = 576;
 
 	WINPR_UNUSED(rdp);
 	ZeroMemory(info, sizeof(*info));
 
-	if (Stream_GetRemainingLength(s) < 576)
+	if (Stream_GetRemainingLength(s) < logonInfoV2Size)
 		return FALSE;
 
 	Stream_Read_UINT16(s, Version);         /* Version (2 bytes) */
+	if (Version != SAVE_SESSION_PDU_VERSION_ONE)
+		return FALSE;
+
 	Stream_Read_UINT32(s, Size);            /* Size (4 bytes) */
+	if (Size != 18)
+		return FALSE;
+
 	Stream_Read_UINT32(s, info->sessionId); /* SessionId (4 bytes) */
 	Stream_Read_UINT32(s, cbDomain);        /* cbDomain (4 bytes) */
 	Stream_Read_UINT32(s, cbUserName);      /* cbUserName (4 bytes) */
