@@ -16,7 +16,6 @@
 #cmakedefine HAVE_JOURNALD_H
 #cmakedefine HAVE_VALGRIND_MEMCHECK_H
 #cmakedefine HAVE_EXECINFO_H
-#cmakedefine HAVE_GETLOGIN_R
 #cmakedefine HAVE_STRNDUP
 
 /* Features */
@@ -56,6 +55,7 @@
 #cmakedefine WITH_DSP_FFMPEG
 #cmakedefine WITH_OPENCL
 #cmakedefine WITH_MEDIA_FOUNDATION
+#cmakedefine WITH_MEDIACODEC
 
 #cmakedefine WITH_VAAPI
 
@@ -88,6 +88,9 @@
 #cmakedefine CHANNEL_ENCOMSP
 #cmakedefine CHANNEL_ENCOMSP_CLIENT
 #cmakedefine CHANNEL_ENCOMSP_SERVER
+#cmakedefine CHANNEL_GEOMETRY
+#cmakedefine CHANNEL_GEOMETRY_CLIENT
+#cmakedefine CHANNEL_GEOMETRY_SERVER
 #cmakedefine CHANNEL_GFXREDIR
 #cmakedefine CHANNEL_GFXREDIR_CLIENT
 #cmakedefine CHANNEL_GFXREDIR_SERVER
@@ -97,6 +100,9 @@
 #cmakedefine CHANNEL_PRINTER
 #cmakedefine CHANNEL_PRINTER_CLIENT
 #cmakedefine CHANNEL_PRINTER_SERVER
+#cmakedefine CHANNEL_RDPEI
+#cmakedefine CHANNEL_RDPEI_CLIENT
+#cmakedefine CHANNEL_RDPEI_SERVER
 #cmakedefine CHANNEL_RAIL
 #cmakedefine CHANNEL_RAIL_CLIENT
 #cmakedefine CHANNEL_RAIL_SERVER
@@ -133,6 +139,9 @@
 #cmakedefine CHANNEL_URBDRC
 #cmakedefine CHANNEL_URBDRC_CLIENT
 #cmakedefine CHANNEL_URBDRC_SERVER
+#cmakedefine CHANNEL_VIDEO
+#cmakedefine CHANNEL_VIDEO_CLIENT
+#cmakedefine CHANNEL_VIDEO_SERVER
 
 /* Debug */
 #cmakedefine WITH_DEBUG_CERTIFICATE
@@ -168,5 +177,6 @@
 
 /* Proxy */
 #cmakedefine WITH_PROXY_MODULES
+#cmakedefine WITH_PROXY_EMULATE_SMARTCARD
 
 #endif /* FREERDP_CONFIG_H */

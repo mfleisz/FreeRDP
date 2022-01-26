@@ -34,10 +34,14 @@
 #include <winpr/assert.h>
 #include <winpr/stream.h>
 
+#include <winpr/print.h>
+#include <winpr/sspicli.h>
+
 #include <freerdp/types.h>
 #include <freerdp/constants.h>
 #include <freerdp/channels/log.h>
 #include <freerdp/channels/rdpdr.h>
+#include <freerdp/utils/rdpdr_utils.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -643,16 +647,13 @@ static BOOL isAutomountLocation(const char* path)
 {
 	const size_t nrLocations = sizeof(automountLocations) / sizeof(automountLocations[0]);
 	size_t x;
-	char buffer[MAX_PATH];
+	char buffer[MAX_PATH] = { 0 };
 	uid_t uid = getuid();
 	char uname[MAX_PATH] = { 0 };
+	ULONG size = sizeof(uname) - 1;
 
-#ifndef HAVE_GETLOGIN_R
-	strncpy(uname, getlogin(), sizeof(uname));
-#else
-	if (getlogin_r(uname, sizeof(uname)) != 0)
+	if (!GetUserNameExA(NameSamCompatible, uname, &size))
 		return FALSE;
-#endif
 
 	if (!path)
 		return FALSE;
@@ -708,7 +709,7 @@ static void handle_mountpoint(hotplug_dev* dev_array, size_t* size, const char* 
 	if (isAutomountLocation(mountpoint) && (*size < MAX_USB_DEVICES))
 	{
 		dev_array[*size].path = _strdup(mountpoint);
-		dev_array[*size + 1].to_add = TRUE;
+		dev_array[*size].to_add = TRUE;
 		(*size)++;
 	}
 }
@@ -858,7 +859,7 @@ static BOOL hotplug_delete_foreach(ULONG_PTR key, void* element, void* data)
 
 	rc = ConvertFromUnicode(CP_UTF8, 0, device_ext->path, -1, &path, 0, NULL, NULL);
 
-	if (!path)
+	if ((rc <= 0) || !path)
 		return FALSE;
 
 	/* not plugable device */
@@ -1362,16 +1363,9 @@ static UINT dummy_irp_response(rdpdrPlugin* rdpdr, wStream* s)
 	Stream_Read_UINT32(s, FileId);       /* FileId (4 bytes) */
 	Stream_Read_UINT32(s, CompletionId); /* CompletionId (4 bytes) */
 
-	Stream_Write_UINT16(output, RDPDR_CTYP_CORE);                /* Component (2 bytes) */
-	Stream_Write_UINT16(output, PAKID_CORE_DEVICE_IOCOMPLETION); /* PacketId (2 bytes) */
-	Stream_Write_UINT32(output, DeviceId);                       /* DeviceId (4 bytes) */
-	Stream_Write_UINT32(output, CompletionId);                   /* CompletionId (4 bytes) */
-	Stream_Write_UINT32(output, (UINT32)STATUS_UNSUCCESSFUL);    /* IoStatus (4 bytes) */
-
-	Stream_Zero(output, 256 - RDPDR_DEVICE_IO_RESPONSE_LENGTH);
-	// or usage
-	// Stream_Write_UINT32(output, 0); /* Length */
-	// Stream_Write_UINT8(output, 0);  /* Padding */
+	if (!rdpdr_write_iocompletion_header(output, DeviceId, CompletionId,
+	                                     (UINT32)STATUS_UNSUCCESSFUL))
+		return CHANNEL_RC_NO_MEMORY;
 
 	return rdpdr_send(rdpdr, output);
 }
@@ -1464,9 +1458,6 @@ static BOOL device_init(ULONG_PTR key, void* element, void* data)
 
 static UINT rdpdr_process_init(rdpdrPlugin* rdpdr)
 {
-	ULONG_PTR* pKeys = NULL;
-	pKeys = NULL;
-
 	WINPR_ASSERT(rdpdr);
 	WINPR_ASSERT(rdpdr->devman);
 
@@ -1491,6 +1482,7 @@ static UINT rdpdr_process_receive(rdpdrPlugin* rdpdr, wStream* s)
 	if (!rdpdr || !s)
 		return CHANNEL_RC_NULL_DATA;
 
+	rdpdr_dump_received_packet(s, "rdpdr-channel");
 	if (Stream_GetRemainingLength(s) >= 4)
 	{
 		Stream_Read_UINT16(s, component); /* Component (2 bytes) */
@@ -1568,6 +1560,9 @@ static UINT rdpdr_process_receive(rdpdrPlugin* rdpdr, wStream* s)
 					{
 						Stream_Read_UINT32(s, deviceId);
 						Stream_Read_UINT32(s, status);
+
+						if (status != 0)
+							devman_unregister_device(rdpdr->devman, (void*)((size_t)deviceId));
 						error = CHANNEL_RC_OK;
 					}
 
@@ -1630,9 +1625,10 @@ UINT rdpdr_send(rdpdrPlugin* rdpdr, wStream* s)
 	}
 	else
 	{
+		const size_t pos = Stream_GetPosition(s);
+		rdpdr_dump_send_packet(s, "rdpdr-channel");
 		status = plugin->channelEntryPoints.pVirtualChannelWriteEx(
-		    plugin->InitHandle, plugin->OpenHandle, Stream_Buffer(s), (UINT32)Stream_GetPosition(s),
-		    s);
+		    plugin->InitHandle, plugin->OpenHandle, Stream_Buffer(s), pos, s);
 	}
 
 	if (status != CHANNEL_RC_OK)

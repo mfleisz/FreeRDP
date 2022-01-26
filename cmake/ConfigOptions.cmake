@@ -52,7 +52,7 @@ if(NOT WIN32)
 		"NOT WITH_VALGRIND_MEMCHECK; NOT WITH_SANITIZE_ADDRESS; NOT WITH_SANITIZE_MEMORY" OFF)
 else()
 	if(NOT UWP)
-		option(WITH_MEDIA_FOUNDATION "Enable H264 media foundation decoder." ON)
+		option(WITH_MEDIA_FOUNDATION "Enable H264 media foundation decoder." OFF)
 	endif()
 endif()
 
@@ -174,7 +174,7 @@ option(BUILD_FUZZERS "Use BUILD_FUZZERS to build fuzzing tests" OFF)
 
 if (BUILD_FUZZERS)
     if (NOT OSS_FUZZ)
-        add_compile_flags("C;CXX" -fsanitize=fuzzer-no-link)
+        add_compile_options(-fsanitize=fuzzer-no-link)
     endif ()
 
     if (OSS_FUZZ AND NOT DEFINED ENV{LIB_FUZZING_ENGINE})

@@ -692,7 +692,8 @@ BOOL gcc_write_user_data_header(wStream* s, UINT16 type, UINT16 length)
 
 BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 {
-	char* str = NULL;
+	char strbuffer[65] = { 0 };
+	char* strptr = strbuffer;
 	UINT32 version;
 	BYTE connectionType = 0;
 	UINT32 clientColorDepth;
@@ -728,16 +729,15 @@ BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 	Stream_Read_UINT32(s, settings->ClientBuild);    /* ClientBuild (4 bytes) */
 
 	/* clientName (32 bytes, null-terminated unicode, truncated to 15 characters) */
-	if (ConvertFromUnicode(CP_UTF8, 0, (WCHAR*)Stream_Pointer(s), 32 / 2, &str, 0, NULL, NULL) < 1)
+	if (ConvertFromUnicode(CP_UTF8, 0, (WCHAR*)Stream_Pointer(s), 32 / 2, &strptr,
+	                       ARRAYSIZE(strbuffer), NULL, NULL) < 1)
 	{
 		WLog_ERR(TAG, "failed to convert client host name");
 		return FALSE;
 	}
 
 	Stream_Seek(s, 32);
-	free(settings->ClientHostname);
-	settings->ClientHostname = str;
-	str = NULL;
+	freerdp_settings_set_string(settings, FreeRDP_ClientHostname, strbuffer);
 	Stream_Read_UINT32(s, settings->KeyboardType);        /* KeyboardType (4 bytes) */
 	Stream_Read_UINT32(s, settings->KeyboardSubType);     /* KeyboardSubType (4 bytes) */
 	Stream_Read_UINT32(s, settings->KeyboardFunctionKey); /* KeyboardFunctionKey (4 bytes) */
@@ -795,16 +795,15 @@ BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 		if (blockLength < 64)
 			break;
 
-		if (ConvertFromUnicode(CP_UTF8, 0, (WCHAR*)Stream_Pointer(s), 64 / 2, &str, 0, NULL, NULL) <
-		    1)
+		if (ConvertFromUnicode(CP_UTF8, 0, (WCHAR*)Stream_Pointer(s), 64 / 2, &strptr,
+		                       ARRAYSIZE(strbuffer), NULL, NULL) < 1)
 		{
 			WLog_ERR(TAG, "failed to convert the client product identifier");
 			return FALSE;
 		}
 
 		Stream_Seek(s, 64); /* clientDigProductId (64 bytes) */
-		free(settings->ClientProductId);
-		settings->ClientProductId = str;
+		freerdp_settings_set_string(settings, FreeRDP_ClientProductId, strbuffer);
 		blockLength -= 64;
 
 		if (blockLength < 1)
@@ -1925,16 +1924,18 @@ BOOL gcc_read_client_monitor_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 
 	for (index = 0; index < monitorCount; index++)
 	{
+		rdpMonitor* current = &settings->MonitorDefArray[index];
+
 		Stream_Read_UINT32(s, left);   /* left */
 		Stream_Read_UINT32(s, top);    /* top */
 		Stream_Read_UINT32(s, right);  /* right */
 		Stream_Read_UINT32(s, bottom); /* bottom */
 		Stream_Read_UINT32(s, flags);  /* flags */
-		settings->MonitorDefArray[index].x = left;
-		settings->MonitorDefArray[index].y = top;
-		settings->MonitorDefArray[index].width = right - left + 1;
-		settings->MonitorDefArray[index].height = bottom - top + 1;
-		settings->MonitorDefArray[index].is_primary = (flags & MONITOR_PRIMARY);
+		current->x = left;
+		current->y = top;
+		current->width = right - left + 1;
+		current->height = bottom - top + 1;
+		current->is_primary = (flags & MONITOR_PRIMARY);
 	}
 
 	return TRUE;
@@ -1951,7 +1952,6 @@ BOOL gcc_write_client_monitor_data(wStream* s, const rdpMcs* mcs)
 {
 	UINT32 i;
 	UINT16 length;
-	UINT32 left, top, right, bottom, flags;
 	INT32 baseX = 0, baseY = 0;
 	rdpContext* context;
 	rdpSettings* settings;
@@ -1965,6 +1965,7 @@ BOOL gcc_write_client_monitor_data(wStream* s, const rdpMcs* mcs)
 	settings = context->settings;
 	WINPR_ASSERT(settings);
 
+	WLog_DBG(TAG, "[%s] MonitorCount=%" PRIu32, __FUNCTION__, settings->MonitorCount);
 	if (settings->MonitorCount > 1)
 	{
 		length = (20 * settings->MonitorCount) + 12;
@@ -1977,21 +1978,27 @@ BOOL gcc_write_client_monitor_data(wStream* s, const rdpMcs* mcs)
 		 * in (0,0) */
 		for (i = 0; i < settings->MonitorCount; i++)
 		{
-			if (settings->MonitorDefArray[i].is_primary)
+			const rdpMonitor* current = &settings->MonitorDefArray[i];
+			if (current->is_primary)
 			{
-				baseX = settings->MonitorDefArray[i].x;
-				baseY = settings->MonitorDefArray[i].y;
+				baseX = current->x;
+				baseY = current->y;
 				break;
 			}
 		}
 
 		for (i = 0; i < settings->MonitorCount; i++)
 		{
-			left = settings->MonitorDefArray[i].x - baseX;
-			top = settings->MonitorDefArray[i].y - baseY;
-			right = left + settings->MonitorDefArray[i].width - 1;
-			bottom = top + settings->MonitorDefArray[i].height - 1;
-			flags = settings->MonitorDefArray[i].is_primary ? MONITOR_PRIMARY : 0;
+			const rdpMonitor* current = &settings->MonitorDefArray[i];
+			const UINT32 left = current->x - baseX;
+			const UINT32 top = current->y - baseY;
+			const UINT32 right = left + current->width - 1;
+			const UINT32 bottom = top + current->height - 1;
+			const UINT32 flags = current->is_primary ? MONITOR_PRIMARY : 0;
+			WLog_DBG(TAG,
+			         "[%s] Monitor[%" PRIu32 "]: top=%" PRIu32 ", left=%" PRIu32 ", bottom=%" PRIu32
+			         ", right=%" PRIu32 ", flags" PRIu32,
+			         __FUNCTION__, i, top, left, bottom, right, flags);
 			Stream_Write_UINT32(s, left);   /* left */
 			Stream_Write_UINT32(s, top);    /* top */
 			Stream_Write_UINT32(s, right);  /* right */
@@ -1999,6 +2006,7 @@ BOOL gcc_write_client_monitor_data(wStream* s, const rdpMcs* mcs)
 			Stream_Write_UINT32(s, flags);  /* flags */
 		}
 	}
+	WLog_DBG(TAG, "[%s] FINISHED" PRIu32, __FUNCTION__);
 	return TRUE;
 }
 
@@ -2040,17 +2048,12 @@ BOOL gcc_read_client_monitor_extended_data(wStream* s, rdpMcs* mcs, UINT16 block
 
 	for (index = 0; index < monitorCount; index++)
 	{
-		Stream_Read_UINT32(
-		    s, settings->MonitorDefArray[index].attributes.physicalWidth); /* physicalWidth */
-		Stream_Read_UINT32(
-		    s, settings->MonitorDefArray[index].attributes.physicalHeight); /* physicalHeight */
-		Stream_Read_UINT32(
-		    s, settings->MonitorDefArray[index].attributes.orientation); /* orientation */
-		Stream_Read_UINT32(s, settings->MonitorDefArray[index]
-		                          .attributes.desktopScaleFactor); /* desktopScaleFactor */
-		Stream_Read_UINT32(
-		    s,
-		    settings->MonitorDefArray[index].attributes.deviceScaleFactor); /* deviceScaleFactor */
+		rdpMonitor* current = &settings->MonitorDefArray[index];
+		Stream_Read_UINT32(s, current->attributes.physicalWidth);      /* physicalWidth */
+		Stream_Read_UINT32(s, current->attributes.physicalHeight);     /* physicalHeight */
+		Stream_Read_UINT32(s, current->attributes.orientation);        /* orientation */
+		Stream_Read_UINT32(s, current->attributes.desktopScaleFactor); /* desktopScaleFactor */
+		Stream_Read_UINT32(s, current->attributes.deviceScaleFactor);  /* deviceScaleFactor */
 	}
 
 	return TRUE;
@@ -2083,17 +2086,12 @@ BOOL gcc_write_client_monitor_extended_data(wStream* s, const rdpMcs* mcs)
 
 		for (i = 0; i < settings->MonitorCount; i++)
 		{
-			Stream_Write_UINT32(
-			    s, settings->MonitorDefArray[i].attributes.physicalWidth); /* physicalWidth */
-			Stream_Write_UINT32(
-			    s, settings->MonitorDefArray[i].attributes.physicalHeight); /* physicalHeight */
-			Stream_Write_UINT32(
-			    s, settings->MonitorDefArray[i].attributes.orientation); /* orientation */
-			Stream_Write_UINT32(s, settings->MonitorDefArray[i]
-			                           .attributes.desktopScaleFactor); /* desktopScaleFactor */
-			Stream_Write_UINT32(
-			    s,
-			    settings->MonitorDefArray[i].attributes.deviceScaleFactor); /* deviceScaleFactor */
+			const rdpMonitor* current = &settings->MonitorDefArray[i];
+			Stream_Write_UINT32(s, current->attributes.physicalWidth);      /* physicalWidth */
+			Stream_Write_UINT32(s, current->attributes.physicalHeight);     /* physicalHeight */
+			Stream_Write_UINT32(s, current->attributes.orientation);        /* orientation */
+			Stream_Write_UINT32(s, current->attributes.desktopScaleFactor); /* desktopScaleFactor */
+			Stream_Write_UINT32(s, current->attributes.deviceScaleFactor);  /* deviceScaleFactor */
 		}
 	}
 	return TRUE;

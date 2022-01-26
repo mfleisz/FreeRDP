@@ -31,6 +31,7 @@
 #include <freerdp/client/rdpei.h>
 #include <freerdp/client/rdpgfx.h>
 #include <freerdp/client/cliprdr.h>
+#include <freerdp/codec/h264.h>
 #include <freerdp/channels/channels.h>
 #include <freerdp/client/channels.h>
 #include <freerdp/client/cmdline.h>
@@ -57,7 +58,8 @@
 /* Defines the JNI version supported by this library. */
 #define FREERDP_JNI_VERSION "3.0.0-dev"
 
-static void android_OnChannelConnectedEventHandler(void* context, ChannelConnectedEventArgs* e)
+static void android_OnChannelConnectedEventHandler(void* context,
+                                                   const ChannelConnectedEventArgs* e)
 {
 	rdpSettings* settings;
 	androidContext* afc;
@@ -90,7 +92,7 @@ static void android_OnChannelConnectedEventHandler(void* context, ChannelConnect
 }
 
 static void android_OnChannelDisconnectedEventHandler(void* context,
-                                                      ChannelDisconnectedEventArgs* e)
+                                                      const ChannelDisconnectedEventArgs* e)
 {
 	rdpSettings* settings;
 	androidContext* afc;
@@ -1028,6 +1030,15 @@ static jstring JNICALL jni_freerdp_get_jni_version(JNIEnv* env, jclass cls)
 	return (*env)->NewStringUTF(env, FREERDP_JNI_VERSION);
 }
 
+static jboolean JNICALL jni_freerdp_has_h264(JNIEnv* env, jclass cls)
+{
+	H264_CONTEXT* ctx = h264_context_new(FALSE);
+	if (!ctx)
+		return JNI_FALSE;
+	h264_context_free(ctx);
+	return JNI_TRUE;
+}
+
 static jstring JNICALL jni_freerdp_get_version(JNIEnv* env, jclass cls)
 {
 	return (*env)->NewStringUTF(env, freerdp_get_version_string());
@@ -1060,7 +1071,8 @@ static JNINativeMethod methods[] = {
 	{ "freerdp_send_cursor_event", "(JIII)Z", &jni_freerdp_send_cursor_event },
 	{ "freerdp_send_key_event", "(JIZ)Z", &jni_freerdp_send_key_event },
 	{ "freerdp_send_unicodekey_event", "(JIZ)Z", &jni_freerdp_send_unicodekey_event },
-	{ "freerdp_send_clipboard_data", "(JLjava/lang/String;)Z", &jni_freerdp_send_clipboard_data }
+	{ "freerdp_send_clipboard_data", "(JLjava/lang/String;)Z", &jni_freerdp_send_clipboard_data },
+	{ "freerdp_has_h264", "()Z", &jni_freerdp_has_h264 }
 };
 
 static jclass gJavaActivityClass = NULL;

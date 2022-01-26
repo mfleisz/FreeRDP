@@ -29,7 +29,6 @@
 
 #include <winpr/crt.h>
 #include <winpr/platform.h>
-#include <winpr/heap.h>
 #include <winpr/file.h>
 #include <winpr/tchar.h>
 #include <winpr/environment.h>
@@ -60,20 +59,24 @@ static char* GetPath_XDG_RUNTIME_DIR(void);
  * http://standards.freedesktop.org/basedir-spec/basedir-spec-latest.html
  */
 
-static char* GetEnvAlloc(LPCSTR lpName)
+char* GetEnvAlloc(LPCSTR lpName)
 {
-	DWORD length;
+	DWORD nSize;
+	DWORD nStatus;
 	char* env = NULL;
-	length = GetEnvironmentVariableA(lpName, NULL, 0);
 
-	if (length > 0)
+	nSize = GetEnvironmentVariableX(lpName, NULL, 0);
+
+	if (nSize > 0)
 	{
-		env = malloc(length);
+		env = malloc(nSize);
 
 		if (!env)
 			return NULL;
 
-		if (GetEnvironmentVariableA(lpName, env, length) != length - 1)
+		nStatus = GetEnvironmentVariableX(lpName, env, nSize);
+
+		if (nStatus != (nSize - 1))
 		{
 			free(env);
 			return NULL;
@@ -377,7 +380,8 @@ char* GetEnvironmentPath(char* name)
 {
 	char* env = NULL;
 	DWORD nSize;
-	nSize = GetEnvironmentVariableA(name, NULL, 0);
+	DWORD nStatus;
+	nSize = GetEnvironmentVariableX(name, NULL, 0);
 
 	if (nSize)
 	{
@@ -386,7 +390,9 @@ char* GetEnvironmentPath(char* name)
 		if (!env)
 			return NULL;
 
-		if (GetEnvironmentVariableA(name, env, nSize) != nSize - 1)
+		nStatus = GetEnvironmentVariableX(name, env, nSize);
+
+		if (nStatus != (nSize - 1))
 		{
 			free(env);
 			return NULL;

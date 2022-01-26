@@ -143,7 +143,7 @@ struct rdp_shadow_server
 	RLGR_MODE rfxMode;
 	H264_RATECONTROL_MODE h264RateControlMode;
 	UINT32 h264BitRate;
-	FLOAT h264FrameRate;
+	UINT32 h264FrameRate;
 	UINT32 h264QP;
 
 	char* ipcSocket;
@@ -276,8 +276,8 @@ typedef struct _SHADOW_MSG_OUT_AUDIO_OUT_SAMPLES SHADOW_MSG_OUT_AUDIO_OUT_SAMPLE
 struct _SHADOW_MSG_OUT_AUDIO_OUT_VOLUME
 {
 	SHADOW_MSG_OUT common;
-	int left;
-	int right;
+	UINT16 left;
+	UINT16 right;
 };
 typedef struct _SHADOW_MSG_OUT_AUDIO_OUT_VOLUME SHADOW_MSG_OUT_AUDIO_OUT_VOLUME;
 

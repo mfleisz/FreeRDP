@@ -96,16 +96,16 @@ endif()
 
 # Level "1" API as defined for MinCore.lib
 set(WINPR_CORE synch library file comm pipe interlocked security
-	environment crypto registry credentials path io memory input shell
-	heap utils error timezone sysinfo pool handle thread)
+	environment crypto registry path io memory ncrypt input shell
+	utils error timezone sysinfo pool handle thread)
 
 foreach(DIR ${WINPR_CORE})
 	add_subdirectory(${DIR})
 	source_group("${DIR}" REGULAR_EXPRESSION "${DIR}/.*\\.[ch]")
 endforeach()
 
-set(WINPR_LEVEL2 winsock sspi winhttp sspicli crt bcrypt rpc credui
-	wtsapi dsparse wnd smartcard nt clipboard)
+set(WINPR_LEVEL2 winsock sspi sspicli crt bcrypt rpc
+	wtsapi dsparse smartcard nt clipboard)
 
 foreach(DIR ${WINPR_LEVEL2})
 	add_subdirectory(${DIR})

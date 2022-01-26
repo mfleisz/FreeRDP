@@ -27,6 +27,8 @@
 #endif
 
 #include <winpr/assert.h>
+#include <winpr/sspicli.h>
+
 #include <float.h>
 
 #include <X11/Xlib.h>
@@ -814,8 +816,6 @@ void xf_lock_x11_(xfContext* xfc, const char* fkt)
 	else
 		XLockDisplay(xfc->display);
 
-	if (xfc->locked)
-		WLog_WARN(TAG, "%s:\t[%" PRIu32 "] recursive lock from %s", __FUNCTION__, xfc->locked, fkt);
 	xfc->locked++;
 	WLog_VRB(TAG, "%s:\t[%" PRIu32 "] from %s", __FUNCTION__, xfc->locked, fkt);
 }
@@ -836,14 +836,13 @@ void xf_unlock_x11_(xfContext* xfc, const char* fkt)
 static BOOL xf_get_pixmap_info(xfContext* xfc)
 {
 	int i;
-	int vi_count;
-	int pf_count;
-	XVisualInfo* vi;
-	XVisualInfo* vis;
-	XVisualInfo tpl;
-	XPixmapFormatValues* pf;
-	XPixmapFormatValues* pfs;
-	XWindowAttributes window_attributes;
+	int vi_count = 0;
+	int pf_count = 0;
+	XVisualInfo* vi = NULL;
+	XVisualInfo* vis = NULL;
+	XVisualInfo tpl = { 0 };
+	XPixmapFormatValues* pfs = NULL;
+	XWindowAttributes window_attributes = { 0 };
 	WINPR_ASSERT(xfc->display);
 	pfs = XListPixmapFormats(xfc->display, &pf_count);
 
@@ -855,7 +854,7 @@ static BOOL xf_get_pixmap_info(xfContext* xfc)
 
 	for (i = 0; i < pf_count; i++)
 	{
-		pf = pfs + i;
+		const XPixmapFormatValues* pf = &pfs[i];
 
 		if (pf->depth == xfc->depth)
 		{
@@ -865,7 +864,7 @@ static BOOL xf_get_pixmap_info(xfContext* xfc)
 	}
 
 	XFree(pfs);
-	ZeroMemory(&tpl, sizeof(tpl));
+
 	tpl.class = TrueColor;
 	tpl.screen = xfc->screen_number;
 
@@ -1183,20 +1182,12 @@ static BOOL xf_pre_connect(freerdp* instance)
 
 	if (!settings->Username && !settings->CredentialsFromStdin && !settings->SmartcardLogon)
 	{
-		int rc;
 		char login_name[MAX_PATH] = { 0 };
+		ULONG size = sizeof(login_name) - 1;
 
-#ifdef HAVE_GETLOGIN_R
-		rc = getlogin_r(login_name, sizeof(login_name));
-#else
-		strncpy(login_name, getlogin(), sizeof(login_name));
-		rc = 0;
-#endif
-		if (rc == 0)
+		if (GetUserNameExA(NameSamCompatible, login_name, &size))
 		{
-			settings->Username = _strdup(login_name);
-
-			if (!settings->Username)
+			if (!freerdp_settings_set_string(settings, FreeRDP_Username, login_name))
 				return FALSE;
 
 			WLog_INFO(TAG, "No user name set. - Using login name: %s", settings->Username);
@@ -1769,7 +1760,7 @@ DWORD xf_exit_code_from_disconnect_reason(DWORD reason)
 	return reason;
 }
 
-static void xf_TerminateEventHandler(void* context, TerminateEventArgs* e)
+static void xf_TerminateEventHandler(void* context, const TerminateEventArgs* e)
 {
 	rdpContext* ctx = (rdpContext*)context;
 	WINPR_UNUSED(e);
@@ -1777,7 +1768,7 @@ static void xf_TerminateEventHandler(void* context, TerminateEventArgs* e)
 }
 
 #ifdef WITH_XRENDER
-static void xf_ZoomingChangeEventHandler(void* context, ZoomingChangeEventArgs* e)
+static void xf_ZoomingChangeEventHandler(void* context, const ZoomingChangeEventArgs* e)
 {
 	xfContext* xfc = (xfContext*)context;
 	rdpSettings* settings = xfc->context.settings;
@@ -1801,7 +1792,7 @@ static void xf_ZoomingChangeEventHandler(void* context, ZoomingChangeEventArgs* 
 	xf_draw_screen(xfc, 0, 0, settings->DesktopWidth, settings->DesktopHeight);
 }
 
-static void xf_PanningChangeEventHandler(void* context, PanningChangeEventArgs* e)
+static void xf_PanningChangeEventHandler(void* context, const PanningChangeEventArgs* e)
 {
 	xfContext* xfc = (xfContext*)context;
 	rdpSettings* settings = xfc->context.settings;
@@ -1955,7 +1946,8 @@ static BOOL xfreerdp_client_new(freerdp* instance, rdpContext* context)
 		if ((status == Success) && (actual_type == XA_ATOM) && (actual_format == 32))
 		{
 			xfc->supportedAtomCount = nitems;
-			xfc->supportedAtoms = calloc(nitems, sizeof(Atom));
+			xfc->supportedAtoms = calloc(xfc->supportedAtomCount, sizeof(Atom));
+			WINPR_ASSERT(xfc->supportedAtoms);
 			memcpy(xfc->supportedAtoms, data, nitems * sizeof(Atom));
 		}
 

@@ -29,94 +29,124 @@
 
 #define PROXY_SESSION_ID_LENGTH 32
 
-typedef struct proxy_data proxyData;
-typedef struct proxy_module proxyModule;
-typedef struct channel_data_event_info proxyChannelDataEventInfo;
-
-/**
- * Wraps rdpContext and holds the state for the proxy's server.
- */
-struct p_server_context
+#ifdef __cplusplus
+extern "C"
 {
-	rdpContext context;
+#endif
 
-	proxyData* pdata;
+	typedef struct proxy_data proxyData;
+	typedef struct proxy_module proxyModule;
+	typedef struct channel_data_event_info proxyChannelDataEventInfo;
 
-	HANDLE vcm;
-	HANDLE dynvcReady;
-};
-typedef struct p_server_context pServerContext;
+	typedef struct _InterceptContextMapEntry
+	{
+		void (*free)(struct _InterceptContextMapEntry*);
+	} InterceptContextMapEntry;
 
-/**
- * Wraps rdpContext and holds the state for the proxy's client.
- */
-typedef struct p_client_context pClientContext;
+	/* All proxy interception channels derive from this base struct
+	 * and set their cleanup function accordingly. */
+	FREERDP_API void intercept_context_entry_free(void* obj);
 
-struct p_client_context
-{
-	rdpContext context;
-
-	proxyData* pdata;
-
-	/*
-	 * In a case when freerdp_connect fails,
-	 * Used for NLA fallback feature, to check if the server should close the connection.
-	 * When it is set to TRUE, proxy's client knows it shouldn't signal the server thread to
-	 * closed the connection when pf_client_post_disconnect is called, because it is trying to
-	 * connect reconnect without NLA. It must be set to TRUE before the first try, and to FALSE
-	 * after the connection fully established, to ensure graceful shutdown of the connection
-	 * when it will be closed.
+	/**
+	 * Wraps rdpContext and holds the state for the proxy's server.
 	 */
-	BOOL allow_next_conn_failure;
+	struct p_server_context
+	{
+		rdpContext context;
 
-	BOOL connected; /* Set after client post_connect. */
+		proxyData* pdata;
 
-	pReceiveChannelData client_receive_channel_data_original;
-	wQueue* cached_server_channel_data;
-	BOOL (*sendChannelData)(pClientContext* pc, const proxyChannelDataEventInfo* ev);
+		HANDLE vcm;
+		HANDLE dynvcReady;
 
-	/* X509 specific */
-	char* remote_hostname;
-	wStream* remote_pem;
-	UINT16 remote_port;
-	UINT32 remote_flags;
+		wHashTable* interceptContextMap;
+	};
+	typedef struct p_server_context pServerContext;
 
-	BOOL input_state_sync_pending;
-	UINT32 input_state;
-};
+	/**
+	 * Wraps rdpContext and holds the state for the proxy's client.
+	 */
+	typedef struct p_client_context pClientContext;
 
-/**
- * Holds data common to both sides of a proxy's session.
- */
-struct proxy_data
-{
-	proxyModule* module;
-	const proxyConfig* config;
+	struct p_client_context
+	{
+		rdpContext context;
 
-	pServerContext* ps;
-	pClientContext* pc;
+		proxyData* pdata;
 
-	HANDLE abort_event;
-	HANDLE client_thread;
-	HANDLE gfx_server_ready;
+		/*
+		 * In a case when freerdp_connect fails,
+		 * Used for NLA fallback feature, to check if the server should close the connection.
+		 * When it is set to TRUE, proxy's client knows it shouldn't signal the server thread to
+		 * closed the connection when pf_client_post_disconnect is called, because it is trying to
+		 * connect reconnect without NLA. It must be set to TRUE before the first try, and to FALSE
+		 * after the connection fully established, to ensure graceful shutdown of the connection
+		 * when it will be closed.
+		 */
+		BOOL allow_next_conn_failure;
 
-	char session_id[PROXY_SESSION_ID_LENGTH + 1];
+		BOOL connected; /* Set after client post_connect. */
 
-	/* used to external modules to store per-session info */
-	wHashTable* modules_info;
-	psPeerReceiveChannelData server_receive_channel_data_original;
-};
+		pReceiveChannelData client_receive_channel_data_original;
+		wQueue* cached_server_channel_data;
+		BOOL (*sendChannelData)(pClientContext* pc, const proxyChannelDataEventInfo* ev);
 
-BOOL pf_context_copy_settings(rdpSettings* dst, const rdpSettings* src);
-BOOL pf_context_init_server_context(freerdp_peer* client);
-pClientContext* pf_context_create_client_context(rdpSettings* clientSettings);
+		/* X509 specific */
+		char* remote_hostname;
+		wStream* remote_pem;
+		UINT16 remote_port;
+		UINT32 remote_flags;
 
-proxyData* proxy_data_new(void);
-void proxy_data_set_client_context(proxyData* pdata, pClientContext* context);
-void proxy_data_set_server_context(proxyData* pdata, pServerContext* context);
-void proxy_data_free(proxyData* pdata);
+		BOOL input_state_sync_pending;
+		UINT32 input_state;
 
-BOOL proxy_data_shall_disconnect(proxyData* pdata);
-void proxy_data_abort_connect(proxyData* pdata);
+		wHashTable* interceptContextMap;
+		UINT32 computerNameLen;
+		BOOL computerNameUnicode;
+		union
+		{
+			WCHAR* wc;
+			char* c;
+			void* v;
+		} computerName;
+	};
+
+	/**
+	 * Holds data common to both sides of a proxy's session.
+	 */
+	struct proxy_data
+	{
+		proxyModule* module;
+		const proxyConfig* config;
+
+		pServerContext* ps;
+		pClientContext* pc;
+
+		HANDLE abort_event;
+		HANDLE client_thread;
+		HANDLE gfx_server_ready;
+
+		char session_id[PROXY_SESSION_ID_LENGTH + 1];
+
+		/* used to external modules to store per-session info */
+		wHashTable* modules_info;
+		psPeerReceiveChannelData server_receive_channel_data_original;
+	};
+
+	FREERDP_API BOOL pf_context_copy_settings(rdpSettings* dst, const rdpSettings* src);
+	FREERDP_API BOOL pf_context_init_server_context(freerdp_peer* client);
+	FREERDP_API pClientContext* pf_context_create_client_context(rdpSettings* clientSettings);
+
+	FREERDP_API proxyData* proxy_data_new(void);
+	FREERDP_API void proxy_data_set_client_context(proxyData* pdata, pClientContext* context);
+	FREERDP_API void proxy_data_set_server_context(proxyData* pdata, pServerContext* context);
+	FREERDP_API void proxy_data_free(proxyData* pdata);
+
+	FREERDP_API BOOL proxy_data_shall_disconnect(proxyData* pdata);
+	FREERDP_API void proxy_data_abort_connect(proxyData* pdata);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* FREERDP_SERVER_PROXY_PFCONTEXT_H */

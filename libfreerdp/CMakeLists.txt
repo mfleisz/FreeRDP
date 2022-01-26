@@ -103,6 +103,7 @@ else()
 endif()
 
 set(${MODULE_PREFIX}_SUBMODULES
+    emu
     utils
     common
     gdi
@@ -246,6 +247,10 @@ endif()
 
 if(WIN32 AND WITH_MEDIA_FOUNDATION)
     set(CODEC_SRCS ${CODEC_SRCS} codec/h264_mf.c)
+endif()
+
+if(ANDROID AND WITH_MEDIACODEC)
+    list(APPEND CODEC_SRCS codec/h264_mediacodec.c)
 endif()
 
 freerdp_module_add(${CODEC_SRCS})

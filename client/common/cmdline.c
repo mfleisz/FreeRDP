@@ -980,6 +980,7 @@ BOOL freerdp_set_connection_type(rdpSettings* settings, UINT32 type)
 		settings->DisableFullWindowDrag = TRUE;
 		settings->DisableMenuAnims = TRUE;
 		settings->DisableThemes = TRUE;
+		settings->NetworkAutoDetect = FALSE;
 	}
 	else if (type == CONNECTION_TYPE_BROADBAND_LOW)
 	{
@@ -989,6 +990,7 @@ BOOL freerdp_set_connection_type(rdpSettings* settings, UINT32 type)
 		settings->DisableFullWindowDrag = TRUE;
 		settings->DisableMenuAnims = TRUE;
 		settings->DisableThemes = FALSE;
+		settings->NetworkAutoDetect = FALSE;
 	}
 	else if (type == CONNECTION_TYPE_SATELLITE)
 	{
@@ -998,6 +1000,7 @@ BOOL freerdp_set_connection_type(rdpSettings* settings, UINT32 type)
 		settings->DisableFullWindowDrag = TRUE;
 		settings->DisableMenuAnims = TRUE;
 		settings->DisableThemes = FALSE;
+		settings->NetworkAutoDetect = FALSE;
 	}
 	else if (type == CONNECTION_TYPE_BROADBAND_HIGH)
 	{
@@ -1007,6 +1010,7 @@ BOOL freerdp_set_connection_type(rdpSettings* settings, UINT32 type)
 		settings->DisableFullWindowDrag = TRUE;
 		settings->DisableMenuAnims = TRUE;
 		settings->DisableThemes = FALSE;
+		settings->NetworkAutoDetect = FALSE;
 	}
 	else if (type == CONNECTION_TYPE_WAN)
 	{
@@ -1016,6 +1020,7 @@ BOOL freerdp_set_connection_type(rdpSettings* settings, UINT32 type)
 		settings->DisableFullWindowDrag = FALSE;
 		settings->DisableMenuAnims = FALSE;
 		settings->DisableThemes = FALSE;
+		settings->NetworkAutoDetect = FALSE;
 	}
 	else if (type == CONNECTION_TYPE_LAN)
 	{
@@ -1025,6 +1030,7 @@ BOOL freerdp_set_connection_type(rdpSettings* settings, UINT32 type)
 		settings->DisableFullWindowDrag = FALSE;
 		settings->DisableMenuAnims = FALSE;
 		settings->DisableThemes = FALSE;
+		settings->NetworkAutoDetect = FALSE;
 	}
 	else if (type == CONNECTION_TYPE_AUTODETECT)
 	{
@@ -1378,7 +1384,11 @@ static BOOL ends_with(const char* str, const char* ext)
 static void activate_smartcard_logon_rdp(rdpSettings* settings)
 {
 	settings->SmartcardLogon = TRUE;
-	/* TODO: why not? settings->UseRdpSecurityLayer = TRUE; */
+
+	settings->NlaSecurity = FALSE;
+	settings->TlsSecurity = TRUE;
+	settings->RedirectSmartCards = TRUE;
+	settings->DeviceRedirection = TRUE;
 	freerdp_settings_set_bool(settings, FreeRDP_PasswordIsSmartcardPin, TRUE);
 }
 
@@ -1443,6 +1453,39 @@ static BOOL prepare_default_settings(rdpSettings* settings, COMMAND_LINE_ARGUMEN
 	}
 
 	return freerdp_set_connection_type(settings, CONNECTION_TYPE_AUTODETECT);
+}
+
+static BOOL read_pem_file(rdpSettings* settings, size_t id, const char* file)
+{
+	INT64 s;
+	int rs;
+	size_t fr;
+	char* ptr;
+	BOOL rc = FALSE;
+	FILE* fp = winpr_fopen(file, "r");
+	if (!fp)
+		return FALSE;
+	rs = _fseeki64(fp, 0, SEEK_END);
+	if (rc < 0)
+		goto fail;
+	s = _ftelli64(fp);
+	if (s < 0)
+		goto fail;
+	rs = _fseeki64(fp, 0, SEEK_SET);
+	if (rc < 0)
+		goto fail;
+
+	if (!freerdp_settings_set_string_len(settings, id, NULL, s + 1))
+		goto fail;
+
+	ptr = freerdp_settings_get_string(settings, id);
+	fr = fread(ptr, (size_t)s, 1, fp);
+	if (fr != 1)
+		goto fail;
+	rc = TRUE;
+fail:
+	fclose(fp);
+	return rc;
 }
 
 int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, int argc,
@@ -2121,12 +2164,10 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 				if (p)
 				{
 					LONGLONG val;
-					size_t length;
 
 					if (!value_to_int(&p[1], &val, 0, UINT16_MAX))
 						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 
-					length = (size_t)(p - cur);
 					if (!freerdp_settings_set_uint16(settings, FreeRDP_ProxyPort, (UINT16)val))
 						return FALSE;
 					*p = '\0';
@@ -3213,8 +3254,49 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		}
 		CommandLineSwitchCase(arg, "smartcard-logon")
 		{
+			size_t count;
+			union
+			{
+				char** p;
+				const char** pc;
+			} ptr;
+
 			if (!settings->SmartcardLogon)
 				activate_smartcard_logon_rdp(settings);
+
+			ptr.p = CommandLineParseCommaSeparatedValuesEx("smartcard-logon", arg->Value, &count);
+			if (ptr.pc)
+			{
+				size_t x;
+				for (x = 1; x < count; x++)
+				{
+					const char* cur = ptr.pc[x];
+					if (strncmp("cert:", cur, 5) == 0)
+					{
+						const char* f = &cur[5];
+						if (!read_pem_file(settings, FreeRDP_SmartcardCertificate, f))
+						{
+							free(ptr.p);
+							return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
+						}
+					}
+					else if (strncmp("key:", cur, 4) == 0)
+					{
+						const char* f = &cur[4];
+						if (!read_pem_file(settings, FreeRDP_SmartcardPrivateKey, f))
+						{
+							free(ptr.p);
+							return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
+						}
+					}
+					else
+					{
+						free(ptr.p);
+						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
+					}
+				}
+			}
+			free(ptr.p);
 		}
 
 		CommandLineSwitchCase(arg, "tune")
