@@ -64,9 +64,9 @@ static BOOL settings_reg_query_dword_val(HKEY hKey, const TCHAR* sub, DWORD* val
 
 	dwSize = sizeof(DWORD);
 	if (RegQueryValueEx(hKey, sub, NULL, &dwType, (BYTE*)value, &dwSize) != ERROR_SUCCESS)
-	{
 		return FALSE;
-	}
+	if (dwType != REG_DWORD)
+		return FALSE;
 
 	return TRUE;
 }
@@ -76,6 +76,9 @@ static BOOL settings_reg_query_word_val(HKEY hKey, const TCHAR* sub, UINT16* val
 	DWORD dwValue;
 
 	if (!settings_reg_query_dword_val(hKey, sub, &dwValue))
+		return FALSE;
+
+	if (dwValue > UINT16_MAX)
 		return FALSE;
 
 	*value = (UINT16)dwValue;
@@ -155,16 +158,18 @@ static void settings_client_load_hkey_local_machine(rdpSettings* settings)
 		settings_reg_query_dword(settings, FreeRDP_BitmapCacheV2NumCells, hKey, _T("NumCells"));
 		for (x = 0; x < 5; x++)
 		{
+			DWORD val;
 			TCHAR numentries[64] = { 0 };
 			TCHAR persist[64] = { 0 };
 			BITMAP_CACHE_V2_CELL_INFO cache = { 0 };
 			_sntprintf(numentries, ARRAYSIZE(numentries), _T("Cell%uNumEntries"), x);
 			_sntprintf(persist, ARRAYSIZE(persist), _T("Cell%uPersistent"), x);
-			if (!settings_reg_query_dword_val(hKey, numentries, &cache.numEntries) ||
+			if (!settings_reg_query_dword_val(hKey, numentries, &val) ||
 			    !settings_reg_query_bool_val(hKey, persist, &cache.persistent) ||
 			    !freerdp_settings_set_pointer_array(settings, FreeRDP_BitmapCacheV2CellInfo, x,
 			                                        &cache))
 				WLog_WARN(TAG, "Failed to load registry keys to settings!");
+			cache.numEntries = val;
 		}
 
 		settings_reg_query_bool(settings, FreeRDP_AllowCacheWaitingList, hKey,
@@ -386,7 +391,8 @@ rdpSettings* freerdp_settings_new(DWORD flags)
 	    !freerdp_settings_set_uint32(settings, FreeRDP_ChannelCount, 0) ||
 	    !freerdp_settings_set_uint32(settings, FreeRDP_ChannelDefArraySize, 32) ||
 	    !freerdp_settings_set_bool(settings, FreeRDP_CertificateUseKnownHosts, TRUE) ||
-	    !freerdp_settings_set_bool(settings, FreeRDP_CertificateCallbackPreferPEM, FALSE))
+	    !freerdp_settings_set_bool(settings, FreeRDP_CertificateCallbackPreferPEM, FALSE) ||
+	    !freerdp_settings_set_uint32(settings, FreeRDP_KeySpec, AT_KEYEXCHANGE))
 		goto out_fail;
 
 	settings->ChannelDefArray = (CHANNEL_DEF*)calloc(

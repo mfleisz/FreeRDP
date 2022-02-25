@@ -65,7 +65,7 @@ typedef enum
 	STATE_CLIENT_CHANNEL_RUNNING = 0x10
 } pf_channel_client_state;
 
-typedef struct _pf_channel_client_context
+typedef struct
 {
 	pf_channel_common_context common;
 	pf_channel_client_state state;
@@ -1131,7 +1131,9 @@ BOOL pf_channel_rdpdr_client_handle(pClientContext* pc, UINT16 channelId, const 
 	pf_channel_client_context* rdpdr;
 	pServerContext* ps;
 	wStream* s;
+#if defined(WITH_PROXY_EMULATE_SMARTCARD)
 	UINT16 packetid;
+#endif
 
 	WINPR_ASSERT(pc);
 	WINPR_ASSERT(pc->pdata);
@@ -1248,10 +1250,10 @@ BOOL pf_channel_rdpdr_client_handle(pClientContext* pc, UINT16 channelId, const 
 						return FALSE;
 				}
 			}
+			break;
 #else
 			return pf_channel_rdpdr_client_send_to_server(ps, s);
 #endif
-			break;
 		default:
 			WLog_ERR(TAG,
 			         "[%s]: Channel %s [0x%04" PRIx16
@@ -1476,11 +1478,11 @@ fail:
 
 static void* stream_copy(const void* obj)
 {
-	wStream* src = obj;
+	const wStream* src = obj;
 	wStream* dst = Stream_New(NULL, Stream_Capacity(src));
 	if (!dst)
 		return NULL;
-	memcpy(Stream_Buffer(dst), Stream_Buffer(src), Stream_Capacity(dst));
+	memcpy(Stream_Buffer(dst), Stream_ConstBuffer(src), Stream_Capacity(dst));
 	Stream_SetLength(dst, Stream_Length(src));
 	Stream_SetPosition(dst, Stream_GetPosition(src));
 	return dst;

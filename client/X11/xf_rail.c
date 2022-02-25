@@ -25,8 +25,11 @@
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
 
+#include <winpr/assert.h>
 #include <winpr/wlog.h>
 #include <winpr/print.h>
+
+#include <freerdp/client/rail.h>
 
 #include "xf_window.h"
 #include "xf_rail.h"
@@ -153,7 +156,13 @@ void xf_rail_end_local_move(xfContext* xfc, xfAppWindow* appWindow)
 	Window root_window;
 	Window child_window;
 	RAIL_WINDOW_MOVE_ORDER windowMove;
-	rdpInput* input = xfc->context.input;
+	rdpInput* input;
+
+	WINPR_ASSERT(xfc);
+
+	input = xfc->common.context.input;
+	WINPR_ASSERT(input);
+
 	/*
 	 * For keyboard moves send and explicit update to RDP server
 	 */
@@ -180,7 +189,7 @@ void xf_rail_end_local_move(xfContext* xfc, xfAppWindow* appWindow)
 	if ((appWindow->local_move.direction != _NET_WM_MOVERESIZE_MOVE_KEYBOARD) &&
 	    (appWindow->local_move.direction != _NET_WM_MOVERESIZE_SIZE_KEYBOARD))
 	{
-		freerdp_input_send_mouse_event(input, PTR_FLAGS_BUTTON1, x, y);
+		freerdp_client_send_button_event(&xfc->common, FALSE, PTR_FLAGS_BUTTON1, x, y);
 	}
 
 	/*
@@ -792,13 +801,19 @@ static void xf_rail_register_update_callbacks(rdpUpdate* update)
 static UINT xf_rail_server_execute_result(RailClientContext* context,
                                           const RAIL_EXEC_RESULT_ORDER* execResult)
 {
-	xfContext* xfc = (xfContext*)context->custom;
+	xfContext* xfc;
+
+	WINPR_ASSERT(context);
+	WINPR_ASSERT(execResult);
+
+	xfc = (xfContext*)context->custom;
+	WINPR_ASSERT(xfc);
 
 	if (execResult->execResult != RAIL_EXEC_S_OK)
 	{
 		WLog_ERR(TAG, "RAIL exec error: execResult=%s NtError=0x%X\n",
 		         error_code_names[execResult->execResult], execResult->rawResult);
-		freerdp_abort_connect(xfc->context.instance);
+		freerdp_abort_connect(xfc->common.context.instance);
 	}
 	else
 	{
@@ -820,75 +835,6 @@ static UINT xf_rail_server_system_param(RailClientContext* context,
 	return CHANNEL_RC_OK;
 }
 
-static UINT xf_rail_server_start_cmd(RailClientContext* context)
-{
-	UINT status;
-	RAIL_EXEC_ORDER exec = { 0 };
-	RAIL_SYSPARAM_ORDER sysparam = { 0 };
-	RAIL_CLIENT_STATUS_ORDER clientStatus = { 0 };
-	xfContext* xfc = (xfContext*)context->custom;
-	rdpSettings* settings = xfc->context.settings;
-	clientStatus.flags = TS_RAIL_CLIENTSTATUS_ALLOWLOCALMOVESIZE;
-
-	if (settings->AutoReconnectionEnabled)
-		clientStatus.flags |= TS_RAIL_CLIENTSTATUS_AUTORECONNECT;
-
-	clientStatus.flags |= TS_RAIL_CLIENTSTATUS_ZORDER_SYNC;
-	clientStatus.flags |= TS_RAIL_CLIENTSTATUS_WINDOW_RESIZE_MARGIN_SUPPORTED;
-	clientStatus.flags |= TS_RAIL_CLIENTSTATUS_APPBAR_REMOTING_SUPPORTED;
-	clientStatus.flags |= TS_RAIL_CLIENTSTATUS_POWER_DISPLAY_REQUEST_SUPPORTED;
-	clientStatus.flags |= TS_RAIL_CLIENTSTATUS_BIDIRECTIONAL_CLOAK_SUPPORTED;
-	status = context->ClientInformation(context, &clientStatus);
-
-	if (status != CHANNEL_RC_OK)
-		return status;
-
-	if (settings->RemoteAppLanguageBarSupported)
-	{
-		RAIL_LANGBAR_INFO_ORDER langBarInfo;
-		langBarInfo.languageBarStatus = 0x00000008; /* TF_SFT_HIDDEN */
-		status = context->ClientLanguageBarInfo(context, &langBarInfo);
-
-		/* We want the language bar, but the server might not support it. */
-		switch (status)
-		{
-			case CHANNEL_RC_OK:
-			case ERROR_BAD_CONFIGURATION:
-				break;
-			default:
-				return status;
-		}
-	}
-
-	sysparam.params = 0;
-	sysparam.params |= SPI_MASK_SET_HIGH_CONTRAST;
-	sysparam.highContrast.colorScheme.string = NULL;
-	sysparam.highContrast.colorScheme.length = 0;
-	sysparam.highContrast.flags = 0x7E;
-	sysparam.params |= SPI_MASK_SET_MOUSE_BUTTON_SWAP;
-	sysparam.mouseButtonSwap = FALSE;
-	sysparam.params |= SPI_MASK_SET_KEYBOARD_PREF;
-	sysparam.keyboardPref = FALSE;
-	sysparam.params |= SPI_MASK_SET_DRAG_FULL_WINDOWS;
-	sysparam.dragFullWindows = FALSE;
-	sysparam.params |= SPI_MASK_SET_KEYBOARD_CUES;
-	sysparam.keyboardCues = FALSE;
-	sysparam.params |= SPI_MASK_SET_WORK_AREA;
-	sysparam.workArea.left = 0;
-	sysparam.workArea.top = 0;
-	sysparam.workArea.right = settings->DesktopWidth;
-	sysparam.workArea.bottom = settings->DesktopHeight;
-	sysparam.dragFullWindows = FALSE;
-	status = context->ClientSystemParam(context, &sysparam);
-
-	if (status != CHANNEL_RC_OK)
-		return status;
-
-	exec.RemoteApplicationProgram = settings->RemoteApplicationProgram;
-	exec.RemoteApplicationWorkingDir = settings->ShellWorkingDirectory;
-	exec.RemoteApplicationArguments = settings->RemoteApplicationCmdLine;
-	return context->ClientExecute(context, &exec);
-}
 /**
  * Function description
  *
@@ -897,7 +843,7 @@ static UINT xf_rail_server_start_cmd(RailClientContext* context)
 static UINT xf_rail_server_handshake(RailClientContext* context,
                                      const RAIL_HANDSHAKE_ORDER* handshake)
 {
-	return xf_rail_server_start_cmd(context);
+	return client_rail_server_start_cmd(context);
 }
 
 /**
@@ -908,7 +854,7 @@ static UINT xf_rail_server_handshake(RailClientContext* context,
 static UINT xf_rail_server_handshake_ex(RailClientContext* context,
                                         const RAIL_HANDSHAKE_EX_ORDER* handshakeEx)
 {
-	return xf_rail_server_start_cmd(context);
+	return client_rail_server_start_cmd(context);
 }
 
 /**
@@ -1111,7 +1057,7 @@ int xf_rail_init(xfContext* xfc, RailClientContext* rail)
 		wObject* obj = HashTable_ValueObject(xfc->railWindows);
 		obj->fnObjectFree = rail_window_free;
 	}
-	xfc->railIconCache = RailIconCache_New(xfc->context.settings);
+	xfc->railIconCache = RailIconCache_New(xfc->common.context.settings);
 
 	if (!xfc->railIconCache)
 	{

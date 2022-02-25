@@ -40,27 +40,25 @@
 
 #include "geometry_main.h"
 
-struct _GEOMETRY_CHANNEL_CALLBACK
+typedef struct
 {
 	IWTSVirtualChannelCallback iface;
 
 	IWTSPlugin* plugin;
 	IWTSVirtualChannelManager* channel_mgr;
 	IWTSVirtualChannel* channel;
-};
-typedef struct _GEOMETRY_CHANNEL_CALLBACK GEOMETRY_CHANNEL_CALLBACK;
+} GEOMETRY_CHANNEL_CALLBACK;
 
-struct _GEOMETRY_LISTENER_CALLBACK
+typedef struct
 {
 	IWTSListenerCallback iface;
 
 	IWTSPlugin* plugin;
 	IWTSVirtualChannelManager* channel_mgr;
 	GEOMETRY_CHANNEL_CALLBACK* channel_callback;
-};
-typedef struct _GEOMETRY_LISTENER_CALLBACK GEOMETRY_LISTENER_CALLBACK;
+} GEOMETRY_LISTENER_CALLBACK;
 
-struct _GEOMETRY_PLUGIN
+typedef struct
 {
 	IWTSPlugin iface;
 
@@ -69,8 +67,7 @@ struct _GEOMETRY_PLUGIN
 
 	GeometryClientContext* context;
 	BOOL initialized;
-};
-typedef struct _GEOMETRY_PLUGIN GEOMETRY_PLUGIN;
+} GEOMETRY_PLUGIN;
 
 static UINT32 mappedGeometryHash(const void* v)
 {
@@ -446,18 +443,12 @@ static void mappedGeometryUnref_void(void* arg)
  * Channel Client Interface
  */
 
-#ifdef BUILTIN_CHANNELS
-#define DVCPluginEntry geometry_DVCPluginEntry
-#else
-#define DVCPluginEntry FREERDP_API DVCPluginEntry
-#endif
-
 /**
  * Function description
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-UINT DVCPluginEntry(IDRDYNVC_ENTRY_POINTS* pEntryPoints)
+UINT geometry_DVCPluginEntry(IDRDYNVC_ENTRY_POINTS* pEntryPoints)
 {
 	UINT error = CHANNEL_RC_OK;
 	GEOMETRY_PLUGIN* geometry;

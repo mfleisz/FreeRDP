@@ -52,9 +52,7 @@
 
 #define MAX_IRP_THREADS 5
 
-typedef struct _SERIAL_DEVICE SERIAL_DEVICE;
-
-struct _SERIAL_DEVICE
+typedef struct
 {
 	DEVICE device;
 	BOOL permissive;
@@ -70,15 +68,13 @@ struct _SERIAL_DEVICE
 	UINT32 IrpThreadToBeTerminatedCount;
 	CRITICAL_SECTION TerminatingIrpThreadsLock;
 	rdpContext* rdpcontext;
-};
+} SERIAL_DEVICE;
 
-typedef struct _IRP_THREAD_DATA IRP_THREAD_DATA;
-
-struct _IRP_THREAD_DATA
+typedef struct
 {
 	SERIAL_DEVICE* serial;
 	IRP* irp;
-};
+} IRP_THREAD_DATA;
 
 static UINT32 _GetLastErrorToIoStatus(SERIAL_DEVICE* serial)
 {
@@ -801,18 +797,12 @@ static UINT serial_free(DEVICE* device)
 
 #endif /* __linux__ */
 
-#ifdef BUILTIN_CHANNELS
-#define DeviceServiceEntry serial_DeviceServiceEntry
-#else
-#define DeviceServiceEntry FREERDP_API DeviceServiceEntry
-#endif
-
 /**
  * Function description
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-UINT DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
+UINT serial_DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
 {
 	char* name;
 	char* path;

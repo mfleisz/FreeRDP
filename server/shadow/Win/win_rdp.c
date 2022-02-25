@@ -187,7 +187,7 @@ static DWORD WINAPI shw_client_thread(LPVOID arg)
 	{
 		DWORD status;
 		HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
-		DWORD count = freerdp_get_event_handles(instance, handles, ARRAYSIZE(handles));
+		DWORD count = freerdp_get_event_handles(instance->context, handles, ARRAYSIZE(handles));
 
 		if ((count == 0) || (count == MAXIMUM_WAIT_OBJECTS))
 		{
@@ -245,7 +245,7 @@ static int shw_freerdp_client_start(rdpContext* context)
 	freerdp* instance = context->instance;
 	shw = (shwContext*)context;
 
-	if (!(shw->thread = CreateThread(NULL, 0, shw_client_thread, instance, 0, NULL)))
+	if (!(shw->common.thread = CreateThread(NULL, 0, shw_client_thread, instance, 0, NULL)))
 	{
 		WLog_ERR(TAG, "Failed to create thread");
 		return -1;

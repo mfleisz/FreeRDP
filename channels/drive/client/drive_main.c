@@ -47,9 +47,7 @@
 
 #include "drive_file.h"
 
-typedef struct _DRIVE_DEVICE DRIVE_DEVICE;
-
-struct _DRIVE_DEVICE
+typedef struct
 {
 	DEVICE device;
 
@@ -64,7 +62,7 @@ struct _DRIVE_DEVICE
 	DEVMAN* devman;
 
 	rdpContext* rdpcontext;
-};
+} DRIVE_DEVICE;
 
 static UINT sys_code_page = 0;
 
@@ -996,18 +994,12 @@ out_error:
 	return error;
 }
 
-#ifdef BUILTIN_CHANNELS
-#define DeviceServiceEntry drive_DeviceServiceEntry
-#else
-#define DeviceServiceEntry FREERDP_API DeviceServiceEntry
-#endif
-
 /**
  * Function description
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-UINT DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
+UINT drive_DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
 {
 	RDPDR_DRIVE* drive;
 	UINT error;

@@ -40,32 +40,28 @@
 
 #include <freerdp/client/printer.h>
 
-typedef struct rdp_cups_printer_driver rdpCupsPrinterDriver;
-typedef struct rdp_cups_printer rdpCupsPrinter;
-typedef struct rdp_cups_print_job rdpCupsPrintJob;
-
-struct rdp_cups_printer_driver
+typedef struct
 {
 	rdpPrinterDriver driver;
 
 	int id_sequence;
 	size_t references;
-};
+} rdpCupsPrinterDriver;
 
-struct rdp_cups_printer
-{
-	rdpPrinter printer;
-
-	rdpCupsPrintJob* printjob;
-};
-
-struct rdp_cups_print_job
+typedef struct
 {
 	rdpPrintJob printjob;
 
 	void* printjob_object;
 	int printjob_id;
-};
+} rdpCupsPrintJob;
+
+typedef struct
+{
+	rdpPrinter printer;
+
+	rdpCupsPrintJob* printjob;
+} rdpCupsPrinter;
 
 static void printer_cups_get_printjob_name(char* buf, size_t size, size_t id)
 {
@@ -386,11 +382,7 @@ static void printer_cups_release_ref_driver(rdpPrinterDriver* driver)
 		cups_driver->references--;
 }
 
-#ifdef BUILTIN_CHANNELS
 rdpPrinterDriver* cups_freerdp_printer_client_subsystem_entry(void)
-#else
-FREERDP_API rdpPrinterDriver* freerdp_printer_client_subsystem_entry(void)
-#endif
 {
 	if (!uniq_cups_driver)
 	{

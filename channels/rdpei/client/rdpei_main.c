@@ -65,27 +65,25 @@
 #define MAX_CONTACTS 64
 #define MAX_PEN_CONTACTS 4
 
-struct _RDPEI_CHANNEL_CALLBACK
+typedef struct
 {
 	IWTSVirtualChannelCallback iface;
 
 	IWTSPlugin* plugin;
 	IWTSVirtualChannelManager* channel_mgr;
 	IWTSVirtualChannel* channel;
-};
-typedef struct _RDPEI_CHANNEL_CALLBACK RDPEI_CHANNEL_CALLBACK;
+} RDPEI_CHANNEL_CALLBACK;
 
-struct _RDPEI_LISTENER_CALLBACK
+typedef struct
 {
 	IWTSListenerCallback iface;
 
 	IWTSPlugin* plugin;
 	IWTSVirtualChannelManager* channel_mgr;
 	RDPEI_CHANNEL_CALLBACK* channel_callback;
-};
-typedef struct _RDPEI_LISTENER_CALLBACK RDPEI_LISTENER_CALLBACK;
+} RDPEI_LISTENER_CALLBACK;
 
-struct _RDPEI_PLUGIN
+typedef struct
 {
 	IWTSPlugin iface;
 
@@ -111,8 +109,7 @@ struct _RDPEI_PLUGIN
 	BOOL initialized;
 	HANDLE thread;
 	HANDLE event;
-};
-typedef struct _RDPEI_PLUGIN RDPEI_PLUGIN;
+} RDPEI_PLUGIN;
 
 /**
  * Function description
@@ -1460,18 +1457,12 @@ static UINT rdpei_pen_raw_event(RdpeiClientContext* context, INT32 externalId, U
 	return error;
 }
 
-#ifdef BUILTIN_CHANNELS
-#define DVCPluginEntry rdpei_DVCPluginEntry
-#else
-#define DVCPluginEntry FREERDP_API DVCPluginEntry
-#endif
-
 /**
  * Function description
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-UINT DVCPluginEntry(IDRDYNVC_ENTRY_POINTS* pEntryPoints)
+UINT rdpei_DVCPluginEntry(IDRDYNVC_ENTRY_POINTS* pEntryPoints)
 {
 	UINT error;
 	RDPEI_PLUGIN* rdpei = NULL;

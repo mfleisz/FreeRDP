@@ -21,6 +21,7 @@
 #include "config.h"
 #endif
 
+#include <winpr/assert.h>
 #include <freerdp/gdi/video.h>
 #include "xf_channels.h"
 
@@ -45,12 +46,11 @@ void xf_OnChannelConnectedEventHandler(void* context, const ChannelConnectedEven
 	WINPR_ASSERT(e);
 	WINPR_ASSERT(e->name);
 
-	settings = xfc->context.settings;
+	settings = xfc->common.context.settings;
 	WINPR_ASSERT(settings);
 
-	if (strcmp(e->name, RDPEI_DVC_CHANNEL_NAME) == 0)
+	if (FALSE)
 	{
-		xfc->rdpei = (RdpeiClientContext*)e->pInterface;
 	}
 #if defined(CHANNEL_TSMF_CLIENT)
 	else if (strcmp(e->name, TSMF_DVC_CHANNEL_NAME) == 0)
@@ -78,21 +78,15 @@ void xf_OnChannelConnectedEventHandler(void* context, const ChannelConnectedEven
 	{
 		xf_disp_init(xfc->xfDisp, (DispClientContext*)e->pInterface);
 	}
-	else if (strcmp(e->name, GEOMETRY_DVC_CHANNEL_NAME) == 0)
-	{
-		gdi_video_geometry_init(xfc->context.gdi, (GeometryClientContext*)e->pInterface);
-	}
 	else if (strcmp(e->name, VIDEO_CONTROL_DVC_CHANNEL_NAME) == 0)
 	{
 		if (settings->SoftwareGdi)
-			gdi_video_control_init(xfc->context.gdi, (VideoClientContext*)e->pInterface);
+			gdi_video_control_init(xfc->common.context.gdi, (VideoClientContext*)e->pInterface);
 		else
 			xf_video_control_init(xfc, (VideoClientContext*)e->pInterface);
 	}
-	else if (strcmp(e->name, VIDEO_DATA_DVC_CHANNEL_NAME) == 0)
-	{
-		gdi_video_data_init(xfc->context.gdi, (VideoClientContext*)e->pInterface);
-	}
+	else
+		freerdp_client_OnChannelConnectedEventHandler(context, e);
 }
 
 void xf_OnChannelDisconnectedEventHandler(void* context, const ChannelDisconnectedEventArgs* e)
@@ -104,12 +98,11 @@ void xf_OnChannelDisconnectedEventHandler(void* context, const ChannelDisconnect
 	WINPR_ASSERT(e);
 	WINPR_ASSERT(e->name);
 
-	settings = xfc->context.settings;
+	settings = xfc->common.context.settings;
 	WINPR_ASSERT(settings);
 
-	if (strcmp(e->name, RDPEI_DVC_CHANNEL_NAME) == 0)
+	if (FALSE)
 	{
-		xfc->rdpei = NULL;
 	}
 	else if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0)
 	{
@@ -137,19 +130,13 @@ void xf_OnChannelDisconnectedEventHandler(void* context, const ChannelDisconnect
 	{
 		xf_encomsp_uninit(xfc, (EncomspClientContext*)e->pInterface);
 	}
-	else if (strcmp(e->name, GEOMETRY_DVC_CHANNEL_NAME) == 0)
-	{
-		gdi_video_geometry_uninit(xfc->context.gdi, (GeometryClientContext*)e->pInterface);
-	}
 	else if (strcmp(e->name, VIDEO_CONTROL_DVC_CHANNEL_NAME) == 0)
 	{
 		if (settings->SoftwareGdi)
-			gdi_video_control_uninit(xfc->context.gdi, (VideoClientContext*)e->pInterface);
+			gdi_video_control_uninit(xfc->common.context.gdi, (VideoClientContext*)e->pInterface);
 		else
 			xf_video_control_uninit(xfc, (VideoClientContext*)e->pInterface);
 	}
-	else if (strcmp(e->name, VIDEO_DATA_DVC_CHANNEL_NAME) == 0)
-	{
-		gdi_video_data_uninit(xfc->context.gdi, (VideoClientContext*)e->pInterface);
-	}
+	else
+		freerdp_client_OnChannelDisconnectedEventHandler(context, e);
 }

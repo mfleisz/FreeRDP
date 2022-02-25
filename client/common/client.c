@@ -33,6 +33,29 @@
 #include <freerdp/client/cmdline.h>
 #include <freerdp/client/channels.h>
 
+#if defined(CHANNEL_AINPUT_CLIENT)
+#include <freerdp/client/ainput.h>
+#include <freerdp/channels/ainput.h>
+#endif
+
+#if defined(CHANNEL_VIDEO_CLIENT)
+#include <freerdp/client/video.h>
+#include <freerdp/channels/video.h>
+#include <freerdp/gdi/video.h>
+#endif
+
+#if defined(CHANNEL_RDPGFX_CLIENT)
+#include <freerdp/client/rdpgfx.h>
+#include <freerdp/channels/rdpgfx.h>
+#include <freerdp/gdi/gfx.h>
+#endif
+
+#if defined(CHANNEL_GEOMETRY_CLIENT)
+#include <freerdp/client/geometry.h>
+#include <freerdp/channels/geometry.h>
+#include <freerdp/gdi/video.h>
+#endif
+
 #include <freerdp/log.h>
 #define TAG CLIENT_TAG("common")
 
@@ -176,28 +199,21 @@ static BOOL freerdp_client_settings_post_process(rdpSettings* settings)
 		{
 			if (settings->Username)
 			{
-				free(settings->GatewayUsername);
-				settings->GatewayUsername = _strdup(settings->Username);
-
-				if (!settings->GatewayUsername)
+				if (!freerdp_settings_set_string(settings, FreeRDP_GatewayUsername,
+				                                 settings->Username))
 					goto out_error;
 			}
 
 			if (settings->Domain)
 			{
-				free(settings->GatewayDomain);
-				settings->GatewayDomain = _strdup(settings->Domain);
-
-				if (!settings->GatewayDomain)
+				if (!freerdp_settings_set_string(settings, FreeRDP_GatewayDomain, settings->Domain))
 					goto out_error;
 			}
 
 			if (settings->Password)
 			{
-				free(settings->GatewayPassword);
-				settings->GatewayPassword = _strdup(settings->Password);
-
-				if (!settings->GatewayPassword)
+				if (!freerdp_settings_set_string(settings, FreeRDP_GatewayPassword,
+				                                 settings->Password))
 					goto out_error;
 			}
 		}
@@ -213,6 +229,46 @@ static BOOL freerdp_client_settings_post_process(rdpSettings* settings)
 	else if (settings->UseMultimon)
 	{
 		settings->Fullscreen = TRUE;
+	}
+
+	/* deal with the smartcard / smartcard logon stuff */
+	if (settings->SmartcardEmulation)
+	{
+		/* if no pin is defined on the smartcard emulation use the user password */
+		if (!settings->SmartcardPin)
+		{
+			if (!settings->Password)
+			{
+				WLog_ERR(TAG, "No pin or password defined for smartcard emu");
+				goto out_error;
+			}
+
+			if (!freerdp_settings_set_string(settings, FreeRDP_SmartcardPin, settings->Password))
+			{
+				WLog_ERR(TAG, "error when setting smartcard pin to user password");
+				goto out_error;
+			}
+		}
+	}
+
+	if (settings->SmartcardLogon)
+	{
+		settings->TlsSecurity = TRUE;
+		settings->RedirectSmartCards = TRUE;
+		settings->DeviceRedirection = TRUE;
+		freerdp_settings_set_bool(settings, FreeRDP_PasswordIsSmartcardPin, TRUE);
+
+		if (!settings->Password && settings->SmartcardEmulation)
+		{
+			/* when no user password is provided, in the case of smartcard emulation for smartcard
+			 * logon take the smartcard pin as user password to match PasswordIsSmartcardPin
+			 */
+			if (!freerdp_settings_set_string(settings, FreeRDP_Password, settings->SmartcardPin))
+			{
+				WLog_ERR(TAG, "error when setting smartcard pin to user password");
+				goto out_error;
+			}
+		}
 	}
 
 	return TRUE;
@@ -370,6 +426,7 @@ static BOOL client_cli_authenticate_raw(freerdp* instance, rdp_auth_reason reaso
 {
 	static const size_t password_size = 512;
 	const char* auth[] = { "Username: ", "Domain:   ", "Password: " };
+	const char* authPin[] = { "Username: ", "Domain:   ", "Pin:      " };
 	const char* gw[] = { "GatewayUsername: ", "GatewayDomain:   ", "GatewayPassword: " };
 	const char** prompt;
 
@@ -379,6 +436,9 @@ static BOOL client_cli_authenticate_raw(freerdp* instance, rdp_auth_reason reaso
 		case AUTH_TLS:
 		case AUTH_RDP:
 			prompt = auth;
+			break;
+		case AUTH_SMARTCARD_PIN:
+			prompt = authPin;
 			break;
 		case GW_AUTH_HTTP:
 		case GW_AUTH_RDG:
@@ -459,21 +519,14 @@ BOOL client_cli_authenticate_ex(freerdp* instance, char** username, char** passw
 	WINPR_ASSERT(password);
 	WINPR_ASSERT(domain);
 
-	if (instance->settings->SmartcardLogon)
-	{
-		WLog_INFO(TAG, "Authentication via smartcard");
-		return TRUE;
-	}
-
 	switch (reason)
 	{
 		case AUTH_NLA:
 			break;
+
 		case AUTH_TLS:
-			if ((*username) && (*password))
-				return TRUE;
-			break;
 		case AUTH_RDP:
+		case AUTH_SMARTCARD_PIN: /* in this case password is pin code */
 			if ((*username) && (*password))
 				return TRUE;
 			break;
@@ -892,4 +945,270 @@ BOOL client_auto_reconnect_ex(freerdp* instance, BOOL (*window_events)(freerdp* 
 
 	WLog_ERR(TAG, "Maximum reconnect retries exceeded");
 	return FALSE;
+}
+
+int freerdp_client_common_stop(rdpContext* context)
+{
+	rdpClientContext* cctx = (rdpClientContext*)context;
+	WINPR_ASSERT(cctx);
+
+	freerdp_abort_connect(cctx->context.instance);
+
+	if (cctx->thread)
+	{
+		WaitForSingleObject(cctx->thread, INFINITE);
+		CloseHandle(cctx->thread);
+		cctx->thread = NULL;
+	}
+
+	return 0;
+}
+
+void freerdp_client_OnChannelConnectedEventHandler(void* context,
+                                                   const ChannelConnectedEventArgs* e)
+{
+	rdpClientContext* cctx = (rdpClientContext*)context;
+
+	WINPR_ASSERT(cctx);
+	WINPR_ASSERT(e);
+
+	if (0)
+	{
+	}
+#if defined(CHANNEL_AINPUT_CLIENT)
+	else if (strcmp(e->name, AINPUT_DVC_CHANNEL_NAME) == 0)
+		cctx->ainput = (AInputClientContext*)e->pInterface;
+#endif
+#if defined(CHANNEL_RDPEI_CLIENT)
+	else if (strcmp(e->name, RDPEI_DVC_CHANNEL_NAME) == 0)
+	{
+		cctx->rdpei = (RdpeiClientContext*)e->pInterface;
+	}
+#endif
+#if defined(CHANNEL_RDPGFX_CLIENT)
+	else if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0)
+	{
+		gdi_graphics_pipeline_init(cctx->context.gdi, (RdpgfxClientContext*)e->pInterface);
+	}
+#endif
+#if defined(CHANNEL_GEOMETRY_CLIENT)
+	else if (strcmp(e->name, GEOMETRY_DVC_CHANNEL_NAME) == 0)
+	{
+		gdi_video_geometry_init(cctx->context.gdi, (GeometryClientContext*)e->pInterface);
+	}
+#endif
+#if defined(CHANNEL_VIDEO_CLIENT)
+	else if (strcmp(e->name, VIDEO_CONTROL_DVC_CHANNEL_NAME) == 0)
+	{
+		gdi_video_control_init(cctx->context.gdi, (VideoClientContext*)e->pInterface);
+	}
+	else if (strcmp(e->name, VIDEO_DATA_DVC_CHANNEL_NAME) == 0)
+	{
+		gdi_video_data_init(cctx->context.gdi, (VideoClientContext*)e->pInterface);
+	}
+#endif
+}
+
+void freerdp_client_OnChannelDisconnectedEventHandler(void* context,
+                                                      const ChannelDisconnectedEventArgs* e)
+{
+	rdpClientContext* cctx = (rdpClientContext*)context;
+
+	WINPR_ASSERT(cctx);
+	WINPR_ASSERT(e);
+
+	if (0)
+	{
+	}
+#if defined(CHANNEL_AINPUT_CLIENT)
+	else if (strcmp(e->name, AINPUT_DVC_CHANNEL_NAME) == 0)
+		cctx->ainput = NULL;
+#endif
+#if defined(CHANNEL_RDPEI_CLIENT)
+	else if (strcmp(e->name, RDPEI_DVC_CHANNEL_NAME) == 0)
+	{
+		cctx->rdpei = NULL;
+	}
+#endif
+#if defined(CHANNEL_RDPGFX_CLIENT)
+	else if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0)
+	{
+		gdi_graphics_pipeline_uninit(cctx->context.gdi, (RdpgfxClientContext*)e->pInterface);
+	}
+#endif
+#if defined(CHANNEL_GEOMETRY_CLIENT)
+	else if (strcmp(e->name, GEOMETRY_DVC_CHANNEL_NAME) == 0)
+	{
+		gdi_video_geometry_uninit(cctx->context.gdi, (GeometryClientContext*)e->pInterface);
+	}
+#endif
+#if defined(CHANNEL_VIDEO_CLIENT)
+	else if (strcmp(e->name, VIDEO_CONTROL_DVC_CHANNEL_NAME) == 0)
+	{
+		gdi_video_control_uninit(cctx->context.gdi, (VideoClientContext*)e->pInterface);
+	}
+	else if (strcmp(e->name, VIDEO_DATA_DVC_CHANNEL_NAME) == 0)
+	{
+		gdi_video_data_uninit(cctx->context.gdi, (VideoClientContext*)e->pInterface);
+	}
+#endif
+}
+
+BOOL freerdp_client_send_wheel_event(rdpClientContext* cctx, UINT16 mflags)
+{
+	BOOL handled = FALSE;
+
+	WINPR_ASSERT(cctx);
+
+#if defined(CHANNEL_AINPUT_CLIENT)
+	if (cctx->ainput)
+	{
+		UINT rc;
+		UINT64 flags = 0;
+		INT32 x = 0, y = 0;
+		INT32 value = mflags & 0xFF;
+
+		if (mflags & PTR_FLAGS_WHEEL_NEGATIVE)
+			value = -1 * (0x100 - value);
+
+		/* We have discrete steps, scale this so we can also support high
+		 * resolution wheels. */
+		value *= 0x10000;
+
+		if (mflags & PTR_FLAGS_WHEEL)
+		{
+			flags |= AINPUT_FLAGS_WHEEL;
+			y = value;
+		}
+
+		if (mflags & PTR_FLAGS_HWHEEL)
+		{
+			flags |= AINPUT_FLAGS_WHEEL;
+			x = value;
+		}
+
+		WINPR_ASSERT(cctx->ainput->AInputSendInputEvent);
+		rc = cctx->ainput->AInputSendInputEvent(cctx->ainput, flags, x, y);
+		if (rc == CHANNEL_RC_OK)
+			handled = TRUE;
+	}
+#endif
+	if (!handled)
+		freerdp_input_send_mouse_event(cctx->context.input, mflags, 0, 0);
+
+	return TRUE;
+}
+
+#if defined(CHANNEL_AINPUT_CLIENT)
+static INLINE BOOL ainput_send_diff_event(rdpClientContext* cctx, UINT64 flags, INT32 x, INT32 y)
+{
+	UINT rc;
+
+	WINPR_ASSERT(cctx);
+	WINPR_ASSERT(cctx->ainput);
+	WINPR_ASSERT(cctx->ainput->AInputSendInputEvent);
+
+	rc = cctx->ainput->AInputSendInputEvent(cctx->ainput, flags, x, y);
+
+	return rc == CHANNEL_RC_OK;
+}
+#endif
+
+BOOL freerdp_client_send_button_event(rdpClientContext* cctx, BOOL relative, UINT16 mflags, INT32 x,
+                                      INT32 y)
+{
+	BOOL handled = FALSE;
+
+	WINPR_ASSERT(cctx);
+
+#if defined(CHANNEL_AINPUT_CLIENT)
+	if (cctx->ainput)
+	{
+		UINT64 flags = 0;
+		BOOL relativeInput =
+		    freerdp_settings_get_bool(cctx->context.settings, FreeRDP_MouseUseRelativeMove);
+
+		if (cctx->mouse_grabbed && relativeInput)
+			flags |= AINPUT_FLAGS_HAVE_REL;
+
+		if (relative)
+			flags |= AINPUT_FLAGS_REL;
+
+		if (mflags & PTR_FLAGS_DOWN)
+			flags |= AINPUT_FLAGS_DOWN;
+		if (mflags & PTR_FLAGS_BUTTON1)
+			flags |= AINPUT_FLAGS_BUTTON1;
+		if (mflags & PTR_FLAGS_BUTTON2)
+			flags |= AINPUT_FLAGS_BUTTON2;
+		if (mflags & PTR_FLAGS_BUTTON3)
+			flags |= AINPUT_FLAGS_BUTTON3;
+		if (mflags & PTR_FLAGS_MOVE)
+			flags |= AINPUT_FLAGS_MOVE;
+		handled = ainput_send_diff_event(cctx, flags, x, y);
+	}
+#endif
+
+	if (!handled)
+	{
+		if (relative)
+		{
+			cctx->lastX += x;
+			cctx->lastY += y;
+			WLog_WARN(TAG, "Relative mouse input but channel %s not available, sending absolute!",
+			          AINPUT_DVC_CHANNEL_NAME);
+		}
+		else
+		{
+			cctx->lastX = x;
+			cctx->lastY = y;
+		}
+		freerdp_input_send_mouse_event(cctx->context.input, mflags, (UINT16)cctx->lastX,
+		                               (UINT16)cctx->lastY);
+	}
+	return TRUE;
+}
+
+BOOL freerdp_client_send_extended_button_event(rdpClientContext* cctx, BOOL relative, UINT16 mflags,
+                                               INT32 x, INT32 y)
+{
+	BOOL handled = FALSE;
+	WINPR_ASSERT(cctx);
+
+#if defined(CHANNEL_AINPUT_CLIENT)
+	if (cctx->ainput)
+	{
+		UINT64 flags = 0;
+
+		if (relative)
+			flags |= AINPUT_FLAGS_REL;
+		if (mflags & PTR_XFLAGS_DOWN)
+			flags |= AINPUT_FLAGS_DOWN;
+		if (mflags & PTR_XFLAGS_BUTTON1)
+			flags |= AINPUT_XFLAGS_BUTTON1;
+		if (mflags & PTR_XFLAGS_BUTTON2)
+			flags |= AINPUT_XFLAGS_BUTTON2;
+
+		handled = ainput_send_diff_event(cctx, flags, x, y);
+	}
+#endif
+
+	if (!handled)
+	{
+		if (relative)
+		{
+			cctx->lastX += x;
+			cctx->lastY += y;
+			WLog_WARN(TAG, "Relative mouse input but channel %s not available, sending absolute!",
+			          AINPUT_DVC_CHANNEL_NAME);
+		}
+		else
+		{
+			cctx->lastX = x;
+			cctx->lastY = y;
+		}
+		freerdp_input_send_extended_mouse_event(cctx->context.input, mflags, (UINT16)cctx->lastX,
+		                                        (UINT16)cctx->lastY);
+	}
+
+	return TRUE;
 }

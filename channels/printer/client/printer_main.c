@@ -48,8 +48,7 @@
 
 #define TAG CHANNELS_TAG("printer.client")
 
-typedef struct _PRINTER_DEVICE PRINTER_DEVICE;
-struct _PRINTER_DEVICE
+typedef struct
 {
 	DEVICE device;
 
@@ -63,7 +62,7 @@ struct _PRINTER_DEVICE
 	HANDLE thread;
 	rdpContext* rdpcontext;
 	char port[64];
-};
+} PRINTER_DEVICE;
 
 typedef enum
 {
@@ -962,12 +961,7 @@ static rdpPrinterDriver* printer_load_backend(const char* backend)
  * @return 0 on success, otherwise a Win32 error code
  */
 UINT
-#ifdef BUILTIN_CHANNELS
 printer_DeviceServiceEntry
-#else
-    FREERDP_API
-    DeviceServiceEntry
-#endif
     (PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
 {
 	int i;

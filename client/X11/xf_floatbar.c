@@ -21,6 +21,8 @@
 #include <X11/extensions/shape.h>
 #include <X11/cursorfont.h>
 
+#include <winpr/assert.h>
+
 #include "xf_floatbar.h"
 #include "resource/close.xbm"
 #include "resource/lock.xbm"
@@ -60,7 +62,16 @@
 
 typedef BOOL (*OnClick)(xfFloatbar*);
 
-typedef struct xf_floatbar_button xfFloatbarButton;
+typedef struct
+{
+	int x;
+	int y;
+	int type;
+	bool focus;
+	bool clicked;
+	OnClick onclick;
+	Window handle;
+} xfFloatbarButton;
 
 struct xf_floatbar
 {
@@ -82,17 +93,6 @@ struct xf_floatbar
 	char* title;
 };
 
-struct xf_floatbar_button
-{
-	int x;
-	int y;
-	int type;
-	bool focus;
-	bool clicked;
-	OnClick onclick;
-	Window handle;
-};
-
 static xfFloatbarButton* xf_floatbar_new_button(xfFloatbar* floatbar, int type);
 
 static BOOL xf_floatbar_button_onclick_close(xfFloatbar* floatbar)
@@ -100,7 +100,7 @@ static BOOL xf_floatbar_button_onclick_close(xfFloatbar* floatbar)
 	if (!floatbar)
 		return FALSE;
 
-	return freerdp_abort_connect(floatbar->xfc->context.instance);
+	return freerdp_abort_connect(floatbar->xfc->common.context.instance);
 }
 
 static BOOL xf_floatbar_button_onclick_minimize(xfFloatbar* floatbar)

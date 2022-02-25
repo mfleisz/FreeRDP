@@ -23,6 +23,7 @@
 #include "config.h"
 #endif
 
+#include <winpr/assert.h>
 #include <winpr/crt.h>
 #include <winpr/print.h>
 #include <winpr/bitstream.h>
@@ -42,7 +43,7 @@
 
 #define TAG FREERDP_TAG("codec.progressive")
 
-struct _RFX_PROGRESSIVE_UPGRADE_STATE
+typedef struct
 {
 	BOOL nonLL;
 	wBitStream* srl;
@@ -53,8 +54,7 @@ struct _RFX_PROGRESSIVE_UPGRADE_STATE
 	UINT32 kp;
 	int nz;
 	BOOL mode;
-};
-typedef struct _RFX_PROGRESSIVE_UPGRADE_STATE RFX_PROGRESSIVE_UPGRADE_STATE;
+} RFX_PROGRESSIVE_UPGRADE_STATE;
 
 static const char* progressive_get_block_type_string(UINT16 blockType)
 {
@@ -436,6 +436,36 @@ static INLINE BOOL progressive_tile_allocate(RFX_PROGRESSIVE_TILE* tile)
 	return rc;
 }
 
+static BOOL progressive_allocate_tile_cache(PROGRESSIVE_SURFACE_CONTEXT* surface)
+{
+	size_t oldIndex;
+
+	WINPR_ASSERT(surface);
+	WINPR_ASSERT(surface->gridSize > 0);
+
+	oldIndex = surface->gridSize;
+	if (surface->tiles)
+		surface->gridSize *= 2;
+
+	{
+		void* tmp = realloc(surface->tiles, surface->gridSize * sizeof(RFX_PROGRESSIVE_TILE));
+		if (!tmp)
+			return FALSE;
+		surface->tiles = tmp;
+		memset(&surface->tiles[oldIndex], 0,
+		       (surface->gridSize - oldIndex) * sizeof(RFX_PROGRESSIVE_TILE));
+	}
+	{
+		void* tmp = realloc(surface->updatedTileIndices, surface->gridSize * sizeof(UINT32));
+		if (!tmp)
+			return FALSE;
+		surface->updatedTileIndices = tmp;
+		memset(&surface->updatedTileIndices[oldIndex], 0,
+		       (surface->gridSize - oldIndex) * sizeof(UINT32));
+	}
+	return TRUE;
+}
+
 static PROGRESSIVE_SURFACE_CONTEXT* progressive_surface_context_new(UINT16 surfaceId, UINT32 width,
                                                                     UINT32 height)
 {
@@ -452,14 +482,10 @@ static PROGRESSIVE_SURFACE_CONTEXT* progressive_surface_context_new(UINT16 surfa
 	surface->gridWidth = (width + (64 - width % 64)) / 64;
 	surface->gridHeight = (height + (64 - height % 64)) / 64;
 	surface->gridSize = surface->gridWidth * surface->gridHeight;
-	surface->tiles = (RFX_PROGRESSIVE_TILE*)calloc(surface->gridSize, sizeof(RFX_PROGRESSIVE_TILE));
-	surface->updatedTileIndices = (UINT32*)calloc(surface->gridSize, sizeof(UINT32));
 
-	if (!surface->tiles || !surface->updatedTileIndices)
+	if (!progressive_allocate_tile_cache(surface))
 	{
-		free(surface->updatedTileIndices);
-		free(surface->tiles);
-		free(surface);
+		progressive_surface_context_free(surface);
 		return NULL;
 	}
 	for (x = 0; x < surface->gridSize; x++)
@@ -551,8 +577,8 @@ static BOOL progressive_surface_tile_replace(PROGRESSIVE_SURFACE_CONTEXT* surfac
 	}
 	if (surface->numUpdatedTiles >= surface->gridSize)
 	{
-		WLog_ERR(TAG, "Invalid total tile count, maximum %" PRIu32, surface->gridSize);
-		return FALSE;
+		if (!progressive_allocate_tile_cache(surface))
+			return FALSE;
 	}
 
 	region->tiles[region->usedTiles++] = t;
@@ -1624,14 +1650,13 @@ static INLINE BOOL progressive_tile_read(PROGRESSIVE_CONTEXT* progressive, BOOL 
 	return progressive_surface_tile_replace(surface, region, &tile, FALSE);
 }
 
-struct _PROGRESSIVE_TILE_PROCESS_WORK_PARAM
+typedef struct
 {
 	PROGRESSIVE_CONTEXT* progressive;
 	PROGRESSIVE_BLOCK_REGION* region;
 	const PROGRESSIVE_BLOCK_CONTEXT* context;
 	RFX_PROGRESSIVE_TILE* tile;
-};
-typedef struct _PROGRESSIVE_TILE_PROCESS_WORK_PARAM PROGRESSIVE_TILE_PROCESS_WORK_PARAM;
+} PROGRESSIVE_TILE_PROCESS_WORK_PARAM;
 
 static void CALLBACK progressive_process_tiles_tile_work_callback(PTP_CALLBACK_INSTANCE instance,
                                                                   void* context, PTP_WORK work)

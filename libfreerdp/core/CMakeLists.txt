@@ -63,6 +63,9 @@ set(${MODULE_PREFIX}_SRCS
 	mcs.h
 	nla.c
 	nla.h
+	smartcardlogon.c
+	tscredentials.c
+	tscredentials.h
 	nego.c
 	nego.h
 	info.c
@@ -146,10 +149,6 @@ if(WIN32)
 endif()
 
 freerdp_library_add(${OPENSSL_LIBRARIES})
-
-if(WITH_GSSAPI)
-	freerdp_library_add(${GSS_LIBRARIES})
-endif()
 
 if(BUILD_TESTING)
 	add_subdirectory(test)

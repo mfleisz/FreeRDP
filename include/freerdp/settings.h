@@ -257,12 +257,11 @@ typedef enum
 #define KEYBOARD_HOOK_REMOTE 1
 #define KEYBOARD_HOOK_FULLSCREEN_ONLY 2
 
-struct _TARGET_NET_ADDRESS
+typedef struct
 {
 	UINT32 Length;
 	LPWSTR Address;
-};
-typedef struct _TARGET_NET_ADDRESS TARGET_NET_ADDRESS;
+} TARGET_NET_ADDRESS;
 
 /* Logon Error Info */
 #define LOGON_MSG_DISCONNECT_REFUSED 0xFFFFFFF9
@@ -348,24 +347,22 @@ struct rdp_certificate
 };
 typedef struct rdp_certificate rdpCertificate;
 
-struct rdp_rsa_key
+typedef struct
 {
 	BYTE* Modulus;
 	DWORD ModulusLength;
 	BYTE* PrivateExponent;
 	DWORD PrivateExponentLength;
 	BYTE exponent[4];
-};
-typedef struct rdp_rsa_key rdpRsaKey;
+} rdpRsaKey;
 
 /* Channels */
 
-struct _ADDIN_ARGV
+typedef struct
 {
 	int argc;
 	char** argv;
-};
-typedef struct _ADDIN_ARGV ADDIN_ARGV;
+} ADDIN_ARGV;
 
 /* Extensions */
 
@@ -377,52 +374,47 @@ struct rdp_ext_set
 
 /* Bitmap Cache */
 
-struct _BITMAP_CACHE_CELL_INFO
+typedef struct
 {
 	UINT16 numEntries;
 	UINT16 maxSize;
-};
-typedef struct _BITMAP_CACHE_CELL_INFO BITMAP_CACHE_CELL_INFO;
+} BITMAP_CACHE_CELL_INFO;
 
-struct _BITMAP_CACHE_V2_CELL_INFO
+typedef struct
 {
 	UINT32 numEntries;
 	BOOL persistent;
-};
-typedef struct _BITMAP_CACHE_V2_CELL_INFO BITMAP_CACHE_V2_CELL_INFO;
+} BITMAP_CACHE_V2_CELL_INFO;
 
 /* Glyph Cache */
 
-struct _GLYPH_CACHE_DEFINITION
+typedef struct
 {
 	UINT16 cacheEntries;
 	UINT16 cacheMaximumCellSize;
-};
-typedef struct _GLYPH_CACHE_DEFINITION GLYPH_CACHE_DEFINITION;
+} GLYPH_CACHE_DEFINITION;
 
 /* Monitors */
 
-struct _MONITOR_DEF
+typedef struct
 {
 	INT32 left;
 	INT32 top;
 	INT32 right;
 	INT32 bottom;
 	UINT32 flags;
-};
-typedef struct _MONITOR_DEF MONITOR_DEF;
+} MONITOR_DEF;
 
-struct _MONITOR_ATTRIBUTES
+typedef struct
 {
 	UINT32 physicalWidth;
 	UINT32 physicalHeight;
 	UINT32 orientation;
 	UINT32 desktopScaleFactor;
 	UINT32 deviceScaleFactor;
-};
-typedef struct _MONITOR_ATTRIBUTES MONITOR_ATTRIBUTES;
+} MONITOR_ATTRIBUTES;
 
-struct rdp_monitor
+typedef struct
 {
 	INT32 x;
 	INT32 y;
@@ -431,8 +423,7 @@ struct rdp_monitor
 	UINT32 is_primary;
 	UINT32 orig_screen;
 	MONITOR_ATTRIBUTES attributes;
-};
-typedef struct rdp_monitor rdpMonitor;
+} rdpMonitor;
 
 /* Device Redirection */
 
@@ -442,50 +433,44 @@ typedef struct rdp_monitor rdpMonitor;
 #define RDPDR_DTYP_FILESYSTEM 0x00000008
 #define RDPDR_DTYP_SMARTCARD 0x00000020
 
-struct _RDPDR_DEVICE
+typedef struct
 {
 	UINT32 Id;
 	UINT32 Type;
 	char* Name;
-};
-typedef struct _RDPDR_DEVICE RDPDR_DEVICE;
+} RDPDR_DEVICE;
 
-struct _RDPDR_DRIVE
+typedef struct
 {
 	RDPDR_DEVICE device;
 	char* Path;
 	BOOL automount;
-};
-typedef struct _RDPDR_DRIVE RDPDR_DRIVE;
+} RDPDR_DRIVE;
 
-struct _RDPDR_PRINTER
+typedef struct
 {
 	RDPDR_DEVICE device;
 	char* DriverName;
-};
-typedef struct _RDPDR_PRINTER RDPDR_PRINTER;
+} RDPDR_PRINTER;
 
-struct _RDPDR_SMARTCARD
+typedef struct
 {
 	RDPDR_DEVICE device;
-};
-typedef struct _RDPDR_SMARTCARD RDPDR_SMARTCARD;
+} RDPDR_SMARTCARD;
 
-struct _RDPDR_SERIAL
+typedef struct
 {
 	RDPDR_DEVICE device;
 	char* Path;
 	char* Driver;
 	char* Permissive;
-};
-typedef struct _RDPDR_SERIAL RDPDR_SERIAL;
+} RDPDR_SERIAL;
 
-struct _RDPDR_PARALLEL
+typedef struct
 {
 	RDPDR_DEVICE device;
 	char* Path;
-};
-typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
+} RDPDR_PARALLEL;
 
 #define PROXY_TYPE_NONE 0
 #define PROXY_TYPE_HTTP 1
@@ -676,8 +661,22 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_PromptForCredentials (1283)
 #define FreeRDP_SmartcardCertificate (1285)
 #define FreeRDP_SmartcardPrivateKey (1286)
+#define FreeRDP_SmartcardPin (1287)
+#define FreeRDP_SmartcardEmulation (1288)
+#define FreeRDP_Pkcs11Module (1289)
+#define FreeRDP_PkinitAnchors (1290)
+#define FreeRDP_KeySpec (1291)
+#define FreeRDP_CardName (1292)
+#define FreeRDP_ReaderName (1293)
+#define FreeRDP_ContainerName (1294)
+#define FreeRDP_CspName (1295)
 #define FreeRDP_KerberosKdc (1344)
 #define FreeRDP_KerberosRealm (1345)
+#define FreeRDP_KerberosStartTime (1346)
+#define FreeRDP_KerberosLifeTime (1347)
+#define FreeRDP_KerberosRenewableLifeTime (1348)
+#define FreeRDP_KerberosCache (1349)
+#define FreeRDP_KerberosArmor (1350)
 #define FreeRDP_IgnoreCertificate (1408)
 #define FreeRDP_CertificateName (1409)
 #define FreeRDP_CertificateFile (1410)
@@ -723,6 +722,7 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_CredentialsFromStdin (1604)
 #define FreeRDP_UnmapButtons (1605)
 #define FreeRDP_OldLicenseBehaviour (1606)
+#define FreeRDP_MouseUseRelativeMove (1607)
 #define FreeRDP_ComputerName (1664)
 #define FreeRDP_ConnectionFile (1728)
 #define FreeRDP_AssistanceFile (1729)
@@ -1157,17 +1157,31 @@ struct rdp_settings
 	ALIGN64 UINT32 Password51Length;   /* 1281 */
 	ALIGN64 BOOL SmartcardLogon;       /* 1282 */
 	ALIGN64 BOOL PromptForCredentials; /* 1283 */
+	UINT64 padding1284[1285 - 1284];   /* 1284 */
 
 	/* Settings used for smartcard emulation */
-	UINT64 padding1284[1285 - 1284];     /* 1284 */
-	ALIGN64 char* SmartcardCertificate;  /* 1285 */
-	ALIGN64 char* SmartcardPrivateKey;   /* 1286 */
-	UINT64 padding1344[1344 - 1287];     /* 1287 */
+	ALIGN64 char* SmartcardCertificate; /* 1285 */
+	ALIGN64 char* SmartcardPrivateKey;  /* 1286 */
+	ALIGN64 char* SmartcardPin;         /* 1287 */
+	ALIGN64 BOOL SmartcardEmulation;    /* 1288 */
+	ALIGN64 char* Pkcs11Module;         /* 1289 */
+	ALIGN64 char* PkinitAnchors;        /* 1290 */
+	ALIGN64 UINT32 KeySpec;             /* 1291 */
+	ALIGN64 char* CardName;             /* 1292 */
+	ALIGN64 char* ReaderName;           /* 1293 */
+	ALIGN64 char* ContainerName;        /* 1294 */
+	ALIGN64 char* CspName;              /* 1295 */
+	UINT64 padding1344[1344 - 1296];    /* 1296 */
 
 	/* Kerberos Authentication */
-	ALIGN64 char* KerberosKdc;       /* 1344 */
-	ALIGN64 char* KerberosRealm;     /* 1345 */
-	UINT64 padding1408[1408 - 1346]; /* 1346 */
+	ALIGN64 char* KerberosKdc;               /* 1344 */
+	ALIGN64 char* KerberosRealm;             /* 1345 */
+	ALIGN64 char* KerberosStartTime;         /* 1346 */
+	ALIGN64 char* KerberosLifeTime;          /* 1347 */
+	ALIGN64 char* KerberosRenewableLifeTime; /* 1348 */
+	ALIGN64 char* KerberosCache;             /* 1349 */
+	ALIGN64 char* KerberosArmor;             /* 1350 */
+	UINT64 padding1408[1408 - 1351];         /* 1351 */
 
 	/* Server Certificate */
 	ALIGN64 BOOL IgnoreCertificate;                /* 1408 */
@@ -1227,7 +1241,8 @@ struct rdp_settings
 	ALIGN64 BOOL CredentialsFromStdin; /* 1604 */
 	ALIGN64 BOOL UnmapButtons;         /* 1605 */
 	ALIGN64 BOOL OldLicenseBehaviour;  /* 1606 */
-	UINT64 padding1664[1664 - 1607];   /* 1607 */
+	ALIGN64 BOOL MouseUseRelativeMove; /* 1607 */
+	UINT64 padding1664[1664 - 1608];   /* 1608 */
 
 	/* Names */
 	ALIGN64 char* ComputerName;      /* 1664 */

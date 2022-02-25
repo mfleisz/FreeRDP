@@ -58,8 +58,7 @@
 
 #define TAG CHANNELS_TAG("sshagent.client")
 
-typedef struct _SSHAGENT_LISTENER_CALLBACK SSHAGENT_LISTENER_CALLBACK;
-struct _SSHAGENT_LISTENER_CALLBACK
+typedef struct
 {
 	IWTSListenerCallback iface;
 
@@ -68,10 +67,9 @@ struct _SSHAGENT_LISTENER_CALLBACK
 
 	rdpContext* rdpcontext;
 	const char* agent_uds_path;
-};
+} SSHAGENT_LISTENER_CALLBACK;
 
-typedef struct _SSHAGENT_CHANNEL_CALLBACK SSHAGENT_CHANNEL_CALLBACK;
-struct _SSHAGENT_CHANNEL_CALLBACK
+typedef struct
 {
 	IWTSVirtualChannelCallback iface;
 
@@ -83,17 +81,16 @@ struct _SSHAGENT_CHANNEL_CALLBACK
 	int agent_fd;
 	HANDLE thread;
 	CRITICAL_SECTION lock;
-};
+} SSHAGENT_CHANNEL_CALLBACK;
 
-typedef struct _SSHAGENT_PLUGIN SSHAGENT_PLUGIN;
-struct _SSHAGENT_PLUGIN
+typedef struct
 {
 	IWTSPlugin iface;
 
 	SSHAGENT_LISTENER_CALLBACK* listener_callback;
 
 	rdpContext* rdpcontext;
-};
+} SSHAGENT_PLUGIN;
 
 /**
  * Function to open the connection to the sshagent
@@ -345,18 +342,12 @@ static UINT sshagent_plugin_terminated(IWTSPlugin* pPlugin)
 	return CHANNEL_RC_OK;
 }
 
-#ifdef BUILTIN_CHANNELS
-#define DVCPluginEntry sshagent_DVCPluginEntry
-#else
-#define DVCPluginEntry FREERDP_API DVCPluginEntry
-#endif
-
 /**
  * Main entry point for sshagent DVC plugin
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-UINT DVCPluginEntry(IDRDYNVC_ENTRY_POINTS* pEntryPoints)
+UINT sshagent_DVCPluginEntry(IDRDYNVC_ENTRY_POINTS* pEntryPoints)
 {
 	UINT status = CHANNEL_RC_OK;
 	SSHAGENT_PLUGIN* sshagent;

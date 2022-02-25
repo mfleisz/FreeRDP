@@ -48,26 +48,15 @@
 	} while (0)
 #endif
 
-typedef struct rdp_win_printer_driver rdpWinPrinterDriver;
-typedef struct rdp_win_printer rdpWinPrinter;
-typedef struct rdp_win_print_job rdpWinPrintJob;
-
-struct rdp_win_printer_driver
+typedef struct
 {
 	rdpPrinterDriver driver;
 
 	size_t id_sequence;
 	size_t references;
-};
+} rdpWinPrinterDriver;
 
-struct rdp_win_printer
-{
-	rdpPrinter printer;
-	HANDLE hPrinter;
-	rdpWinPrintJob* printjob;
-};
-
-struct rdp_win_print_job
+typedef struct
 {
 	rdpPrintJob printjob;
 	DOC_INFO_1 di;
@@ -75,7 +64,14 @@ struct rdp_win_print_job
 
 	void* printjob_object;
 	int printjob_id;
-};
+} rdpWinPrintJob;
+
+typedef struct
+{
+	rdpPrinter printer;
+	HANDLE hPrinter;
+	rdpWinPrintJob* printjob;
+} rdpWinPrinter;
 
 static WCHAR* printer_win_get_printjob_name(size_t id)
 {
@@ -420,11 +416,7 @@ static void printer_win_release_ref_driver(rdpPrinterDriver* driver)
 		win->references--;
 }
 
-#ifdef BUILTIN_CHANNELS
 rdpPrinterDriver* win_freerdp_printer_client_subsystem_entry(void)
-#else
-FREERDP_API rdpPrinterDriver* freerdp_printer_client_subsystem_entry(void)
-#endif
 {
 	if (!win_driver)
 	{

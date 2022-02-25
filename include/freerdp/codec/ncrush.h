@@ -27,7 +27,7 @@
 
 #include <winpr/bitstream.h>
 
-typedef struct _NCRUSH_CONTEXT NCRUSH_CONTEXT;
+typedef struct s_NCRUSH_CONTEXT NCRUSH_CONTEXT;
 
 #ifdef __cplusplus
 extern "C"
@@ -37,7 +37,7 @@ extern "C"
 	FREERDP_API int ncrush_compress(NCRUSH_CONTEXT* ncrush, const BYTE* pSrcData, UINT32 SrcSize,
 	                                BYTE** ppDstData, UINT32* pDstSize, UINT32* pFlags);
 	FREERDP_API int ncrush_decompress(NCRUSH_CONTEXT* ncrush, const BYTE* pSrcData, UINT32 SrcSize,
-	                                  BYTE** ppDstData, UINT32* pDstSize, UINT32 flags);
+	                                  const BYTE** ppDstData, UINT32* pDstSize, UINT32 flags);
 
 	FREERDP_API void ncrush_context_reset(NCRUSH_CONTEXT* ncrush, BOOL flush);
 

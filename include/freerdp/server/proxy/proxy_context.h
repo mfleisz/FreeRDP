@@ -36,16 +36,36 @@ extern "C"
 
 	typedef struct proxy_data proxyData;
 	typedef struct proxy_module proxyModule;
-	typedef struct channel_data_event_info proxyChannelDataEventInfo;
 
-	typedef struct _InterceptContextMapEntry
+	typedef struct s_InterceptContextMapEntry
 	{
-		void (*free)(struct _InterceptContextMapEntry*);
+		void (*free)(struct s_InterceptContextMapEntry*);
 	} InterceptContextMapEntry;
 
 	/* All proxy interception channels derive from this base struct
 	 * and set their cleanup function accordingly. */
 	FREERDP_API void intercept_context_entry_free(void* obj);
+
+	/** @brief how is handled a channel */
+	typedef enum
+	{
+		PF_UTILS_CHANNEL_NOT_HANDLED,
+		PF_UTILS_CHANNEL_BLOCK,
+		PF_UTILS_CHANNEL_PASSTHROUGH,
+		PF_UTILS_CHANNEL_INTERCEPT,
+	} pf_utils_channel_mode;
+
+	/** @brief per channel configuration */
+	struct p_server_channel_context
+	{
+		char* channel_name;
+		UINT32 channel_id;
+		BOOL isDynamic;
+		pf_utils_channel_mode channelMode;
+	};
+	typedef struct p_server_channel_context pServerChannelContext;
+
+	void ChannelContext_free(pServerChannelContext* ctx);
 
 	/**
 	 * Wraps rdpContext and holds the state for the proxy's server.
@@ -60,8 +80,11 @@ extern "C"
 		HANDLE dynvcReady;
 
 		wHashTable* interceptContextMap;
+		wHashTable* channelsById;
 	};
 	typedef struct p_server_context pServerContext;
+
+	pServerChannelContext* ChannelContext_new(pServerContext* ps, const char* name, UINT32 id);
 
 	/**
 	 * Wraps rdpContext and holds the state for the proxy's client.

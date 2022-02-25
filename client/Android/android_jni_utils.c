@@ -81,7 +81,7 @@ char* get_string_from_string_builder(JNIEnv* env, jobject strBuilder)
 	jclass cls;
 	jmethodID methodId;
 	jstring strObj;
-	const jbyte* native_str;
+	const char* native_str;
 	char* result;
 
 	// get class
@@ -101,7 +101,7 @@ char* get_string_from_string_builder(JNIEnv* env, jobject strBuilder)
 	native_str = (*env)->GetStringUTFChars(env, strObj, NULL);
 	if (!native_str)
 		return NULL;
-	result = strdup(native_str);
+	result = _strdup(native_str);
 	(*env)->ReleaseStringUTFChars(env, strObj, native_str);
 
 	return result;

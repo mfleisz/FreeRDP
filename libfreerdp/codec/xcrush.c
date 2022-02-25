@@ -34,49 +34,44 @@
 
 #pragma pack(push, 1)
 
-struct _XCRUSH_MATCH_INFO
+typedef struct
 {
 	UINT32 MatchOffset;
 	UINT32 ChunkOffset;
 	UINT32 MatchLength;
-};
-typedef struct _XCRUSH_MATCH_INFO XCRUSH_MATCH_INFO;
+} XCRUSH_MATCH_INFO;
 
-struct _XCRUSH_CHUNK
+typedef struct
 {
 	UINT32 offset;
 	UINT32 next;
-};
-typedef struct _XCRUSH_CHUNK XCRUSH_CHUNK;
+} XCRUSH_CHUNK;
 
-struct _XCRUSH_SIGNATURE
+typedef struct
 {
 	UINT16 seed;
 	UINT16 size;
-};
-typedef struct _XCRUSH_SIGNATURE XCRUSH_SIGNATURE;
+} XCRUSH_SIGNATURE;
 
-struct _RDP61_MATCH_DETAILS
+typedef struct
 {
 	UINT16 MatchLength;
 	UINT16 MatchOutputOffset;
 	UINT32 MatchHistoryOffset;
-};
-typedef struct _RDP61_MATCH_DETAILS RDP61_MATCH_DETAILS;
+} RDP61_MATCH_DETAILS;
 
-struct _RDP61_COMPRESSED_DATA
+typedef struct
 {
 	BYTE Level1ComprFlags;
 	BYTE Level2ComprFlags;
 	UINT16 MatchCount;
 	RDP61_MATCH_DETAILS* MatchDetails;
 	BYTE* Literals;
-};
-typedef struct _RDP61_COMPRESSED_DATA RDP61_COMPRESSED_DATA;
+} RDP61_COMPRESSED_DATA;
 
 #pragma pack(pop)
 
-struct _XCRUSH_CONTEXT
+struct s_XCRUSH_CONTEXT
 {
 	BOOL Compressor;
 	MPPC_CONTEXT* mppc;
@@ -759,7 +754,7 @@ static INLINE size_t xcrush_copy_bytes(BYTE* dst, const BYTE* src, size_t num)
 }
 
 static int xcrush_decompress_l1(XCRUSH_CONTEXT* xcrush, const BYTE* pSrcData, UINT32 SrcSize,
-                                BYTE** ppDstData, UINT32* pDstSize, UINT32 flags)
+                                const BYTE** ppDstData, UINT32* pDstSize, UINT32 flags)
 {
 	const BYTE* pSrcEnd = NULL;
 	const BYTE* Literals = NULL;
@@ -874,11 +869,11 @@ static int xcrush_decompress_l1(XCRUSH_CONTEXT* xcrush, const BYTE* pSrcData, UI
 }
 
 int xcrush_decompress(XCRUSH_CONTEXT* xcrush, const BYTE* pSrcData, UINT32 SrcSize,
-                      BYTE** ppDstData, UINT32* pDstSize, UINT32 flags)
+                      const BYTE** ppDstData, UINT32* pDstSize, UINT32 flags)
 {
 	int status = 0;
 	UINT32 DstSize = 0;
-	BYTE* pDstData = NULL;
+	const BYTE* pDstData = NULL;
 	BYTE Level1ComprFlags;
 	BYTE Level2ComprFlags;
 
@@ -1066,7 +1061,7 @@ int xcrush_compress(XCRUSH_CONTEXT* xcrush, const BYTE* pSrcData, UINT32 SrcSize
 	Level1ComprFlags |= L1_INNER_COMPRESSION;
 	OriginalData[0] = (BYTE)Level1ComprFlags;
 	OriginalData[1] = (BYTE)Level2ComprFlags;
-#if DEBUG_XCRUSH
+#if defined(DEBUG_XCRUSH)
 	WLog_DBG(TAG, "XCrushCompress: Level1ComprFlags: %s Level2ComprFlags: %s",
 	         xcrush_get_level_1_compression_flags_string(Level1ComprFlags),
 	         xcrush_get_level_2_compression_flags_string(Level2ComprFlags));

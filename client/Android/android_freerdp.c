@@ -71,24 +71,14 @@ static void android_OnChannelConnectedEventHandler(void* context,
 	}
 
 	afc = (androidContext*)context;
-	settings = afc->rdpCtx.settings;
+	settings = afc->common.context.settings;
 
-	if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0)
-	{
-		if (settings->SoftwareGdi)
-		{
-			gdi_graphics_pipeline_init(afc->rdpCtx.gdi, (RdpgfxClientContext*)e->pInterface);
-		}
-		else
-		{
-			WLog_WARN(TAG, "GFX without software GDI requested. "
-			               " This is not supported, add /gdi:sw");
-		}
-	}
-	else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
+	if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
 	{
 		android_cliprdr_init(afc, (CliprdrClientContext*)e->pInterface);
 	}
+	else
+		freerdp_client_OnChannelConnectedEventHandler(context, e);
 }
 
 static void android_OnChannelDisconnectedEventHandler(void* context,
@@ -104,24 +94,14 @@ static void android_OnChannelDisconnectedEventHandler(void* context,
 	}
 
 	afc = (androidContext*)context;
-	settings = afc->rdpCtx.settings;
+	settings = afc->common.context.settings;
 
-	if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0)
-	{
-		if (settings->SoftwareGdi)
-		{
-			gdi_graphics_pipeline_uninit(afc->rdpCtx.gdi, (RdpgfxClientContext*)e->pInterface);
-		}
-		else
-		{
-			WLog_WARN(TAG, "GFX without software GDI requested. "
-			               " This is not supported, add /gdi:sw");
-		}
-	}
-	else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
+	if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
 	{
 		android_cliprdr_uninit(afc, (CliprdrClientContext*)e->pInterface);
 	}
+	else
+		freerdp_client_OnChannelDisconnectedEventHandler(context, e);
 }
 
 static BOOL android_begin_paint(rdpContext* context)
@@ -153,7 +133,7 @@ static BOOL android_end_paint(rdpContext* context)
 	if (!gdi || !gdi->primary || !gdi->primary->hdc)
 		return FALSE;
 
-	hwnd = ctx->rdpCtx.gdi->primary->hdc->hwnd;
+	hwnd = ctx->common.context.gdi->primary->hdc->hwnd;
 
 	if (!hwnd)
 		return FALSE;
@@ -528,7 +508,7 @@ static int android_freerdp_run(freerdp* instance)
 		count += tmp;
 		status = WaitForMultipleObjects(count, handles, FALSE, INFINITE);
 
-		if ((status == WAIT_FAILED))
+		if (status == WAIT_FAILED)
 		{
 			WLog_ERR(TAG, "WaitForMultipleObjects failed with %" PRIu32 " [%08lX]", status,
 			         GetLastError());
@@ -1001,8 +981,8 @@ static jboolean JNICALL jni_freerdp_send_clipboard_data(JNIEnv* env, jclass cls,
 {
 	ANDROID_EVENT* event;
 	freerdp* inst = (freerdp*)instance;
-	const jbyte* data = jdata != NULL ? (*env)->GetStringUTFChars(env, jdata, NULL) : NULL;
-	const size_t data_length = data ? (*env)->GetStringUTFLength(env, data) : 0;
+	const char* data = jdata != NULL ? (*env)->GetStringUTFChars(env, jdata, NULL) : NULL;
+	const size_t data_length = data ? (*env)->GetStringUTFLength(env, jdata) : 0;
 	jboolean ret = JNI_FALSE;
 	event = (ANDROID_EVENT*)android_event_clipboard_new((void*)data, data_length);
 

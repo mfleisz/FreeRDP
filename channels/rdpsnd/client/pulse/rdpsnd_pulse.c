@@ -38,9 +38,7 @@
 
 #include "rdpsnd_main.h"
 
-typedef struct rdpsnd_pulse_plugin rdpsndPulsePlugin;
-
-struct rdpsnd_pulse_plugin
+typedef struct
 {
 	rdpsndDevicePlugin device;
 
@@ -51,7 +49,7 @@ struct rdpsnd_pulse_plugin
 	pa_stream* stream;
 	UINT32 latency;
 	UINT32 volume;
-};
+} rdpsndPulsePlugin;
 
 static BOOL rdpsnd_pulse_format_supported(rdpsndDevicePlugin* device, const AUDIO_FORMAT* format);
 
@@ -570,18 +568,12 @@ static UINT rdpsnd_pulse_parse_addin_args(rdpsndDevicePlugin* device, const ADDI
 	return CHANNEL_RC_OK;
 }
 
-#ifdef BUILTIN_CHANNELS
-#define freerdp_rdpsnd_client_subsystem_entry pulse_freerdp_rdpsnd_client_subsystem_entry
-#else
-#define freerdp_rdpsnd_client_subsystem_entry FREERDP_API freerdp_rdpsnd_client_subsystem_entry
-#endif
-
 /**
  * Function description
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-UINT freerdp_rdpsnd_client_subsystem_entry(PFREERDP_RDPSND_DEVICE_ENTRY_POINTS pEntryPoints)
+UINT pulse_freerdp_rdpsnd_client_subsystem_entry(PFREERDP_RDPSND_DEVICE_ENTRY_POINTS pEntryPoints)
 {
 	const ADDIN_ARGV* args;
 	rdpsndPulsePlugin* pulse;

@@ -51,17 +51,15 @@
 #define MSG_SNDIN_DATA 0x06
 #define MSG_SNDIN_FORMATCHANGE 0x07
 
-typedef struct _AUDIN_LISTENER_CALLBACK AUDIN_LISTENER_CALLBACK;
-struct _AUDIN_LISTENER_CALLBACK
+typedef struct
 {
 	IWTSListenerCallback iface;
 
 	IWTSPlugin* plugin;
 	IWTSVirtualChannelManager* channel_mgr;
-};
+} AUDIN_LISTENER_CALLBACK;
 
-typedef struct _AUDIN_CHANNEL_CALLBACK AUDIN_CHANNEL_CALLBACK;
-struct _AUDIN_CHANNEL_CALLBACK
+typedef struct
 {
 	IWTSVirtualChannelCallback iface;
 
@@ -76,10 +74,9 @@ struct _AUDIN_CHANNEL_CALLBACK
 	 */
 	AUDIO_FORMAT* formats;
 	UINT32 formats_count;
-};
+} AUDIN_CHANNEL_CALLBACK;
 
-typedef struct _AUDIN_PLUGIN AUDIN_PLUGIN;
-struct _AUDIN_PLUGIN
+typedef struct
 {
 	IWTSPlugin iface;
 
@@ -105,7 +102,7 @@ struct _AUDIN_PLUGIN
 	IWTSListener* listener;
 
 	BOOL initialized;
-};
+} AUDIN_PLUGIN;
 
 static BOOL audin_process_addin_args(AUDIN_PLUGIN* audin, const ADDIN_ARGV* args);
 
@@ -956,18 +953,12 @@ BOOL audin_process_addin_args(AUDIN_PLUGIN* audin, const ADDIN_ARGV* args)
 	return TRUE;
 }
 
-#ifdef BUILTIN_CHANNELS
-#define DVCPluginEntry audin_DVCPluginEntry
-#else
-#define DVCPluginEntry FREERDP_API DVCPluginEntry
-#endif
-
 /**
  * Function description
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-UINT DVCPluginEntry(IDRDYNVC_ENTRY_POINTS* pEntryPoints)
+UINT audin_DVCPluginEntry(IDRDYNVC_ENTRY_POINTS* pEntryPoints)
 {
 	struct SubsystemEntry
 	{

@@ -27,8 +27,13 @@ if (NOT FREERDP_UNIFIED_BUILD)
 	cmake_minimum_required(VERSION 3.4)
 	project(RdTk VERSION ${RDTK_VERSION} LANGUAGES C)
 
+	set(CMAKE_C_STANDARD 99)
+	set(CMAKE_C_STANDARD_REQUIRED ON)
+	set(CMAKE_C_EXTENSIONS ON)
+
 	set(CMAKE_COLOR_MAKEFILE ON)
 
+	set(WINPR_VERSION_MAJOR 3)
 	option(BUILD_SHARED_LIBS "Build shared libraries" ON)
     option(EXPORT_ALL_SYMBOLS "Export all symbols form library" OFF)
 	option(BUILD_TESTING "Build library unit tests" ON)
@@ -45,6 +50,8 @@ if (NOT FREERDP_UNIFIED_BUILD)
             set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fvisibility=hidden")
         endif()
     endif()
+else()
+	set(WINPR_VERSION_MAJOR ${FREERDP_VERSION_MAJOR})
 endif()
 
 # Include our extra modules
