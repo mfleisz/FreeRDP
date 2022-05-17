@@ -18,10 +18,8 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
-
+#include <winpr/config.h>
+#include <winpr/assert.h>
 #include <winpr/windows.h>
 
 #include <winpr/crt.h>
@@ -320,8 +318,58 @@ void sspi_SecureHandleFree(SecHandle* handle)
 	free(handle);
 }
 
-int sspi_SetAuthIdentity(SEC_WINNT_AUTH_IDENTITY* identity, const char* user, const char* domain,
-                         const char* password)
+int sspi_SetAuthIdentityW(SEC_WINNT_AUTH_IDENTITY* identity, const WCHAR* user, const WCHAR* domain,
+                          const WCHAR* password)
+{
+	return sspi_SetAuthIdentityWithLengthW(identity, user, user ? _wcslen(user) : 0, domain,
+	                                       domain ? _wcslen(domain) : 0, password,
+	                                       password ? _wcslen(password) : 0);
+}
+
+static BOOL copy(WCHAR** dst, UINT32* dstLen, const WCHAR* what, size_t len)
+{
+	WINPR_ASSERT(dst);
+	WINPR_ASSERT(dstLen);
+	WINPR_ASSERT(what);
+	WINPR_ASSERT(len > 0);
+	WINPR_ASSERT(_wcsnlen(what, len) == len);
+
+	*dst = calloc(sizeof(WCHAR), len + 1);
+	if (!*dst)
+		return FALSE;
+	memcpy(*dst, what, len * sizeof(WCHAR));
+	*dstLen = len;
+	return TRUE;
+}
+
+int sspi_SetAuthIdentityWithLengthW(SEC_WINNT_AUTH_IDENTITY* identity, const WCHAR* user,
+                                    size_t userLen, const WCHAR* domain, size_t domainLen,
+                                    const WCHAR* password, size_t passwordLen)
+{
+	WINPR_ASSERT(identity);
+	sspi_FreeAuthIdentity(identity);
+	identity->Flags = SEC_WINNT_AUTH_IDENTITY_UNICODE;
+	if (user)
+	{
+		if (!copy(&identity->User, &identity->UserLength, user, userLen))
+			return -1;
+	}
+	if (domain)
+	{
+		if (!copy(&identity->Domain, &identity->DomainLength, domain, domainLen))
+			return -1;
+	}
+	if (password)
+	{
+		if (!copy(&identity->Password, &identity->PasswordLength, password, passwordLen))
+			return -1;
+	}
+
+	return 1;
+}
+
+int sspi_SetAuthIdentityA(SEC_WINNT_AUTH_IDENTITY* identity, const char* user, const char* domain,
+                          const char* password)
 {
 	int rc;
 	int unicodePasswordLenW;
@@ -342,10 +390,9 @@ int sspi_SetAuthIdentityWithUnicodePassword(SEC_WINNT_AUTH_IDENTITY* identity, c
                                             ULONG passwordLength)
 {
 	int status;
+
+	sspi_FreeAuthIdentity(identity);
 	identity->Flags = SEC_WINNT_AUTH_IDENTITY_UNICODE;
-	free(identity->User);
-	identity->User = (UINT16*)NULL;
-	identity->UserLength = 0;
 
 	if (user)
 	{
@@ -357,10 +404,6 @@ int sspi_SetAuthIdentityWithUnicodePassword(SEC_WINNT_AUTH_IDENTITY* identity, c
 		identity->UserLength = (ULONG)(status - 1);
 	}
 
-	free(identity->Domain);
-	identity->Domain = (UINT16*)NULL;
-	identity->DomainLength = 0;
-
 	if (domain)
 	{
 		status = ConvertToUnicode(CP_UTF8, 0, domain, -1, (LPWSTR*)&(identity->Domain), 0);
@@ -371,7 +414,6 @@ int sspi_SetAuthIdentityWithUnicodePassword(SEC_WINNT_AUTH_IDENTITY* identity, c
 		identity->DomainLength = (ULONG)(status - 1);
 	}
 
-	free(identity->Password);
 	identity->Password = (UINT16*)calloc(1, (passwordLength + 1) * sizeof(WCHAR));
 
 	if (!identity->Password)
@@ -387,6 +429,9 @@ int sspi_CopyAuthIdentity(SEC_WINNT_AUTH_IDENTITY* identity,
 {
 	int status;
 
+	sspi_FreeAuthIdentity(identity);
+
+	identity->Flags = srcIdentity->Flags;
 	if (srcIdentity->Flags & SEC_WINNT_AUTH_IDENTITY_ANSI)
 	{
 		status = sspi_SetAuthIdentity(identity, (char*)srcIdentity->User,
@@ -401,8 +446,8 @@ int sspi_CopyAuthIdentity(SEC_WINNT_AUTH_IDENTITY* identity,
 	}
 
 	identity->Flags |= SEC_WINNT_AUTH_IDENTITY_UNICODE;
+
 	/* login/password authentication */
-	identity->User = identity->Domain = identity->Password = NULL;
 	identity->UserLength = srcIdentity->UserLength;
 
 	if (identity->UserLength > 0)

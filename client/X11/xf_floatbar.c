@@ -30,6 +30,7 @@
 #include "resource/minimize.xbm"
 #include "resource/restore.xbm"
 
+#include <freerdp/log.h>
 #define TAG CLIENT_TAG("x11")
 
 #define FLOATBAR_HEIGHT 26
@@ -100,7 +101,7 @@ static BOOL xf_floatbar_button_onclick_close(xfFloatbar* floatbar)
 	if (!floatbar)
 		return FALSE;
 
-	return freerdp_abort_connect(floatbar->xfc->common.context.instance);
+	return freerdp_abort_connect_context(&floatbar->xfc->common.context);
 }
 
 static BOOL xf_floatbar_button_onclick_minimize(xfFloatbar* floatbar)

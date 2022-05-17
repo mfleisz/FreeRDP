@@ -17,9 +17,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <winpr/config.h>
 
 #include <winpr/collections.h>
 #include <winpr/assert.h>
@@ -187,7 +185,15 @@ static wLinkedListNode* LinkedList_Create(wLinkedList* list, const void* value)
 	if (list->object.fnObjectNew)
 		node->value = list->object.fnObjectNew(value);
 	else
-		node->value = (void*)value;
+	{
+		union
+		{
+			const void* cpv;
+			void* pv;
+		} cnv;
+		cnv.cpv = value;
+		node->value = cnv.pv;
+	}
 
 	if (list->object.fnObjectInit)
 		list->object.fnObjectInit(node);

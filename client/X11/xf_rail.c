@@ -17,9 +17,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -34,6 +32,7 @@
 #include "xf_window.h"
 #include "xf_rail.h"
 
+#include <freerdp/log.h>
 #define TAG CLIENT_TAG("x11")
 
 static const char* error_code_names[] = { "RAIL_EXEC_S_OK",
@@ -139,10 +138,10 @@ void xf_rail_adjust_position(xfContext* xfc, xfAppWindow* appWindow)
 		 * Calculate new size/position for the rail window(new values for
 		 * windowOffsetX/windowOffsetY/windowWidth/windowHeight) on the server
 		 */
-		windowMove.left = appWindow->x;
-		windowMove.top = appWindow->y;
-		windowMove.right = windowMove.left + appWindow->width;
-		windowMove.bottom = windowMove.top + appWindow->height;
+		windowMove.left = appWindow->x - appWindow->resizeMarginLeft;
+		windowMove.top = appWindow->y - appWindow->resizeMarginTop;
+		windowMove.right = appWindow->x + appWindow->width + appWindow->resizeMarginRight;
+		windowMove.bottom = appWindow->y + appWindow->height + appWindow->resizeMarginBottom;
 		xfc->rail->ClientWindowMove(xfc->rail, &windowMove);
 	}
 }
@@ -172,12 +171,12 @@ void xf_rail_end_local_move(xfContext* xfc, xfAppWindow* appWindow)
 	 * windowOffsetX/windowOffsetY/windowWidth/windowHeight) on the server
 	 *
 	 */
-	windowMove.left = appWindow->x;
-	windowMove.top = appWindow->y;
+	windowMove.left = appWindow->x - appWindow->resizeMarginLeft;
+	windowMove.top = appWindow->y - appWindow->resizeMarginTop;
 	windowMove.right =
-	    windowMove.left +
-	    appWindow->width; /* In the update to RDP the position is one past the window */
-	windowMove.bottom = windowMove.top + appWindow->height;
+	    appWindow->x +
+	    appWindow->width + appWindow->resizeMarginRight; /* In the update to RDP the position is one past the window */
+	windowMove.bottom = appWindow->y + appWindow->height + appWindow->resizeMarginBottom;
 	xfc->rail->ClientWindowMove(xfc->rail, &windowMove);
 	/*
 	 * Simulate button up at new position to end the local move (per RDP spec)
@@ -352,6 +351,18 @@ static BOOL xf_rail_window_common(rdpContext* context, const WINDOW_ORDER_INFO* 
 	{
 		appWindow->windowWidth = windowState->windowWidth;
 		appWindow->windowHeight = windowState->windowHeight;
+	}
+	
+	if (fieldFlags & WINDOW_ORDER_FIELD_RESIZE_MARGIN_X)
+	{
+		appWindow->resizeMarginLeft = windowState->resizeMarginLeft;
+		appWindow->resizeMarginRight = windowState->resizeMarginRight;
+	}
+	
+	if (fieldFlags & WINDOW_ORDER_FIELD_RESIZE_MARGIN_Y)
+	{
+		appWindow->resizeMarginTop = windowState->resizeMarginTop;
+		appWindow->resizeMarginBottom = windowState->resizeMarginBottom;
 	}
 
 	if (fieldFlags & WINDOW_ORDER_FIELD_OWNER)
@@ -636,7 +647,7 @@ static BOOL convert_rail_icon(const ICON_INFO* iconInfo, xfRailIcon* railIcon)
 
 	for (i = 2; i < nelements; i++)
 	{
-		pixels[i] = ReadColor(nextPixel, PIXEL_FORMAT_BGRA32);
+		pixels[i] = FreeRDPReadColor(nextPixel, PIXEL_FORMAT_BGRA32);
 		nextPixel += 4;
 	}
 
@@ -813,7 +824,7 @@ static UINT xf_rail_server_execute_result(RailClientContext* context,
 	{
 		WLog_ERR(TAG, "RAIL exec error: execResult=%s NtError=0x%X\n",
 		         error_code_names[execResult->execResult], execResult->rawResult);
-		freerdp_abort_connect(xfc->common.context.instance);
+		freerdp_abort_connect_context(&xfc->common.context);
 	}
 	else
 	{

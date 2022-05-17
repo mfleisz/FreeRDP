@@ -19,9 +19,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include <ctype.h>
 #include <errno.h>
@@ -45,6 +43,7 @@
 #include <freerdp/crypto/crypto.h>
 #include <freerdp/locale/keyboard.h>
 #include <freerdp/utils/passphrase.h>
+#include <freerdp/utils/proxy_utils.h>
 #include <freerdp/channels/urbdrc.h>
 #include <freerdp/channels/rdpdr.h>
 
@@ -181,7 +180,7 @@ static BOOL freerdp_client_add_drive(rdpSettings* settings, const char* path, co
 	}
 	free(dname);
 	if (!device)
-		return FALSE;
+		goto fail;
 
 	if (!path)
 		goto fail;
@@ -742,6 +741,103 @@ fail:
 	return FALSE;
 }
 
+static BOOL read_pem_file(rdpSettings* settings, size_t id, const char* file)
+{
+	INT64 s;
+	int rs;
+	size_t fr;
+	char* ptr;
+	BOOL rc = FALSE;
+	FILE* fp = winpr_fopen(file, "r");
+	if (!fp)
+		return FALSE;
+	rs = _fseeki64(fp, 0, SEEK_END);
+	if (rs < 0)
+		goto fail;
+	s = _ftelli64(fp);
+	if (s < 0)
+		goto fail;
+	rs = _fseeki64(fp, 0, SEEK_SET);
+	if (rs < 0)
+		goto fail;
+
+	if (!freerdp_settings_set_string_len(settings, id, NULL, s + 1ull))
+		goto fail;
+
+	ptr = freerdp_settings_get_string_writable(settings, id);
+	fr = fread(ptr, (size_t)s, 1, fp);
+	if (fr != 1)
+		goto fail;
+	rc = TRUE;
+fail:
+	fclose(fp);
+	return rc;
+}
+
+
+/** @brief suboption type */
+typedef enum
+{
+	CMDLINE_SUBOPTION_STRING,
+	CMDLINE_SUBOPTION_FILE,
+} CmdLineSubOptionType;
+
+typedef BOOL (*CmdLineSubOptionCb)(const char* value, rdpSettings* settings);
+typedef struct
+{
+	const char* optname;
+	size_t id;
+	CmdLineSubOptionType opttype;
+	CmdLineSubOptionCb cb;
+} CmdLineSubOptions;
+
+static BOOL parseSubOptions(rdpSettings* settings, const CmdLineSubOptions* opts, size_t count,
+                            const char* arg)
+{
+	BOOL found = FALSE;
+	size_t xx;
+
+	for (xx = 0; xx < count; xx++)
+	{
+		const CmdLineSubOptions* opt = &opts[xx];
+		size_t optlen = strlen(opt->optname);
+
+		if (strncmp(opt->optname, arg, optlen) == 0)
+		{
+			const char* val = &arg[optlen];
+			BOOL status;
+
+			switch (opt->opttype)
+			{
+				case CMDLINE_SUBOPTION_STRING:
+					status = freerdp_settings_set_string(settings, opt->id, val);
+					break;
+				case CMDLINE_SUBOPTION_FILE:
+					status = read_pem_file(settings, opt->id, val);
+					break;
+				default:
+					WLog_ERR(TAG, "invalid subOption type");
+					return FALSE;
+			}
+
+			if (!status)
+				return FALSE;
+
+			if (opt->cb && !opt->cb(val, settings))
+				return FALSE;
+
+			found = TRUE;
+			break;
+		}
+	}
+
+	if (!found)
+		WLog_ERR(TAG, "option %s not handled", arg);
+
+	return found;
+}
+
+
 static int freerdp_client_command_line_post_filter(void* context, COMMAND_LINE_ARGUMENT_A* arg)
 {
 	rdpSettings* settings = (rdpSettings*)context;
@@ -765,6 +861,43 @@ static int freerdp_client_command_line_post_filter(void* context, COMMAND_LINE_A
 
 		free(ptr.p);
 	}
+	CommandLineSwitchCase(arg, "kerberos")
+	{
+		size_t count;
+		union
+		{
+			char** p;
+			const char** pc;
+		} ptr;
+
+		ptr.p = CommandLineParseCommaSeparatedValuesEx("kerberos", arg->Value, &count);
+		if (ptr.pc)
+		{
+			size_t x;
+			const CmdLineSubOptions opts[] = {
+				{ "start-time:", FreeRDP_KerberosStartTime, CMDLINE_SUBOPTION_STRING, NULL },
+				{ "lifetime:", FreeRDP_KerberosLifeTime, CMDLINE_SUBOPTION_STRING, NULL },
+				{ "renewable-lifetime:", FreeRDP_KerberosRenewableLifeTime,
+				  CMDLINE_SUBOPTION_STRING, NULL },
+				{ "cache:", FreeRDP_KerberosCache, CMDLINE_SUBOPTION_STRING, NULL },
+				{ "armor:", FreeRDP_KerberosArmor, CMDLINE_SUBOPTION_STRING, NULL },
+				{ "pkinit-anchors:", FreeRDP_PkinitAnchors, CMDLINE_SUBOPTION_STRING, NULL },
+				{ "pkcs11-module:", FreeRDP_Pkcs11Module, CMDLINE_SUBOPTION_STRING, NULL }
+			};
+
+			for (x = 1; x < count; x++)
+			{
+				const char* cur = ptr.pc[x];
+				if (!parseSubOptions(settings, opts, ARRAYSIZE(opts), cur))
+				{
+					free(ptr.p);
+					return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
+				}
+			}
+		}
+		free(ptr.p);
+	}
+
 	CommandLineSwitchCase(arg, "vc")
 	{
 		size_t count;
@@ -890,10 +1023,6 @@ static int freerdp_client_command_line_post_filter(void* context, COMMAND_LINE_A
 			    (TRANSPORT_TYPE_UDP_FECR | TRANSPORT_TYPE_UDP_FECL | TRANSPORT_TYPE_UDP_PREFERRED);
 		else
 			settings->MultitransportFlags = 0;
-	}
-	CommandLineSwitchCase(arg, "password-is-pin")
-	{
-		settings->PasswordIsSmartcardPin = enable;
 	}
 	CommandLineSwitchEnd(arg)
 
@@ -1412,9 +1541,10 @@ static BOOL ends_with(const char* str, const char* ext)
 
 /**
  * parses a string value with the format <v1>x<v2>
- * @param input: input string
- * @param v1: pointer to output v1
- * @param v2: pointer to output v2
+ *
+ * @param input input string
+ * @param v1 pointer to output v1
+ * @param v2 pointer to output v2
  * @return if the parsing was successful
  */
 static BOOL parseSizeValue(const char* input, unsigned long* v1, unsigned long* v2)
@@ -1473,99 +1603,9 @@ static BOOL prepare_default_settings(rdpSettings* settings, COMMAND_LINE_ARGUMEN
 	return freerdp_set_connection_type(settings, CONNECTION_TYPE_AUTODETECT);
 }
 
-static BOOL read_pem_file(rdpSettings* settings, size_t id, const char* file)
-{
-	INT64 s;
-	int rs;
-	size_t fr;
-	char* ptr;
-	BOOL rc = FALSE;
-	FILE* fp = winpr_fopen(file, "r");
-	if (!fp)
-		return FALSE;
-	rs = _fseeki64(fp, 0, SEEK_END);
-	if (rs < 0)
-		goto fail;
-	s = _ftelli64(fp);
-	if (s < 0)
-		goto fail;
-	rs = _fseeki64(fp, 0, SEEK_SET);
-	if (rs < 0)
-		goto fail;
 
-	if (!freerdp_settings_set_string_len(settings, id, NULL, s + 1ull))
-		goto fail;
 
-	ptr = freerdp_settings_get_string_writable(settings, id);
-	fr = fread(ptr, (size_t)s, 1, fp);
-	if (fr != 1)
-		goto fail;
-	rc = TRUE;
-fail:
-	fclose(fp);
-	return rc;
-}
 
-typedef enum
-{
-	CMDLINE_SUBOPTION_STRING,
-	CMDLINE_SUBOPTION_FILE,
-} CmdLineSubOptionType;
-
-typedef BOOL (*CmdLineSubOptionCb)(const char* value, rdpSettings* settings);
-typedef struct
-{
-	const char* optname;
-	size_t id;
-	CmdLineSubOptionType opttype;
-	CmdLineSubOptionCb cb;
-} CmdLineSubOptions;
-
-static BOOL parseSubOptions(rdpSettings* settings, const CmdLineSubOptions* opts, size_t count,
-                            const char* arg)
-{
-	BOOL found = FALSE;
-	size_t xx;
-
-	for (xx = 0; xx < count; xx++)
-	{
-		const CmdLineSubOptions* opt = &opts[xx];
-		size_t optlen = strlen(opt->optname);
-
-		if (strncmp(opt->optname, arg, optlen) == 0)
-		{
-			const char* val = &arg[optlen];
-			BOOL status;
-
-			switch (opt->opttype)
-			{
-				case CMDLINE_SUBOPTION_STRING:
-					status = freerdp_settings_set_string(settings, opt->id, val);
-					break;
-				case CMDLINE_SUBOPTION_FILE:
-					status = read_pem_file(settings, opt->id, val);
-					break;
-				default:
-					WLog_ERR(TAG, "invalid subOption type");
-					return FALSE;
-			}
-
-			if (!status)
-				return FALSE;
-
-			if (opt->cb && !opt->cb(val, settings))
-				return FALSE;
-
-			found = TRUE;
-			break;
-		}
-	}
-
-	if (!found)
-		WLog_ERR(TAG, "option %s not handled", arg);
-
-	return found;
-}
 
 static BOOL setSmartcardEmulation(const char* value, rdpSettings* settings)
 {
@@ -2117,8 +2157,6 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		}
 		CommandLineSwitchCase(arg, "g")
 		{
-			free(settings->GatewayHostname);
-
 			if (arg->Flags & COMMAND_LINE_VALUE_PRESENT)
 			{
 				char* p;
@@ -2137,11 +2175,9 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 					s = (size_t)(p - arg->Value);
 					settings->GatewayPort = (UINT32)val;
 
-					if (!(settings->GatewayHostname = (char*)calloc(s + 1UL, sizeof(char))))
+					if (!freerdp_settings_set_string_len(settings, FreeRDP_GatewayHostname,
+					                                     arg->Value, s))
 						return COMMAND_LINE_ERROR_MEMORY;
-
-					strncpy(settings->GatewayHostname, arg->Value, s);
-					settings->GatewayHostname[s] = '\0';
 				}
 				else
 				{
@@ -2168,105 +2204,13 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 
 			if (arg->Flags & COMMAND_LINE_VALUE_PRESENT)
 			{
-				char* p;
-				char* atPtr;
 				const char* cur = arg->Value;
 
 				if (!cur)
 					return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 				/* value is [scheme://][user:password@]hostname:port */
-				p = strstr(cur, "://");
-
-				if (p)
-				{
-					*p = '\0';
-
-					if (_stricmp("no_proxy", cur) == 0)
-					{
-						if (!freerdp_settings_set_uint32(settings, FreeRDP_ProxyType,
-						                                 PROXY_TYPE_IGNORE))
-							return COMMAND_LINE_ERROR_MEMORY;
-					}
-					if (_stricmp("http", cur) == 0)
-					{
-						if (!freerdp_settings_set_uint32(settings, FreeRDP_ProxyType,
-						                                 PROXY_TYPE_HTTP))
-							return COMMAND_LINE_ERROR_MEMORY;
-					}
-					else if (_stricmp("socks5", cur) == 0)
-					{
-						if (!freerdp_settings_set_uint32(settings, FreeRDP_ProxyType,
-						                                 PROXY_TYPE_SOCKS))
-							return COMMAND_LINE_ERROR_MEMORY;
-					}
-					else
-					{
-						WLog_ERR(TAG, "Only HTTP and SOCKS5 proxies supported by now");
-						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-					}
-
-					cur = p + 3;
-				}
-
-				/* cur is now [user:password@]hostname:port */
-				atPtr = strrchr(cur, '@');
-
-				if (atPtr)
-				{
-					/* got a login / password,
-					 *               atPtr
-					 *               v
-					 * [user:password@]hostname:port
-					 *      ^
-					 *      colonPtr
-					 */
-					char* colonPtr = strchr(cur, ':');
-
-					if (!colonPtr || (colonPtr > atPtr))
-					{
-						WLog_ERR(
-						    TAG,
-						    "invalid syntax for proxy, expected syntax is user:password@host:port");
-						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-					}
-
-					*colonPtr = '\0';
-					if (!freerdp_settings_set_string(settings, FreeRDP_ProxyUsername, cur))
-					{
-						WLog_ERR(TAG, "unable to allocate proxy username");
-						return COMMAND_LINE_ERROR_MEMORY;
-					}
-
-					*atPtr = '\0';
-
-					if (!freerdp_settings_set_string(settings, FreeRDP_ProxyPassword, colonPtr + 1))
-					{
-						WLog_ERR(TAG, "unable to allocate proxy password");
-						return COMMAND_LINE_ERROR_MEMORY;
-					}
-
-					cur = atPtr + 1;
-				}
-
-				p = strchr(cur, ':');
-
-				if (p)
-				{
-					LONGLONG val;
-
-					if (!value_to_int(&p[1], &val, 0, UINT16_MAX))
-						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-
-					if (!freerdp_settings_set_uint16(settings, FreeRDP_ProxyPort, (UINT16)val))
-						return FALSE;
-					*p = '\0';
-				}
-
-				p = strchr(cur, '/');
-				if (p)
-					*p = '\0';
-				if (!freerdp_settings_set_string(settings, FreeRDP_ProxyHostname, cur))
-					return FALSE;
+				if (!proxy_parse_uri(settings, cur))
+					return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 			}
 			else
 			{
@@ -2297,10 +2241,16 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		}
 		CommandLineSwitchCase(arg, "gt")
 		{
+			if ((arg->Flags & COMMAND_LINE_VALUE_PRESENT) == 0)
+				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
+
+			WINPR_ASSERT(arg->Value);
 			if (_stricmp(arg->Value, "rpc") == 0)
 			{
-				settings->GatewayRpcTransport = TRUE;
-				settings->GatewayHttpTransport = FALSE;
+				if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayRpcTransport, TRUE) ||
+				    !freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpTransport, FALSE) ||
+				    !freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpUseWebsockets, FALSE))
+					return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 			}
 			else
 			{
@@ -2309,21 +2259,24 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 				{
 					*c++ = '\0';
 					if (_stricmp(c, "no-websockets") != 0)
-					{
 						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-					}
-					freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpUseWebsockets, FALSE);
+
+					if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpUseWebsockets,
+					                               FALSE))
+						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 				}
 
 				if (_stricmp(arg->Value, "http") == 0)
 				{
-					settings->GatewayRpcTransport = FALSE;
-					settings->GatewayHttpTransport = TRUE;
+					if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayRpcTransport, FALSE) ||
+					    !freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpTransport, TRUE))
+						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 				}
 				else if (_stricmp(arg->Value, "auto") == 0)
 				{
-					settings->GatewayRpcTransport = TRUE;
-					settings->GatewayHttpTransport = TRUE;
+					if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayRpcTransport, TRUE) ||
+					    !freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpTransport, TRUE))
+						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 				}
 			}
 		}
@@ -2583,7 +2536,8 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 			ULONGLONG val;
 			if (!value_to_uint(arg->Value, &val, 1, 600000))
 				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-			settings->TcpAckTimeout = (UINT32)val;
+			if (!freerdp_settings_set_uint32(settings, FreeRDP_TcpAckTimeout, (UINT32)val))
+				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 		}
 		CommandLineSwitchCase(arg, "aero")
 		{
@@ -3032,7 +2986,7 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		CommandLineSwitchCase(arg, "floatbar")
 		{
 			/* Defaults are enabled, visible, sticky, fullscreen */
-			settings->Floatbar = 0x0017;
+			UINT32 Floatbar = 0x0017;
 
 			if (arg->Value)
 			{
@@ -3053,12 +3007,12 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 					if (_strnicmp(cur, "sticky:", 7) == 0)
 					{
 						const char* val = cur + 7;
-						settings->Floatbar &= ~0x02u;
+						Floatbar &= ~0x02u;
 
 						if (_strnicmp(val, "on", 3) == 0)
-							settings->Floatbar |= 0x02u;
+							Floatbar |= 0x02u;
 						else if (_strnicmp(val, "off", 4) == 0)
-							settings->Floatbar &= ~0x02u;
+							Floatbar &= ~0x02u;
 						else
 							return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 					}
@@ -3066,12 +3020,12 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 					else if (_strnicmp(cur, "default:", 8) == 0)
 					{
 						const char* val = cur + 8;
-						settings->Floatbar &= ~0x04u;
+						Floatbar &= ~0x04u;
 
 						if (_strnicmp(val, "visible", 8) == 0)
-							settings->Floatbar |= 0x04u;
+							Floatbar |= 0x04u;
 						else if (_strnicmp(val, "hidden", 7) == 0)
-							settings->Floatbar &= ~0x04u;
+							Floatbar &= ~0x04u;
 						else
 							return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 					}
@@ -3079,20 +3033,22 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 					else if (_strnicmp(cur, "show:", 5) == 0)
 					{
 						const char* val = cur + 5;
-						settings->Floatbar &= ~0x30u;
+						Floatbar &= ~0x30u;
 
 						if (_strnicmp(val, "always", 7) == 0)
-							settings->Floatbar |= 0x30u;
+							Floatbar |= 0x30u;
 						else if (_strnicmp(val, "fullscreen", 11) == 0)
-							settings->Floatbar |= 0x10u;
+							Floatbar |= 0x10u;
 						else if (_strnicmp(val, "window", 7) == 0)
-							settings->Floatbar |= 0x20u;
+							Floatbar |= 0x20u;
 						else
 							return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 					}
 					else
 						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 				} while (start);
+				if (!freerdp_settings_set_uint32(settings, FreeRDP_Floatbar, Floatbar))
+					return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 			}
 		}
 		CommandLineSwitchCase(arg, "mouse-motion")
@@ -3187,10 +3143,6 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 			if (!freerdp_settings_set_bool(settings, FreeRDP_RemoteAssistanceRequestControl,
 			                               enable))
 				return COMMAND_LINE_ERROR;
-		}
-		CommandLineSwitchCase(arg, "async-input")
-		{
-			settings->AsyncInput = enable;
 		}
 		CommandLineSwitchCase(arg, "async-update")
 		{
@@ -3332,42 +3284,6 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 					return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 			}
 		}
-		CommandLineSwitchCase(arg, "kerberos")
-		{
-			size_t count;
-			union
-			{
-				char** p;
-				const char** pc;
-			} ptr;
-
-			ptr.p = CommandLineParseCommaSeparatedValuesEx("kerberos", arg->Value, &count);
-			if (ptr.pc)
-			{
-				size_t x;
-				const CmdLineSubOptions opts[] = {
-					{ "start-time:", FreeRDP_KerberosStartTime, CMDLINE_SUBOPTION_STRING, NULL },
-					{ "lifetime:", FreeRDP_KerberosLifeTime, CMDLINE_SUBOPTION_STRING, NULL },
-					{ "renewable-lifetime:", FreeRDP_KerberosRenewableLifeTime,
-					  CMDLINE_SUBOPTION_STRING, NULL },
-					{ "cache:", FreeRDP_KerberosCache, CMDLINE_SUBOPTION_STRING, NULL },
-					{ "armor:", FreeRDP_KerberosArmor, CMDLINE_SUBOPTION_STRING, NULL },
-					{ "pkinit-anchors:", FreeRDP_PkinitAnchors, CMDLINE_SUBOPTION_STRING, NULL },
-					{ "pkcs11-module:", FreeRDP_Pkcs11Module, CMDLINE_SUBOPTION_STRING, NULL }
-				};
-
-				for (x = 1; x < count; x++)
-				{
-					const char* cur = ptr.pc[x];
-					if (!parseSubOptions(settings, opts, ARRAYSIZE(opts), cur))
-					{
-						free(ptr.p);
-						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-					}
-				}
-			}
-			free(ptr.p);
-		}
 		CommandLineSwitchCase(arg, "action-script")
 		{
 			if (!freerdp_settings_set_string(settings, FreeRDP_ActionScript, arg->Value))
@@ -3402,7 +3318,7 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 					  setSmartcardEmulation },
 					{ "key:", FreeRDP_SmartcardPrivateKey, CMDLINE_SUBOPTION_FILE,
 					  setSmartcardEmulation },
-					{ "pin:", FreeRDP_SmartcardPin, CMDLINE_SUBOPTION_STRING, NULL },
+					{ "pin:", FreeRDP_Password, CMDLINE_SUBOPTION_STRING, NULL },
 					{ "csp:", FreeRDP_CspName, CMDLINE_SUBOPTION_STRING, NULL },
 					{ "reader:", FreeRDP_ReaderName, CMDLINE_SUBOPTION_STRING, NULL },
 					{ "card:", FreeRDP_CardName, CMDLINE_SUBOPTION_STRING, NULL },
@@ -3612,7 +3528,8 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 	arg = CommandLineFindArgumentA(largs, "smartcard-logon");
 	if (arg->Flags & COMMAND_LINE_ARGUMENT_PRESENT)
 	{
-		FillMemory(arg->Value, strlen(arg->Value), '*');
+		if (arg->Flags & COMMAND_LINE_VALUE_PRESENT)
+			FillMemory(arg->Value, strlen(arg->Value), '*');
 	}
 
 	arg = CommandLineFindArgumentA(largs, "gp");
@@ -3639,7 +3556,7 @@ static BOOL freerdp_client_load_static_channel_addin(rdpChannels* channels, rdpS
 	{
 		if (freerdp_channels_client_load_ex(channels, settings, entryEx, data) == 0)
 		{
-			WLog_INFO(TAG, "loading channelEx %s", name);
+			WLog_DBG(TAG, "loading channelEx %s", name);
 			return TRUE;
 		}
 	}
@@ -3647,7 +3564,7 @@ static BOOL freerdp_client_load_static_channel_addin(rdpChannels* channels, rdpS
 	{
 		if (freerdp_channels_client_load(channels, settings, entry, data) == 0)
 		{
-			WLog_INFO(TAG, "loading channel %s", name);
+			WLog_DBG(TAG, "loading channel %s", name);
 			return TRUE;
 		}
 	}
@@ -3977,10 +3894,13 @@ BOOL freerdp_client_load_addins(rdpChannels* channels, rdpSettings* settings)
 			return FALSE;
 	}
 
-	if (settings->DynamicChannelCount)
-		settings->SupportDynamicChannels = TRUE;
+	if (freerdp_settings_get_uint32(settings, FreeRDP_DynamicChannelCount) > 0)
+	{
+		if (!freerdp_settings_set_bool(settings, FreeRDP_SupportDynamicChannels, TRUE))
+			return FALSE;
+	}
 
-	if (settings->SupportDynamicChannels)
+	if (freerdp_settings_get_bool(settings, FreeRDP_SupportDynamicChannels))
 	{
 		if (!freerdp_client_load_static_channel_addin(channels, settings, DRDYNVC_SVC_CHANNEL_NAME,
 		                                              settings))

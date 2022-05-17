@@ -18,9 +18,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <winpr/config.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -626,13 +624,22 @@ static SECURITY_STATUS SEC_ENTRY kerberos_InitializeSecurityContextA(
 	PSecBuffer output_buffer = NULL;
 	sspi_gss_buffer_desc input_tok = { 0 };
 	sspi_gss_buffer_desc output_tok = { 0 };
+#if defined(WITH_GSSAPI)
 	sspi_gss_OID actual_mech;
+#if defined(WITH_GSSAPI)
 	sspi_gss_OID desired_mech = SSPI_GSS_C_SPNEGO_KRB5;
+#endif
 	UINT32 actual_services;
+#endif
 
 	context = (KRB_CONTEXT*)sspi_SecureHandleGetLowerPointer(phContext);
 	if (!context)
 	{
+		union
+		{
+			const void* cpv;
+			void* pv;
+		} cnv;
 		context = kerberos_ContextNew();
 
 		if (!context)
@@ -648,10 +655,14 @@ static SECURITY_STATUS SEC_ENTRY kerberos_InitializeSecurityContextA(
 		}
 
 		sspi_SecureHandleSetLowerPointer(phNewContext, context);
-		sspi_SecureHandleSetUpperPointer(phNewContext, (void*)KRB_PACKAGE_NAME);
+
+		cnv.cpv = KRB_PACKAGE_NAME;
+		sspi_SecureHandleSetUpperPointer(phNewContext, cnv.pv);
 	}
+#if defined(WITH_GSSAPI)
 	else
 		credentials = context->credentials;
+#endif
 
 	if (pInput)
 	{

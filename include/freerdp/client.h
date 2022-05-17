@@ -20,9 +20,7 @@
 #ifndef FREERDP_CLIENT_H
 #define FREERDP_CLIENT_H
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 #include <freerdp/api.h>
 #include <freerdp/freerdp.h>
 #include <freerdp/event.h>
@@ -102,7 +100,7 @@ extern "C"
 
 	/* Common client functions */
 
-	FREERDP_API rdpContext* freerdp_client_context_new(RDP_CLIENT_ENTRY_POINTS* pEntryPoints);
+	FREERDP_API rdpContext* freerdp_client_context_new(const RDP_CLIENT_ENTRY_POINTS* pEntryPoints);
 	FREERDP_API void freerdp_client_context_free(rdpContext* context);
 
 	FREERDP_API int freerdp_client_start(rdpContext* context);

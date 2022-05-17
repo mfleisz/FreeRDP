@@ -17,9 +17,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,12 +66,14 @@ static BOOL xf_keyboard_action_script_init(xfContext* xfc)
 	char buffer[1024] = { 0 };
 	char command[1024] = { 0 };
 	const rdpSettings* settings;
+	const char* ActionScript;
 	WINPR_ASSERT(xfc);
 
 	settings = xfc->common.context.settings;
 	WINPR_ASSERT(settings);
 
-	xfc->actionScriptExists = winpr_PathFileExists(settings->ActionScript);
+	ActionScript = freerdp_settings_get_string(settings, FreeRDP_ActionScript);
+	xfc->actionScriptExists = winpr_PathFileExists(ActionScript);
 
 	if (!xfc->actionScriptExists)
 		return FALSE;
@@ -85,7 +85,7 @@ static BOOL xf_keyboard_action_script_init(xfContext* xfc)
 
 	obj = ArrayList_Object(xfc->keyCombinations);
 	obj->fnObjectFree = free;
-	sprintf_s(command, sizeof(command), "%s key", settings->ActionScript);
+	sprintf_s(command, sizeof(command), "%s key", ActionScript);
 	keyScript = popen(command, "r");
 
 	if (!keyScript)
@@ -248,11 +248,9 @@ void xf_keyboard_send_key(xfContext* xfc, BOOL down, const XKeyEvent* event)
 	}
 	else
 	{
-		BOOL rc;
 		if (freerdp_settings_get_bool(xfc->common.context.settings, FreeRDP_UnicodeInput))
 		{
 			wchar_t buffer[32] = { 0 };
-			int rc = 0;
 			int xwc = -1;
 
 			switch (rdp_scancode)
@@ -280,16 +278,16 @@ void xf_keyboard_send_key(xfContext* xfc, BOOL down, const XKeyEvent* event)
 				if (rdp_scancode == RDP_SCANCODE_UNKNOWN)
 					WLog_ERR(TAG, "Unknown key with X keycode 0x%02" PRIx8 "", event->keycode);
 				else
-					rc = freerdp_input_send_keyboard_event_ex(input, down, rdp_scancode);
+					freerdp_input_send_keyboard_event_ex(input, down, rdp_scancode);
 			}
 			else
-				rc = freerdp_input_send_unicode_keyboard_event(input, down ? KBD_FLAGS_RELEASE : 0,
-				                                               buffer[0]);
+				freerdp_input_send_unicode_keyboard_event(input, down ? KBD_FLAGS_RELEASE : 0,
+				                                          buffer[0]);
 		}
 		else if (rdp_scancode == RDP_SCANCODE_UNKNOWN)
 			WLog_ERR(TAG, "Unknown key with X keycode 0x%02" PRIx8 "", event->keycode);
 		else
-			rc = freerdp_input_send_keyboard_event_ex(input, down, rdp_scancode);
+			freerdp_input_send_keyboard_event_ex(input, down, rdp_scancode);
 
 		if ((rdp_scancode == RDP_SCANCODE_CAPSLOCK) && (down == FALSE))
 		{
@@ -457,6 +455,7 @@ static int xf_keyboard_execute_action_script(xfContext* xfc, XF_MODIFIER_KEYS* m
 	char buffer[1024] = { 0 };
 	char command[2048] = { 0 };
 	char combination[1024] = { 0 };
+	const char* ActionScript;
 
 	if (!xfc->actionScriptExists)
 		return 1;
@@ -503,8 +502,8 @@ static int xf_keyboard_execute_action_script(xfContext* xfc, XF_MODIFIER_KEYS* m
 	if (!match)
 		return 1;
 
-	sprintf_s(command, sizeof(command), "%s key %s", xfc->common.context.settings->ActionScript,
-	          combination);
+	ActionScript = freerdp_settings_get_string(xfc->common.context.settings, FreeRDP_ActionScript);
+	sprintf_s(command, sizeof(command), "%s key %s", ActionScript, combination);
 	keyScript = popen(command, "r");
 
 	if (!keyScript)

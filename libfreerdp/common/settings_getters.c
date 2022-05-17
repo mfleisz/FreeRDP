@@ -51,9 +51,6 @@ BOOL freerdp_settings_get_bool(const rdpSettings* settings, size_t id)
 		case FreeRDP_AsyncChannels:
 			return settings->AsyncChannels;
 
-		case FreeRDP_AsyncInput:
-			return settings->AsyncInput;
-
 		case FreeRDP_AsyncUpdate:
 			return settings->AsyncUpdate;
 
@@ -601,10 +598,6 @@ BOOL freerdp_settings_set_bool(rdpSettings* settings, size_t id, BOOL val)
 
 		case FreeRDP_AsyncChannels:
 			settings->AsyncChannels = cnv.c;
-			break;
-
-		case FreeRDP_AsyncInput:
-			settings->AsyncInput = cnv.c;
 			break;
 
 		case FreeRDP_AsyncUpdate:
@@ -1407,6 +1400,9 @@ UINT32 freerdp_settings_get_uint32(const rdpSettings* settings, size_t id)
 		case FreeRDP_ClientRandomLength:
 			return settings->ClientRandomLength;
 
+		case FreeRDP_ClientSessionId:
+			return settings->ClientSessionId;
+
 		case FreeRDP_ClusterInfoFlags:
 			return settings->ClusterInfoFlags;
 
@@ -1539,11 +1535,17 @@ UINT32 freerdp_settings_get_uint32(const rdpSettings* settings, size_t id)
 		case FreeRDP_MaxTimeInCheckLoop:
 			return settings->MaxTimeInCheckLoop;
 
+		case FreeRDP_MonitorAttributeFlags:
+			return settings->MonitorAttributeFlags;
+
 		case FreeRDP_MonitorCount:
 			return settings->MonitorCount;
 
 		case FreeRDP_MonitorDefArraySize:
 			return settings->MonitorDefArraySize;
+
+		case FreeRDP_MonitorFlags:
+			return settings->MonitorFlags;
 
 		case FreeRDP_MonitorLocalShiftX:
 			return settings->MonitorLocalShiftX;
@@ -1784,6 +1786,10 @@ BOOL freerdp_settings_set_uint32(rdpSettings* settings, size_t id, UINT32 val)
 			settings->ClientRandomLength = cnv.c;
 			break;
 
+		case FreeRDP_ClientSessionId:
+			settings->ClientSessionId = cnv.c;
+			break;
+
 		case FreeRDP_ClusterInfoFlags:
 			settings->ClusterInfoFlags = cnv.c;
 			break;
@@ -1960,12 +1966,20 @@ BOOL freerdp_settings_set_uint32(rdpSettings* settings, size_t id, UINT32 val)
 			settings->MaxTimeInCheckLoop = cnv.c;
 			break;
 
+		case FreeRDP_MonitorAttributeFlags:
+			settings->MonitorAttributeFlags = cnv.c;
+			break;
+
 		case FreeRDP_MonitorCount:
 			settings->MonitorCount = cnv.c;
 			break;
 
 		case FreeRDP_MonitorDefArraySize:
 			settings->MonitorDefArraySize = cnv.c;
+			break;
+
+		case FreeRDP_MonitorFlags:
+			settings->MonitorFlags = cnv.c;
 			break;
 
 		case FreeRDP_MonitorLocalShiftX:
@@ -2564,9 +2578,6 @@ const char* freerdp_settings_get_string(const rdpSettings* settings, size_t id)
 		case FreeRDP_SmartcardCertificate:
 			return settings->SmartcardCertificate;
 
-		case FreeRDP_SmartcardPin:
-			return settings->SmartcardPin;
-
 		case FreeRDP_SmartcardPrivateKey:
 			return settings->SmartcardPrivateKey;
 
@@ -2824,9 +2835,6 @@ char* freerdp_settings_get_string_writable(rdpSettings* settings, size_t id)
 
 		case FreeRDP_SmartcardCertificate:
 			return settings->SmartcardCertificate;
-
-		case FreeRDP_SmartcardPin:
-			return settings->SmartcardPin;
 
 		case FreeRDP_SmartcardPrivateKey:
 			return settings->SmartcardPrivateKey;
@@ -3095,9 +3103,6 @@ BOOL freerdp_settings_set_string_(rdpSettings* settings, size_t id, const char* 
 
 		case FreeRDP_SmartcardCertificate:
 			return update_string(&settings->SmartcardCertificate, cnv.cc, len, cleanup);
-
-		case FreeRDP_SmartcardPin:
-			return update_string(&settings->SmartcardPin, cnv.cc, len, cleanup);
 
 		case FreeRDP_SmartcardPrivateKey:
 			return update_string(&settings->SmartcardPrivateKey, cnv.cc, len, cleanup);

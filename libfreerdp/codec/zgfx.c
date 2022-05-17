@@ -19,9 +19,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include <winpr/crt.h>
 #include <winpr/print.h>
@@ -234,7 +232,7 @@ static BOOL zgfx_decompress_segment(ZGFX_CONTEXT* zgfx, wStream* stream, size_t 
 
 	cbSegment = segmentSize - 1;
 
-	if ((Stream_GetRemainingLength(stream) < segmentSize) || (segmentSize < 1) ||
+	if (!Stream_CheckAndLogRequiredLength(TAG, stream, segmentSize) || (segmentSize < 1) ||
 	    (segmentSize > UINT32_MAX))
 		return FALSE;
 
@@ -362,6 +360,17 @@ static BOOL zgfx_decompress_segment(ZGFX_CONTEXT* zgfx, wStream* stream, size_t 
 	return TRUE;
 }
 
+/* Allocate the buffers a bit larger.
+ *
+ * Due to optimizations some h264 decoders will read data beyond
+ * the actual available data, so ensure that it will never be a
+ * out of bounds read.
+ */
+static BYTE* aligned_zgfx_malloc(size_t size)
+{
+	return malloc(size + 64);
+}
+
 int zgfx_decompress(ZGFX_CONTEXT* zgfx, const BYTE* pSrcData, UINT32 SrcSize, BYTE** ppDstData,
                     UINT32* pDstSize, UINT32 flags)
 {
@@ -373,7 +382,7 @@ int zgfx_decompress(ZGFX_CONTEXT* zgfx, const BYTE* pSrcData, UINT32 SrcSize, BY
 	if (!stream)
 		return -1;
 
-	if (Stream_GetRemainingLength(stream) < 1)
+	if (!Stream_CheckAndLogRequiredLength(TAG, stream, 1))
 		goto fail;
 
 	Stream_Read_UINT8(stream, descriptor); /* descriptor (1 byte) */
@@ -386,7 +395,7 @@ int zgfx_decompress(ZGFX_CONTEXT* zgfx, const BYTE* pSrcData, UINT32 SrcSize, BY
 		*ppDstData = NULL;
 
 		if (zgfx->OutputCount > 0)
-			*ppDstData = (BYTE*)malloc(zgfx->OutputCount);
+			*ppDstData = aligned_zgfx_malloc(zgfx->OutputCount);
 
 		if (!*ppDstData)
 			goto fail;
@@ -403,16 +412,16 @@ int zgfx_decompress(ZGFX_CONTEXT* zgfx, const BYTE* pSrcData, UINT32 SrcSize, BY
 		BYTE* pConcatenated;
 		size_t used = 0;
 
-		if (Stream_GetRemainingLength(stream) < 6)
+		if (!Stream_CheckAndLogRequiredLength(TAG, stream, 6))
 			goto fail;
 
 		Stream_Read_UINT16(stream, segmentCount);     /* segmentCount (2 bytes) */
 		Stream_Read_UINT32(stream, uncompressedSize); /* uncompressedSize (4 bytes) */
 
-		if (Stream_GetRemainingLength(stream) / sizeof(UINT32) < segmentCount)
+		if (!Stream_CheckAndLogRequiredLength(TAG, stream, sizeof(UINT32) * segmentCount))
 			goto fail;
 
-		pConcatenated = (BYTE*)malloc(uncompressedSize);
+		pConcatenated = aligned_zgfx_malloc(uncompressedSize);
 
 		if (!pConcatenated)
 			goto fail;
@@ -422,7 +431,7 @@ int zgfx_decompress(ZGFX_CONTEXT* zgfx, const BYTE* pSrcData, UINT32 SrcSize, BY
 
 		for (segmentNumber = 0; segmentNumber < segmentCount; segmentNumber++)
 		{
-			if (Stream_GetRemainingLength(stream) < sizeof(UINT32))
+			if (!Stream_CheckAndLogRequiredLength(TAG, stream, sizeof(UINT32)))
 				goto fail;
 
 			Stream_Read_UINT32(stream, segmentSize); /* segmentSize (4 bytes) */

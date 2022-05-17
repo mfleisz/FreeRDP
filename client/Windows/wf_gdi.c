@@ -19,9 +19,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -82,7 +80,7 @@ static BOOL wf_decode_color(wfContext* wfc, const UINT32 srcColor, COLORREF* col
 	if (format)
 		*format = SrcFormat;
 
-	switch (GetBitsPerPixel(gdi->dstFormat))
+	switch (FreeRDPGetBitsPerPixel(gdi->dstFormat))
 	{
 		case 32:
 			DstFormat = PIXEL_FORMAT_ABGR32;
@@ -778,7 +776,7 @@ static BOOL wf_gdi_surface_frame_marker(rdpContext* context,
 	if (!context || !surface_frame_marker || !context->instance)
 		return FALSE;
 
-	settings = context->instance->settings;
+	settings = context->settings;
 
 	if (!settings)
 		return FALSE;
@@ -786,8 +784,7 @@ static BOOL wf_gdi_surface_frame_marker(rdpContext* context,
 	if (surface_frame_marker->frameAction == SURFACECMD_FRAMEACTION_END &&
 	    settings->FrameAcknowledge > 0)
 	{
-		IFCALL(context->instance->update->SurfaceFrameAcknowledge, context,
-		       surface_frame_marker->frameId);
+		IFCALL(context->update->SurfaceFrameAcknowledge, context, surface_frame_marker->frameId);
 	}
 
 	return TRUE;

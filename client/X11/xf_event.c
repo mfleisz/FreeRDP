@@ -17,9 +17,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -175,6 +173,7 @@ BOOL xf_event_action_script_init(xfContext* xfc)
 	char buffer[1024] = { 0 };
 	char command[1024] = { 0 };
 	const rdpSettings* settings;
+	const char* ActionScript;
 
 	WINPR_ASSERT(xfc);
 
@@ -188,7 +187,8 @@ BOOL xf_event_action_script_init(xfContext* xfc)
 
 	obj = ArrayList_Object(xfc->xevents);
 	obj->fnObjectFree = free;
-	sprintf_s(command, sizeof(command), "%s xevent", settings->ActionScript);
+	ActionScript = freerdp_settings_get_string(settings, FreeRDP_ActionScript);
+	sprintf_s(command, sizeof(command), "%s xevent", ActionScript);
 	actionScript = popen(command, "r");
 
 	if (!actionScript)
@@ -230,6 +230,7 @@ static BOOL xf_event_execute_action_script(xfContext* xfc, const XEvent* event)
 	FILE* actionScript;
 	BOOL match = FALSE;
 	const char* xeventName;
+	const char* ActionScript;
 	char buffer[1024] = { 0 };
 	char command[1024] = { 0 };
 
@@ -256,8 +257,8 @@ static BOOL xf_event_execute_action_script(xfContext* xfc, const XEvent* event)
 	if (!match)
 		return FALSE;
 
-	sprintf_s(command, sizeof(command), "%s xevent %s %lu",
-	          xfc->common.context.settings->ActionScript, xeventName,
+	ActionScript = freerdp_settings_get_string(xfc->common.context.settings, FreeRDP_ActionScript);
+	sprintf_s(command, sizeof(command), "%s xevent %s %lu", ActionScript, xeventName,
 	          (unsigned long)xfc->window->handle);
 	actionScript = popen(command, "r");
 
@@ -307,17 +308,14 @@ void xf_adjust_coordinates_to_screen(xfContext* xfc, UINT32* x, UINT32* y)
 
 void xf_event_adjust_coordinates(xfContext* xfc, int* x, int* y)
 {
-	rdpSettings* settings;
-
 	if (!xfc || !xfc->common.context.settings || !y || !x)
 		return;
 
-	settings = xfc->common.context.settings;
 
 	if (!xfc->remote_app)
 	{
 #ifdef WITH_XRENDER
-
+		rdpSettings* settings = xfc->common.context.settings;
 		if (xf_picture_transform_required(xfc))
 		{
 			double xScalingFactor = settings->DesktopWidth / (double)xfc->scaledWidth;
@@ -331,6 +329,7 @@ void xf_event_adjust_coordinates(xfContext* xfc, int* x, int* y)
 
 	CLAMP_COORDINATES(*x, *y);
 }
+
 static BOOL xf_event_Expose(xfContext* xfc, const XExposeEvent* event, BOOL app)
 {
 	int x, y;
@@ -572,9 +571,15 @@ static BOOL xf_event_ButtonRelease(xfContext* xfc, const XButtonEvent* event, BO
 static BOOL xf_event_KeyPress(xfContext* xfc, const XKeyEvent* event, BOOL app)
 {
 	KeySym keysym;
-	char str[256];
+	char str[256] = { 0 };
+	union
+	{
+		const XKeyEvent* cev;
+		XKeyEvent* ev;
+	} cnv;
+	cnv.cev = event;
 	WINPR_UNUSED(app);
-	XLookupString((XKeyEvent*)event, str, sizeof(str), &keysym, NULL);
+	XLookupString(cnv.ev, str, sizeof(str), &keysym, NULL);
 	xf_keyboard_key_press(xfc, event, keysym);
 	return TRUE;
 }
@@ -582,9 +587,16 @@ static BOOL xf_event_KeyPress(xfContext* xfc, const XKeyEvent* event, BOOL app)
 static BOOL xf_event_KeyRelease(xfContext* xfc, const XKeyEvent* event, BOOL app)
 {
 	KeySym keysym;
-	char str[256];
+	char str[256] = { 0 };
+	union
+	{
+		const XKeyEvent* cev;
+		XKeyEvent* ev;
+	} cnv;
+	cnv.cev = event;
+
 	WINPR_UNUSED(app);
-	XLookupString((XKeyEvent*)event, str, sizeof(str), &keysym, NULL);
+	XLookupString(cnv.ev, str, sizeof(str), &keysym, NULL);
 	xf_keyboard_key_release(xfc, event, keysym);
 	return TRUE;
 }
@@ -610,7 +622,6 @@ static BOOL xf_event_FocusIn(xfContext* xfc, const XFocusInEvent* event, BOOL ap
 	if (app)
 	{
 		xfAppWindow* appWindow;
-		xf_rail_send_activate(xfc, event->window, TRUE);
 		appWindow = xf_AppWindowFromX11Window(xfc, event->window);
 
 		/* Update the server with any window changes that occurred while the window was not focused.
@@ -636,9 +647,6 @@ static BOOL xf_event_FocusOut(xfContext* xfc, const XFocusOutEvent* event, BOOL 
 		XUngrabKeyboard(xfc->display, CurrentTime);
 
 	xf_keyboard_release_all_keypress(xfc);
-
-	if (app)
-		xf_rail_send_activate(xfc, event->window, FALSE);
 
 	return TRUE;
 }
@@ -842,7 +850,7 @@ static BOOL xf_event_MapNotify(xfContext* xfc, const XMapEvent* event, BOOL app)
 			 * Doing this here would inhibit the ability to restore a maximized window
 			 * that is minimized back to the maximized state
 			 */
-			xf_rail_send_client_system_command(xfc, appWindow->windowId, SC_RESTORE);
+			// xf_rail_send_client_system_command(xfc, appWindow->windowId, SC_RESTORE);
 			appWindow->is_mapped = TRUE;
 		}
 	}
@@ -889,8 +897,6 @@ static BOOL xf_event_PropertyNotify(xfContext* xfc, const XPropertyEvent* event,
 	{
 		unsigned long i;
 		BOOL status;
-		BOOL maxVert = FALSE;
-		BOOL maxHorz = FALSE;
 		BOOL minimized = FALSE;
 		BOOL minimizedChanged = FALSE;
 		unsigned long nitems;
@@ -913,18 +919,25 @@ static BOOL xf_event_PropertyNotify(xfContext* xfc, const XPropertyEvent* event,
 
 			if (status)
 			{
+				if (appWindow)
+				{
+					appWindow->maxVert = FALSE;
+					appWindow->maxHorz = FALSE;
+				}
 				for (i = 0; i < nitems; i++)
 				{
 					if ((Atom)((UINT16**)prop)[i] ==
 					    XInternAtom(xfc->display, "_NET_WM_STATE_MAXIMIZED_VERT", False))
 					{
-						maxVert = TRUE;
+						if (appWindow)
+							appWindow->maxVert = TRUE;
 					}
 
 					if ((Atom)((UINT16**)prop)[i] ==
 					    XInternAtom(xfc->display, "_NET_WM_STATE_MAXIMIZED_HORZ", False))
 					{
-						maxHorz = TRUE;
+						if (appWindow)
+							appWindow->maxHorz = TRUE;
 					}
 				}
 
@@ -941,9 +954,17 @@ static BOOL xf_event_PropertyNotify(xfContext* xfc, const XPropertyEvent* event,
 			{
 				/* If the window is in the iconic state */
 				if (((UINT32)*prop == 3))
+				{
 					minimized = TRUE;
+					if (appWindow)
+						appWindow->minimized = TRUE;
+				}
 				else
+				{
 					minimized = FALSE;
+					if (appWindow)
+						appWindow->minimized = FALSE;
+				}
 
 				minimizedChanged = TRUE;
 				XFree(prop);
@@ -952,23 +973,31 @@ static BOOL xf_event_PropertyNotify(xfContext* xfc, const XPropertyEvent* event,
 
 		if (app)
 		{
-			if (maxVert && maxHorz && !minimized &&
-			    (appWindow->rail_state != WINDOW_SHOW_MAXIMIZED))
+			WINPR_ASSERT(appWindow);
+			if (appWindow->maxVert && appWindow->maxHorz && !appWindow->minimized)
 			{
-				appWindow->rail_state = WINDOW_SHOW_MAXIMIZED;
-				xf_rail_send_client_system_command(xfc, appWindow->windowId, SC_MAXIMIZE);
+				if(appWindow->rail_state != WINDOW_SHOW_MAXIMIZED)
+				{
+				    appWindow->rail_state = WINDOW_SHOW_MAXIMIZED;
+				    xf_rail_send_client_system_command(xfc, appWindow->windowId, SC_MAXIMIZE);
+				}
 			}
-			else if (minimized && (appWindow->rail_state != WINDOW_SHOW_MINIMIZED))
+			else if (appWindow->minimized)
 			{
-				appWindow->rail_state = WINDOW_SHOW_MINIMIZED;
-				xf_rail_send_client_system_command(xfc, appWindow->windowId, SC_MINIMIZE);
+				if(appWindow->rail_state != WINDOW_SHOW_MINIMIZED)
+				{
+					appWindow->rail_state = WINDOW_SHOW_MINIMIZED;
+					xf_rail_send_client_system_command(xfc, appWindow->windowId, SC_MINIMIZE);
+				}
 			}
-			else if (((Atom)event->atom == xfc->WM_STATE) && !minimized &&
-			         (appWindow->rail_state != WINDOW_SHOW) &&
-			         (appWindow->rail_state != WINDOW_HIDE))
+			else
 			{
-				appWindow->rail_state = WINDOW_SHOW;
-				xf_rail_send_client_system_command(xfc, appWindow->windowId, SC_RESTORE);
+				if(appWindow->rail_state != WINDOW_SHOW &&
+			         appWindow->rail_state != WINDOW_HIDE)
+				{
+					appWindow->rail_state = WINDOW_SHOW;
+					xf_rail_send_client_system_command(xfc, appWindow->windowId, SC_RESTORE);
+				}
 			}
 		}
 		else if (minimizedChanged)

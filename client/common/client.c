@@ -17,9 +17,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include <string.h>
 #include <errno.h>
@@ -85,7 +83,7 @@ static void freerdp_client_common_free(freerdp* instance, rdpContext* context)
 
 /* Common API */
 
-rdpContext* freerdp_client_context_new(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
+rdpContext* freerdp_client_context_new(const RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 {
 	freerdp* instance;
 	rdpContext* context;
@@ -99,7 +97,6 @@ rdpContext* freerdp_client_context_new(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 	if (!instance)
 		return NULL;
 
-	instance->settings = pEntryPoints->settings;
 	instance->ContextSize = pEntryPoints->ContextSize;
 	instance->ContextNew = freerdp_client_common_new;
 	instance->ContextFree = freerdp_client_common_free;
@@ -110,12 +107,11 @@ rdpContext* freerdp_client_context_new(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 
 	CopyMemory(instance->pClientEntryPoints, pEntryPoints, pEntryPoints->Size);
 
-	if (!freerdp_context_new(instance))
+	if (!freerdp_context_new_ex(instance, pEntryPoints->settings))
 		goto out_fail2;
 
 	context = instance->context;
 	context->instance = instance;
-	context->settings = instance->settings;
 
 	if (freerdp_register_addin_provider(freerdp_channels_load_static_addin_entry, 0) !=
 	    CHANNEL_RC_OK)
@@ -210,10 +206,11 @@ static BOOL freerdp_client_settings_post_process(rdpSettings* settings)
 					goto out_error;
 			}
 
-			if (settings->Password)
+			if (freerdp_settings_get_string(settings, FreeRDP_Password))
 			{
-				if (!freerdp_settings_set_string(settings, FreeRDP_GatewayPassword,
-				                                 settings->Password))
+				if (!freerdp_settings_set_string(
+				        settings, FreeRDP_GatewayPassword,
+				        freerdp_settings_get_string(settings, FreeRDP_Password)))
 					goto out_error;
 			}
 		}
@@ -232,43 +229,12 @@ static BOOL freerdp_client_settings_post_process(rdpSettings* settings)
 	}
 
 	/* deal with the smartcard / smartcard logon stuff */
-	if (settings->SmartcardEmulation)
-	{
-		/* if no pin is defined on the smartcard emulation use the user password */
-		if (!settings->SmartcardPin)
-		{
-			if (!settings->Password)
-			{
-				WLog_ERR(TAG, "No pin or password defined for smartcard emu");
-				goto out_error;
-			}
-
-			if (!freerdp_settings_set_string(settings, FreeRDP_SmartcardPin, settings->Password))
-			{
-				WLog_ERR(TAG, "error when setting smartcard pin to user password");
-				goto out_error;
-			}
-		}
-	}
-
 	if (settings->SmartcardLogon)
 	{
 		settings->TlsSecurity = TRUE;
 		settings->RedirectSmartCards = TRUE;
 		settings->DeviceRedirection = TRUE;
 		freerdp_settings_set_bool(settings, FreeRDP_PasswordIsSmartcardPin, TRUE);
-
-		if (!settings->Password && settings->SmartcardEmulation)
-		{
-			/* when no user password is provided, in the case of smartcard emulation for smartcard
-			 * logon take the smartcard pin as user password to match PasswordIsSmartcardPin
-			 */
-			if (!freerdp_settings_set_string(settings, FreeRDP_Password, settings->SmartcardPin))
-			{
-				WLog_ERR(TAG, "error when setting smartcard pin to user password");
-				goto out_error;
-			}
-		}
 	}
 
 	return TRUE;
@@ -425,20 +391,26 @@ static BOOL client_cli_authenticate_raw(freerdp* instance, rdp_auth_reason reaso
                                         char** password, char** domain)
 {
 	static const size_t password_size = 512;
-	const char* auth[] = { "Username: ", "Domain:   ", "Password: " };
-	const char* authPin[] = { "Username: ", "Domain:   ", "Pin:      " };
+	const char* auth[] = { "Username:        ", "Domain:          ", "Password:        " };
+	const char* authPin[] = { "Username:        ", "Domain:          ", "Smartcard-Pin:   " };
 	const char* gw[] = { "GatewayUsername: ", "GatewayDomain:   ", "GatewayPassword: " };
 	const char** prompt;
+	BOOL pinOnly = FALSE;
+
+	WINPR_ASSERT(instance);
+	WINPR_ASSERT(instance->context);
+	WINPR_ASSERT(instance->context->settings);
 
 	switch (reason)
 	{
-		case AUTH_NLA:
-		case AUTH_TLS:
-		case AUTH_RDP:
-			prompt = auth;
-			break;
 		case AUTH_SMARTCARD_PIN:
 			prompt = authPin;
+			pinOnly = TRUE;
+			break;
+		case AUTH_TLS:
+		case AUTH_RDP:
+		case AUTH_NLA:
+			prompt = auth;
 			break;
 		case GW_AUTH_HTTP:
 		case GW_AUTH_RDG:
@@ -452,7 +424,7 @@ static BOOL client_cli_authenticate_raw(freerdp* instance, rdp_auth_reason reaso
 	if (!username || !password || !domain)
 		return FALSE;
 
-	if (!*username)
+	if (!*username && !pinOnly)
 	{
 		size_t username_size = 0;
 		printf("%s", prompt[0]);
@@ -470,7 +442,7 @@ static BOOL client_cli_authenticate_raw(freerdp* instance, rdp_auth_reason reaso
 		}
 	}
 
-	if (!*domain)
+	if (!*domain && !pinOnly)
 	{
 		size_t domain_size = 0;
 		printf("%s", prompt[1]);
@@ -496,7 +468,7 @@ static BOOL client_cli_authenticate_raw(freerdp* instance, rdp_auth_reason reaso
 			goto fail;
 
 		if (freerdp_passphrase_read(prompt[2], *password, password_size,
-		                            instance->settings->CredentialsFromStdin) == NULL)
+		                            instance->context->settings->CredentialsFromStdin) == NULL)
 			goto fail;
 	}
 
@@ -606,8 +578,6 @@ static DWORD client_cli_accept_certificate(rdpSettings* settings)
 
 		printf("\n");
 	}
-
-	return 0;
 }
 
 /** Callback set in the rdp_freerdp structure, and used to make a certificate validation
@@ -662,6 +632,11 @@ DWORD client_cli_verify_certificate_ex(freerdp* instance, const char* host, UINT
                                        const char* issuer, const char* fingerprint, DWORD flags)
 {
 	const char* type = "RDP-Server";
+
+	WINPR_ASSERT(instance);
+	WINPR_ASSERT(instance->context);
+	WINPR_ASSERT(instance->context->settings);
+
 	if (flags & VERIFY_CERT_FLAG_GATEWAY)
 		type = "RDP-Gateway";
 
@@ -687,7 +662,7 @@ DWORD client_cli_verify_certificate_ex(freerdp* instance, const char* host, UINT
 	printf("The above X.509 certificate could not be verified, possibly because you do not have\n"
 	       "the CA certificate in your certificate store, or the certificate has expired.\n"
 	       "Please look at the OpenSSL documentation on how to add a private CA to the store.\n");
-	return client_cli_accept_certificate(instance->settings);
+	return client_cli_accept_certificate(instance->context->settings);
 }
 
 /** Callback set in the rdp_freerdp structure, and used to make a certificate validation
@@ -762,6 +737,10 @@ DWORD client_cli_verify_changed_certificate_ex(freerdp* instance, const char* ho
 {
 	const char* type = "RDP-Server";
 
+	WINPR_ASSERT(instance);
+	WINPR_ASSERT(instance->context);
+	WINPR_ASSERT(instance->context->settings);
+
 	if (flags & VERIFY_CERT_FLAG_GATEWAY)
 		type = "RDP-Gateway";
 
@@ -813,7 +792,7 @@ DWORD client_cli_verify_changed_certificate_ex(freerdp* instance, const char* ho
 	       "connections.\n"
 	       "This may indicate that the certificate has been tampered with.\n"
 	       "Please contact the administrator of the RDP server and clarify.\n");
-	return client_cli_accept_certificate(instance->settings);
+	return client_cli_accept_certificate(instance->context->settings);
 }
 
 BOOL client_cli_present_gateway_message(freerdp* instance, UINT32 type, BOOL isDisplayMandatory,
@@ -822,6 +801,10 @@ BOOL client_cli_present_gateway_message(freerdp* instance, UINT32 type, BOOL isD
 {
 	int answer;
 	const char* msgType = (type == GATEWAY_MESSAGE_CONSENT) ? "Consent message" : "Service message";
+
+	WINPR_ASSERT(instance);
+	WINPR_ASSERT(instance->context);
+	WINPR_ASSERT(instance->context->settings);
 
 	if (!isDisplayMandatory && !isConsentMandatory)
 		return TRUE;
@@ -883,15 +866,20 @@ BOOL client_auto_reconnect(freerdp* instance)
 
 BOOL client_auto_reconnect_ex(freerdp* instance, BOOL (*window_events)(freerdp* instance))
 {
+	BOOL retry = TRUE;
 	UINT32 error;
 	UINT32 maxRetries;
 	UINT32 numRetries = 0;
 	rdpSettings* settings;
 
-	if (!instance || !instance->settings)
+	if (!instance)
 		return FALSE;
 
-	settings = instance->settings;
+	WINPR_ASSERT(instance->context);
+
+	settings = instance->context->settings;
+	WINPR_ASSERT(settings);
+
 	maxRetries = settings->AutoReconnectMaxRetries;
 
 	/* Only auto reconnect on network disconnects. */
@@ -918,7 +906,7 @@ BOOL client_auto_reconnect_ex(freerdp* instance, BOOL (*window_events)(freerdp* 
 	}
 
 	/* Perform an auto-reconnect. */
-	while (TRUE)
+	while (retry)
 	{
 		UINT32 x;
 
@@ -934,12 +922,21 @@ BOOL client_auto_reconnect_ex(freerdp* instance, BOOL (*window_events)(freerdp* 
 		if (freerdp_reconnect(instance))
 			return TRUE;
 
+		switch (freerdp_get_last_error(instance->context))
+		{
+			case FREERDP_ERROR_CONNECT_CANCELLED:
+				WLog_WARN(TAG, "Autoreconnect aborted by user");
+				retry = FALSE;
+				break;
+			default:
+				break;
+		}
 		for (x = 0; x < 50; x++)
 		{
 			if (!IFCALLRESULT(TRUE, window_events, instance))
 				return FALSE;
 
-			Sleep(100);
+			Sleep(10);
 		}
 	}
 
@@ -952,7 +949,7 @@ int freerdp_client_common_stop(rdpContext* context)
 	rdpClientContext* cctx = (rdpClientContext*)context;
 	WINPR_ASSERT(cctx);
 
-	freerdp_abort_connect(cctx->context.instance);
+	freerdp_abort_connect_context(&cctx->context);
 
 	if (cctx->thread)
 	{

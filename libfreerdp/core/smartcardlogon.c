@@ -225,7 +225,8 @@ static BOOL build_pkinit_args(const rdpSettings* settings, SmartcardCertInfo* sc
 	/* pkinit args only under windows
 	 * 		PKCS11:module_name=opensc-pkcs11.so
 	 */
-	const char* pkModule = settings->Pkcs11Module ? settings->Pkcs11Module : "opensc-pkcs11.so";
+	const char* Pkcs11Module = freerdp_settings_get_string(settings, FreeRDP_Pkcs11Module);
+	const char* pkModule = Pkcs11Module ? Pkcs11Module : "opensc-pkcs11.so";
 
 	if (allocating_sprintf(&scCert->pkinitArgs, "PKCS11:module_name=%s:slotid=%" PRIu16, pkModule,
 	                       (UINT16)scCert->slotId) <= 0)
@@ -246,8 +247,8 @@ static BOOL smartcard_hw_enumerateCerts(const rdpSettings* settings, LPCWSTR csp
 	SECURITY_STATUS status;
 	size_t count = 0;
 	SmartcardCerts* certs = NULL;
+	const char* Pkcs11Module = freerdp_settings_get_string(settings, FreeRDP_Pkcs11Module);
 
-	WINPR_ASSERT(settings);
 	WINPR_ASSERT(csp);
 	WINPR_ASSERT(scCerts);
 	WINPR_ASSERT(retCount);
@@ -268,25 +269,34 @@ static BOOL smartcard_hw_enumerateCerts(const rdpSettings* settings, LPCWSTR csp
 			goto out;
 	}
 
-	status = NCryptOpenStorageProvider(&provider, csp, 0);
+	if (Pkcs11Module)
+	{
+		LPCSTR paths[] = { Pkcs11Module, NULL };
+
+		status = winpr_NCryptOpenStorageProviderEx(&provider, csp, 0, paths);
+	}
+	else
+		status = NCryptOpenStorageProvider(&provider, csp, 0);
+
 	if (status != ERROR_SUCCESS)
 	{
 		WLog_ERR(TAG, "unable to open provider");
 		goto out;
 	}
 
-	while ((status = NCryptEnumKeys(provider, scope, &keyName, &enumState, NCRYPT_SILENT_FLAG)) ==
+	while (NCryptEnumKeys(provider, scope, &keyName, &enumState, NCRYPT_SILENT_FLAG) ==
 	       ERROR_SUCCESS)
 	{
 		NCRYPT_KEY_HANDLE phKey = 0;
 		PBYTE certBytes = NULL;
 		DWORD cbOutput;
 		SmartcardCertInfoPrivate* cert;
+		BOOL haveError = TRUE;
 
 		count++;
 		{
 			SmartcardCerts* tmp =
-			    realloc(certs, sizeof(SmartcardCerts) + sizeof(SmartcardCertInfoPrivate) * (count));
+			    realloc(certs, sizeof(SmartcardCerts) + (sizeof(SmartcardCertInfoPrivate) * count));
 			if (!tmp)
 				goto out;
 			certs = tmp;
@@ -403,12 +413,19 @@ static BOOL smartcard_hw_enumerateCerts(const rdpSettings* settings, LPCWSTR csp
 			goto endofloop;
 		}
 #endif
+		haveError = FALSE;
 
 	endofloop:
 		free(certBytes);
 		NCryptFreeBuffer(keyName);
 		if (phKey)
 			NCryptFreeObject((NCRYPT_HANDLE)phKey);
+
+		if (haveError)
+		{
+			smartcardCertInfoPrivate_Free(cert);
+			count--;
+		}
 	}
 
 	*scCerts = certs;
@@ -418,6 +435,8 @@ static BOOL smartcard_hw_enumerateCerts(const rdpSettings* settings, LPCWSTR csp
 	NCryptFreeBuffer(enumState);
 	NCryptFreeObject((NCRYPT_HANDLE)provider);
 out:
+	if (!ret)
+		smartcardCerts_Free(certs);
 	free(scope);
 	return ret;
 }
@@ -468,7 +487,8 @@ static BOOL smartcard_sw_enumerateCerts(const rdpSettings* settings, SmartcardCe
 	certs->count = count;
 	cert = certs->certs = (SmartcardCertInfoPrivate*)(certs + 1);
 
-	cert->info.certificate = crypto_cert_pem_read(settings->SmartcardCertificate);
+	cert->info.certificate =
+	    crypto_cert_pem_read(freerdp_settings_get_string(settings, FreeRDP_SmartcardCertificate));
 	if (!cert->info.certificate)
 	{
 		WLog_ERR(TAG, "unable to read smartcard certificate");
@@ -493,9 +513,9 @@ static BOOL smartcard_sw_enumerateCerts(const rdpSettings* settings, SmartcardCe
 	 * We need files for PKINIT to read, so write the certificate to some
 	 * temporary location and use that.
 	 */
-	if (!write_pem(keyPath, settings->SmartcardPrivateKey))
+	if (!write_pem(keyPath, freerdp_settings_get_string(settings, FreeRDP_SmartcardPrivateKey)))
 		goto out_error;
-	if (!write_pem(certPath, settings->SmartcardCertificate))
+	if (!write_pem(certPath, freerdp_settings_get_string(settings, FreeRDP_SmartcardCertificate)))
 		goto out_error;
 	res = allocating_sprintf(&cert->info.pkinitArgs, "FILE:%s,%s", certPath, keyPath);
 	if (res <= 0)
@@ -520,14 +540,17 @@ BOOL smartcard_enumerateCerts(const rdpSettings* settings, SmartcardCerts** scCe
 	BOOL ret;
 	LPWSTR csp;
 	const char* asciiCsp;
+	const char* ReaderName = freerdp_settings_get_string(settings, FreeRDP_ReaderName);
+	const char* Username = freerdp_settings_get_string(settings, FreeRDP_Username);
+	const char* CspName = freerdp_settings_get_string(settings, FreeRDP_CspName);
 
 	WINPR_ASSERT(settings);
 	WINPR_ASSERT(scCerts);
 	WINPR_ASSERT(retCount);
 
-	asciiCsp = settings->CspName ? settings->CspName : MS_SCARD_PROV_A;
+	asciiCsp = CspName ? CspName : MS_SCARD_PROV_A;
 
-	if (settings->SmartcardEmulation)
+	if (freerdp_settings_get_bool(settings, FreeRDP_SmartcardEmulation))
 		return smartcard_sw_enumerateCerts(settings, scCerts, retCount);
 
 	if (ConvertToUnicode(CP_UTF8, 0, asciiCsp, -1, &csp, 0) <= 0)
@@ -536,8 +559,7 @@ BOOL smartcard_enumerateCerts(const rdpSettings* settings, SmartcardCerts** scCe
 		return FALSE;
 	}
 
-	ret = smartcard_hw_enumerateCerts(settings, csp, settings->ReaderName, settings->Username,
-	                                  scCerts, retCount);
+	ret = smartcard_hw_enumerateCerts(settings, csp, ReaderName, Username, scCerts, retCount);
 	free(csp);
 	return ret;
 }

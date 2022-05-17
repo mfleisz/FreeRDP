@@ -19,9 +19,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -525,12 +523,13 @@ BOOL nsc_decompose_message(NSC_CONTEXT* context, wStream* s, BYTE* bmpdata, UINT
                            UINT32 flip)
 {
 	size_t size = Stream_GetRemainingLength(s);
+
 	if (size > UINT32_MAX)
 		return FALSE;
 
-	if (!nsc_process_message(context, (UINT16)GetBitsPerPixel(context->format), width, height,
-	                         Stream_Pointer(s), (UINT32)size, bmpdata, format, rowstride, x, y,
-	                         width, height, flip))
+	if (!nsc_process_message(context, (UINT16)FreeRDPGetBitsPerPixel(context->format), width,
+	                         height, Stream_Pointer(s), (UINT32)size, bmpdata, format, rowstride, x,
+	                         y, width, height, flip))
 		return FALSE;
 	Stream_Seek(s, size);
 	return TRUE;

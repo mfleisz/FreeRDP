@@ -18,9 +18,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -175,7 +173,7 @@ static UINT ainput_server_recv_mouse_event(ainput_server* ainput, wStream* s)
 	WINPR_ASSERT(ainput);
 	WINPR_ASSERT(s);
 
-	if (Stream_GetRemainingLength(s) < 24)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 24))
 		return ERROR_NO_DATA;
 
 	Stream_Read_UINT64(s, time);
@@ -237,7 +235,7 @@ static DWORD WINAPI ainput_server_thread_func(LPVOID arg)
 					case WAIT_OBJECT_0 + 1:
 					case WAIT_OBJECT_0:
 						error = ainput_server_context_poll_int(&ainput->context);
-
+						break;
 					case WAIT_FAILED:
 					default:
 						error = ERROR_INTERNAL_ERROR;
@@ -252,6 +250,7 @@ static DWORD WINAPI ainput_server_thread_func(LPVOID arg)
 					case WAIT_OBJECT_0 + 1:
 					case WAIT_OBJECT_0:
 						error = ainput_server_context_poll_int(&ainput->context);
+						break;
 
 					case WAIT_FAILED:
 					default:

@@ -1228,13 +1228,22 @@ extern "C"
 	WINPR_API void* sspi_SecBufferAlloc(PSecBuffer SecBuffer, ULONG size);
 	WINPR_API void sspi_SecBufferFree(PSecBuffer SecBuffer);
 
-	WINPR_API int sspi_SetAuthIdentity(SEC_WINNT_AUTH_IDENTITY* identity, const char* user,
-	                                   const char* domain, const char* password);
+#define sspi_SetAuthIdentity sspi_SetAuthIdentityA
+	WINPR_API int sspi_SetAuthIdentityA(SEC_WINNT_AUTH_IDENTITY* identity, const char* user,
+	                                    const char* domain, const char* password);
+	WINPR_API int sspi_SetAuthIdentityW(SEC_WINNT_AUTH_IDENTITY* identity, const WCHAR* user,
+	                                    const WCHAR* domain, const WCHAR* password);
+	WINPR_API int sspi_SetAuthIdentityWithLengthW(SEC_WINNT_AUTH_IDENTITY* identity,
+	                                              const WCHAR* user, size_t userLen,
+	                                              const WCHAR* domain, size_t domainLen,
+	                                              const WCHAR* password, size_t passwordLen);
 	WINPR_API int sspi_SetAuthIdentityWithUnicodePassword(SEC_WINNT_AUTH_IDENTITY* identity,
 	                                                      const char* user, const char* domain,
 	                                                      LPWSTR password, ULONG passwordLength);
 	WINPR_API int sspi_CopyAuthIdentity(SEC_WINNT_AUTH_IDENTITY* identity,
 	                                    const SEC_WINNT_AUTH_IDENTITY* srcIdentity);
+
+	WINPR_API void sspi_FreeAuthIdentity(SEC_WINNT_AUTH_IDENTITY* identity);
 
 	WINPR_API const char* GetSecurityStatusString(SECURITY_STATUS status);
 

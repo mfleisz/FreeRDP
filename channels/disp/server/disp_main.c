@@ -17,9 +17,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include "disp_main.h"
 #include <stdio.h>
@@ -135,11 +133,8 @@ static UINT disp_recv_display_control_monitor_layout_pdu(wStream* s, DispServerC
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(context);
 
-	if (Stream_GetRemainingLength(s) < 8)
-	{
-		WLog_ERR(TAG, "not enough data!");
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 8))
 		return ERROR_INVALID_DATA;
-	}
 
 	Stream_Read_UINT32(s, pdu.MonitorLayoutSize); /* MonitorLayoutSize (4 bytes) */
 
@@ -159,11 +154,9 @@ static UINT disp_recv_display_control_monitor_layout_pdu(wStream* s, DispServerC
 		return ERROR_INVALID_DATA;
 	}
 
-	if (Stream_GetRemainingLength(s) / DISPLAY_CONTROL_MONITOR_LAYOUT_SIZE < pdu.NumMonitors)
-	{
-		WLog_ERR(TAG, "not enough data!");
+	if (!Stream_CheckAndLogRequiredLength(
+	        TAG, s, pdu.NumMonitors * 1ull * DISPLAY_CONTROL_MONITOR_LAYOUT_SIZE))
 		return ERROR_INVALID_DATA;
-	}
 
 	pdu.Monitors = (DISPLAY_CONTROL_MONITOR_LAYOUT*)calloc(pdu.NumMonitors,
 	                                                       sizeof(DISPLAY_CONTROL_MONITOR_LAYOUT));
@@ -453,6 +446,7 @@ static UINT disp_server_open(DispServerContext* context)
 		{
 			WLog_ERR(TAG, "CreateEvent failed!");
 			rc = ERROR_INTERNAL_ERROR;
+			goto out_close;
 		}
 
 		if (!(priv->thread =
@@ -462,6 +456,7 @@ static UINT disp_server_open(DispServerContext* context)
 			CloseHandle(priv->stopEvent);
 			priv->stopEvent = NULL;
 			rc = ERROR_INTERNAL_ERROR;
+			goto out_close;
 		}
 	}
 

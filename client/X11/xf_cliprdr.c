@@ -19,9 +19,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include <stdlib.h>
 #include <errno.h>
@@ -416,11 +414,8 @@ static CLIPRDR_FORMAT* xf_cliprdr_parse_server_format_list(BYTE* data, size_t le
 		goto error;
 	}
 
-	if (Stream_GetRemainingLength(s) < sizeof(UINT32))
-	{
-		WLog_ERR(TAG, "too short serialized format list");
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, sizeof(UINT32)))
 		goto error;
-	}
 
 	Stream_Read_UINT32(s, *numFormats);
 
@@ -441,11 +436,8 @@ static CLIPRDR_FORMAT* xf_cliprdr_parse_server_format_list(BYTE* data, size_t le
 		const char* formatName = NULL;
 		size_t formatNameLength = 0;
 
-		if (Stream_GetRemainingLength(s) < sizeof(UINT32))
-		{
-			WLog_ERR(TAG, "unexpected end of serialized format list");
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, sizeof(UINT32)))
 			goto error;
-		}
 
 		Stream_Read_UINT32(s, formats[i].formatId);
 		formatName = (const char*)Stream_Pointer(s);
@@ -608,11 +600,15 @@ static void xf_cliprdr_provide_server_format_list(xfClipboard* clipboard)
 
 static BOOL xf_clipboard_format_equal(const CLIPRDR_FORMAT* a, const CLIPRDR_FORMAT* b)
 {
+	WINPR_ASSERT(a);
+	WINPR_ASSERT(b);
+
 	if (a->formatId != b->formatId)
 		return FALSE;
 	if (!a->formatName && !b->formatName)
 		return TRUE;
-
+	if (!a->formatName || !b->formatName)
+		return FALSE;
 	return strcmp(a->formatName, b->formatName) == 0;
 }
 static BOOL xf_clipboard_changed(xfClipboard* clipboard, const CLIPRDR_FORMAT* formats,
@@ -671,11 +667,15 @@ static BOOL xf_clipboard_copy_formats(xfClipboard* clipboard, const CLIPRDR_FORM
 static UINT xf_cliprdr_send_format_list(xfClipboard* clipboard, const CLIPRDR_FORMAT* formats,
                                         UINT32 numFormats)
 {
-	CLIPRDR_FORMAT_LIST formatList = { 0 };
-	formatList.msgFlags = CB_RESPONSE_OK;
-	formatList.numFormats = numFormats;
-	formatList.formats = (CLIPRDR_FORMAT*)formats;
-	formatList.msgType = CB_FORMAT_LIST;
+	union
+	{
+		const CLIPRDR_FORMAT* cpv;
+		CLIPRDR_FORMAT* pv;
+	} cnv = { .cpv = formats };
+	const CLIPRDR_FORMAT_LIST formatList = { .msgFlags = CB_RESPONSE_OK,
+		                                     .numFormats = numFormats,
+		                                     .formats = cnv.pv,
+		                                     .msgType = CB_FORMAT_LIST };
 
 	if (!xf_clipboard_changed(clipboard, formats, numFormats))
 		return CHANNEL_RC_OK;
@@ -1444,14 +1444,15 @@ xf_cliprdr_server_file_contents_response(CliprdrClientContext* context,
 				break;
 			}
 			UINT64 size;
-			wStream* s = Stream_New((BYTE*)data, data_len);
+			wStream sbuffer = { 0 };
+			wStream* s = Stream_StaticConstInit(&sbuffer, data, data_len);
 			if (!s)
 			{
 				fuse_reply_err(req, ENOMEM);
 				break;
 			}
 			Stream_Read_UINT64(s, size);
-			Stream_Free(s, FALSE);
+
 			ArrayList_Lock(clipboard->ino_list);
 			ino = xf_cliprdr_fuse_util_get_inode(clipboard->ino_list, req_ino);
 			/* ino must be exists and  */
@@ -1618,6 +1619,10 @@ static UINT xf_cliprdr_server_format_list(CliprdrClientContext* context,
 	xfc = clipboard->xfc;
 	WINPR_ASSERT(xfc);
 
+	/* Clear the active SelectionRequest, as it is now invalid */
+	free(clipboard->respond);
+	clipboard->respond = NULL;
+
 	xf_clipboard_formats_free(clipboard);
 	xf_cliprdr_clear_cached_data(clipboard);
 	clipboard->data_format_id = -1;
@@ -1772,7 +1777,7 @@ static char* xf_cliprdr_fuse_split_basename(char* name, int len)
 	return NULL;
 }
 
-static xfCliprdrFuseInode* xf_cliprdr_fuse_create_root_node()
+static xfCliprdrFuseInode* xf_cliprdr_fuse_create_root_node(void)
 {
 	xfCliprdrFuseInode* rootNode = (xfCliprdrFuseInode*)calloc(1, sizeof(xfCliprdrFuseInode));
 	if (!rootNode)
@@ -1797,11 +1802,8 @@ static xfCliprdrFuseInode* xf_cliprdr_fuse_create_root_node()
 static BOOL xf_cliprdr_fuse_check_stream(wStream* s, size_t count)
 {
 	UINT32 nrDescriptors;
-	if (Stream_GetRemainingLength(s) < sizeof(UINT32))
-	{
-		WLog_ERR(TAG, "too short serialized format list");
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, sizeof(UINT32)))
 		return FALSE;
-	}
 
 	Stream_Read_UINT32(s, nrDescriptors);
 	if (count != nrDescriptors)
@@ -1813,7 +1815,7 @@ static BOOL xf_cliprdr_fuse_check_stream(wStream* s, size_t count)
 }
 
 static BOOL xf_cliprdr_fuse_create_nodes(xfClipboard* clipboard, wStream* s, size_t count,
-                                         xfCliprdrFuseInode* rootNode)
+                                         const xfCliprdrFuseInode* rootNode)
 {
 	BOOL status = FALSE;
 	size_t lindex = 0;
@@ -1821,11 +1823,17 @@ static BOOL xf_cliprdr_fuse_create_nodes(xfClipboard* clipboard, wStream* s, siz
 	char* dirName = NULL;
 	char* baseName = NULL;
 	xfCliprdrFuseInode* inode = NULL;
-	wHashTable* mapDir = HashTable_New(TRUE);
+	wHashTable* mapDir;
+
+	WINPR_ASSERT(clipboard);
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(rootNode);
+
+	mapDir = HashTable_New(TRUE);
 	if (!mapDir)
 	{
 		WLog_ERR(TAG, "fail to alloc hashtable");
-		return FALSE;
+		goto error;
 	}
 	if (!HashTable_SetupForStringData(mapDir, FALSE))
 		goto error;
@@ -1977,6 +1985,9 @@ error:
 static BOOL xf_cliprdr_fuse_generate_list(xfClipboard* clipboard, const BYTE* data, UINT32 size)
 {
 	BOOL status = FALSE;
+	wStream sbuffer = { 0 };
+	wStream* s;
+
 	if (size < 4)
 	{
 		WLog_ERR(TAG, "size of format data response invalid : %d", size);
@@ -1986,7 +1997,7 @@ static BOOL xf_cliprdr_fuse_generate_list(xfClipboard* clipboard, const BYTE* da
 	if (count < 1)
 		return FALSE;
 
-	wStream* s = Stream_New((BYTE*)data, size);
+	s = Stream_StaticConstInit(&sbuffer, data, size);
 	if (!s || !xf_cliprdr_fuse_check_stream(s, count))
 	{
 		WLog_ERR(TAG, "Stream_New failed");
@@ -2009,7 +2020,6 @@ static BOOL xf_cliprdr_fuse_generate_list(xfClipboard* clipboard, const BYTE* da
 error2:
 	ArrayList_Unlock(clipboard->ino_list);
 error:
-	Stream_Free(s, FALSE);
 	return status;
 }
 #endif
@@ -2051,6 +2061,8 @@ xf_cliprdr_server_format_data_response(CliprdrClientContext* context,
 	if (formatDataResponse->msgFlags == CB_RESPONSE_FAIL)
 	{
 		WLog_WARN(TAG, "Format Data Response PDU msgFlags is CB_RESPONSE_FAIL");
+		free(clipboard->respond);
+		clipboard->respond = NULL;
 		return CHANNEL_RC_OK;
 	}
 
@@ -2157,7 +2169,7 @@ xf_cliprdr_server_format_data_response(CliprdrClientContext* context,
 	{
 		if (SrcSize == 0)
 		{
-			WLog_INFO(TAG, "skipping, empty data detected!!!");
+			WLog_DBG(TAG, "skipping, empty data detected!");
 			free(clipboard->respond);
 			clipboard->respond = NULL;
 			return CHANNEL_RC_OK;
@@ -2954,7 +2966,6 @@ xfClipboard* xf_clipboard_new(xfContext* xfc)
 
 		clientFormat = &clipboard->clientFormats[n++];
 	}
-
 	if (ClipboardGetFormatId(clipboard->system, "x-special/mate-copied-files"))
 	{
 		clipboard->file_formats_registered = TRUE;
@@ -2964,8 +2975,6 @@ xfClipboard* xf_clipboard_new(xfContext* xfc)
 
 		if (!clientFormat->formatName)
 			goto error;
-
-		clientFormat = &clipboard->clientFormats[n++];
 	}
 
 	clipboard->numClientFormats = n;

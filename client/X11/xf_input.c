@@ -17,9 +17,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -107,10 +105,10 @@ static BOOL register_input_events(xfContext* xfc, Window window)
 				case XITouchClass:
 					if (settings->MultiTouchInput)
 					{
-						XITouchClassInfo* t = (XITouchClassInfo*)class;
+						const XITouchClassInfo* t = (const XITouchClassInfo*)class;
 						if (t->mode == XIDirectTouch)
 						{
-							WLog_INFO(
+							WLog_DBG(
 							    TAG,
 							    "%s %s touch device (id: %d, mode: %d), supporting %d touches.",
 							    dev->name, (t->mode == XIDirectTouch) ? "direct" : "dependent",
@@ -123,9 +121,9 @@ static BOOL register_input_events(xfContext* xfc, Window window)
 					break;
 				case XIButtonClass:
 				{
-					XIButtonClassInfo* t = (XIButtonClassInfo*)class;
-					WLog_INFO(TAG, "%s button device (id: %d, mode: %d)", dev->name, dev->deviceid,
-					          t->num_buttons);
+					const XIButtonClassInfo* t = (const XIButtonClassInfo*)class;
+					WLog_DBG(TAG, "%s button device (id: %d, mode: %d)", dev->name, dev->deviceid,
+					         t->num_buttons);
 					XISetMask(masks[nmasks], XI_ButtonPress);
 					XISetMask(masks[nmasks], XI_ButtonRelease);
 					XISetMask(masks[nmasks], XI_Motion);
@@ -760,6 +758,7 @@ int xf_input_handle_event(xfContext* xfc, const XEvent* event)
 		return xf_input_handle_event_local(xfc, event);
 	}
 
-#endif
+#else
 	return 0;
+#endif
 }

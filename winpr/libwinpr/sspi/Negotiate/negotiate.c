@@ -18,9 +18,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <winpr/config.h>
 
 #include <winpr/crt.h>
 #include <winpr/sspi.h>
@@ -327,7 +325,7 @@ static SECURITY_STATUS SEC_ENTRY negotiate_AcceptSecurityContext(
 	    phCredential, &(context->SubContext), pInput, fContextReq, TargetDataRep,
 	    &(context->SubContext), pOutput, pfContextAttr, ptsTimeStamp);
 
-	if (status != SEC_E_OK)
+	if (IsSecurityStatusError(status))
 	{
 		WLog_WARN(TAG, "AcceptSecurityContext status %s [0x%08" PRIX32 "]",
 		          GetSecurityStatusString(status), status);

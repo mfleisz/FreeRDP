@@ -206,12 +206,13 @@ static BOOL x11_shadow_input_synchronize_event(rdpShadowSubsystem* subsystem,
 }
 
 static BOOL x11_shadow_input_keyboard_event(rdpShadowSubsystem* subsystem, rdpShadowClient* client,
-                                            UINT16 flags, UINT16 code)
+                                            UINT16 flags, UINT8 code)
 {
 #ifdef WITH_XTEST
 	x11ShadowSubsystem* x11 = (x11ShadowSubsystem*)subsystem;
 	DWORD vkcode;
 	DWORD keycode;
+	DWORD scancode;
 	BOOL extended = FALSE;
 
 	if (!client || !subsystem)
@@ -220,10 +221,11 @@ static BOOL x11_shadow_input_keyboard_event(rdpShadowSubsystem* subsystem, rdpSh
 	if (flags & KBD_FLAGS_EXTENDED)
 		extended = TRUE;
 
+	scancode = code;
 	if (extended)
-		code |= KBDEXT;
+		scancode |= KBDEXT;
 
-	vkcode = GetVirtualKeyCodeFromVirtualScanCode(code, 4);
+	vkcode = GetVirtualKeyCodeFromVirtualScanCode(scancode, 4);
 
 	if (extended)
 		vkcode |= KBDEXT;
@@ -1318,7 +1320,7 @@ static int x11_shadow_subsystem_init(rdpShadowSubsystem* sub)
 	subsystem->cursorMaxWidth = 256;
 	subsystem->cursorMaxHeight = 256;
 	subsystem->cursorPixels =
-	    _aligned_malloc(subsystem->cursorMaxWidth * subsystem->cursorMaxHeight * 4, 16);
+	    winpr_aligned_malloc(subsystem->cursorMaxWidth * subsystem->cursorMaxHeight * 4, 16);
 
 	if (!subsystem->cursorPixels)
 		return -1;
@@ -1392,7 +1394,7 @@ static int x11_shadow_subsystem_uninit(rdpShadowSubsystem* sub)
 
 	if (subsystem->cursorPixels)
 	{
-		_aligned_free(subsystem->cursorPixels);
+		winpr_aligned_free(subsystem->cursorPixels);
 		subsystem->cursorPixels = NULL;
 	}
 

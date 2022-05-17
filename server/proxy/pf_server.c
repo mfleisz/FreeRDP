@@ -21,9 +21,8 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
+
 #include <winpr/crt.h>
 #include <winpr/ssl.h>
 #include <winpr/path.h>
@@ -37,6 +36,7 @@
 #include <freerdp/streamdump.h>
 #include <freerdp/channels/wtsvc.h>
 #include <freerdp/channels/channels.h>
+#include <freerdp/channels/drdynvc.h>
 #include <freerdp/build-config.h>
 
 #include <freerdp/channels/rdpdr.h>
@@ -45,12 +45,14 @@
 #include <freerdp/server/proxy/proxy_log.h>
 
 #include "pf_server.h"
+#include "pf_channel.h"
 #include <freerdp/server/proxy/proxy_config.h>
 #include "pf_client.h"
 #include <freerdp/server/proxy/proxy_context.h>
 #include "pf_update.h"
 #include "proxy_modules.h"
 #include "pf_utils.h"
+#include "channels/pf_channel_drdynvc.h"
 #include "channels/pf_channel_rdpdr.h"
 
 #define TAG PROXY_TAG("server")
@@ -195,12 +197,40 @@ static BOOL pf_server_setup_channels(freerdp_peer* peer)
 		const char* cname = accepted_channels[i];
 		UINT16 channelId = WTSChannelGetId(peer, cname);
 
-		PROXY_LOG_INFO(TAG, ps, "Accepted channel: %s", cname);
+		PROXY_LOG_INFO(TAG, ps, "Accepted channel: %s (%d)", cname, channelId);
 		channelContext = ChannelContext_new(ps, cname, channelId);
 		if (!channelContext)
 		{
 			PROXY_LOG_ERR(TAG, ps, "error seting up channelContext for '%s'", cname);
 			return FALSE;
+		}
+
+		if (strcmp(cname, DRDYNVC_SVC_CHANNEL_NAME) == 0)
+		{
+			if (!pf_channel_setup_drdynvc(ps->pdata, channelContext))
+			{
+				PROXY_LOG_ERR(TAG, ps, "error while setting up dynamic channel");
+				ChannelContext_free(channelContext);
+				return FALSE;
+			}
+		}
+		else if (strcmp(cname, RDPDR_SVC_CHANNEL_NAME) == 0 && (channelContext->channelMode == PF_UTILS_CHANNEL_INTERCEPT))
+		{
+			if (!pf_channel_setup_rdpdr(ps, channelContext))
+			{
+				PROXY_LOG_ERR(TAG, ps, "error while setting up redirection channel");
+				ChannelContext_free(channelContext);
+				return FALSE;
+			}
+		}
+		else
+		{
+			if (!pf_channel_setup_generic(channelContext))
+			{
+				PROXY_LOG_ERR(TAG, ps, "error while setting up generic channel");
+				ChannelContext_free(channelContext);
+				return FALSE;
+			}
 		}
 
 		if (!HashTable_Insert(byId, &channelContext->channel_id, channelContext))
@@ -230,23 +260,27 @@ static BOOL pf_server_post_connect(freerdp_peer* peer)
 	pClientContext* pc;
 	rdpSettings* client_settings;
 	proxyData* pdata;
+	rdpSettings* settings;
 
 	WINPR_ASSERT(peer);
 
 	ps = (pServerContext*)peer->context;
 	WINPR_ASSERT(ps);
 
+	settings = peer->context->settings;
+	WINPR_ASSERT(settings);
+
 	pdata = ps->pdata;
 	WINPR_ASSERT(pdata);
 
-	PROXY_LOG_INFO(TAG, ps, "Accepted client: %s", peer->settings->ClientHostname);
+	PROXY_LOG_INFO(TAG, ps, "Accepted client: %s", settings->ClientHostname);
 	if (!pf_server_setup_channels(peer))
 	{
 		PROXY_LOG_ERR(TAG, ps, "error setting up channels");
 		return FALSE;
 	}
 
-	pc = pf_context_create_client_context(peer->settings);
+	pc = pf_context_create_client_context(settings);
 	if (pc == NULL)
 	{
 		PROXY_LOG_ERR(TAG, ps, "failed to create client context!");
@@ -270,18 +304,6 @@ static BOOL pf_server_post_connect(freerdp_peer* peer)
 	if (!pf_modules_run_hook(pdata->module, HOOK_TYPE_SERVER_POST_CONNECT, pdata, peer))
 		return FALSE;
 
-	switch (pf_utils_get_channel_mode(ps->pdata->config, RDPDR_SVC_CHANNEL_NAME))
-	{
-		case PF_UTILS_CHANNEL_INTERCEPT:
-			if (!pf_channel_rdpdr_server_new(ps))
-				return FALSE;
-			if (!pf_channel_rdpdr_server_announce(ps))
-				return FALSE;
-			break;
-		default:
-			break;
-	}
-
 	/* Start a proxy's client in it's own thread */
 	if (!(pdata->client_thread = CreateThread(NULL, 0, pf_client_start, pc, 0, NULL)))
 	{
@@ -296,6 +318,7 @@ static BOOL pf_server_activate(freerdp_peer* peer)
 {
 	pServerContext* ps;
 	proxyData* pdata;
+	rdpSettings* settings;
 
 	WINPR_ASSERT(peer);
 
@@ -305,8 +328,10 @@ static BOOL pf_server_activate(freerdp_peer* peer)
 	pdata = ps->pdata;
 	WINPR_ASSERT(pdata);
 
-	WINPR_ASSERT(peer->settings);
-	peer->settings->CompressionLevel = PACKET_COMPR_TYPE_RDP8;
+	settings = peer->context->settings;
+	WINPR_ASSERT(settings);
+
+	settings->CompressionLevel = PACKET_COMPR_TYPE_RDP8;
 	if (!pf_modules_run_hook(pdata->module, HOOK_TYPE_SERVER_ACTIVATE, pdata, peer))
 		return FALSE;
 
@@ -327,7 +352,6 @@ static BOOL pf_server_logon(freerdp_peer* peer, const SEC_WINNT_AUTH_IDENTITY* i
 
 	pdata = ps->pdata;
 	WINPR_ASSERT(pdata);
-	WINPR_ASSERT(peer->settings);
 	WINPR_ASSERT(identity);
 
 	info.identity = identity;
@@ -344,22 +368,6 @@ static BOOL pf_server_adjust_monitor_layout(freerdp_peer* peer)
 	return TRUE;
 }
 
-static BOOL pf_server_receive_channel_intercept(proxyData* pdata, UINT16 channelId,
-                                                const char* channel_name, const BYTE* data,
-                                                size_t size, UINT32 flags, size_t totalSize)
-{
-	WINPR_ASSERT(pdata);
-	WINPR_ASSERT(channel_name);
-
-	if (strcmp(channel_name, RDPDR_SVC_CHANNEL_NAME) == 0)
-		return pf_channel_rdpdr_server_handle(pdata->ps, channelId, channel_name, data, size, flags,
-		                                      totalSize);
-
-	WLog_ERR(TAG, "[%s]: Channel %s [0x%04" PRIx16 "] intercept mode not implemented, aborting",
-	         __FUNCTION__, channel_name, channelId);
-	return FALSE;
-}
-
 static BOOL pf_server_receive_channel_data_hook(freerdp_peer* peer, UINT16 channelId,
                                                 const BYTE* data, size_t size, UINT32 flags,
                                                 size_t totalSize)
@@ -369,7 +377,7 @@ static BOOL pf_server_receive_channel_data_hook(freerdp_peer* peer, UINT16 chann
 	proxyData* pdata;
 	const proxyConfig* config;
 	const pServerChannelContext* channel;
-	UINT32 channelId32 = channelId;
+	UINT64 channelId64 = channelId;
 
 	WINPR_ASSERT(peer);
 
@@ -390,40 +398,33 @@ static BOOL pf_server_receive_channel_data_hook(freerdp_peer* peer, UINT16 chann
 	if (!pc)
 		goto original_cb;
 
-	channel = HashTable_GetItemValue(ps->channelsById, &channelId32);
+	channel = HashTable_GetItemValue(ps->channelsById, &channelId64);
 	if (!channel)
 	{
-		PROXY_LOG_ERR(TAG, ps, "channel id=%d not registered here, dropping", channelId32);
+		PROXY_LOG_ERR(TAG, ps, "channel id=%d not registered here, dropping", channelId64);
 		return TRUE;
 	}
 
-	switch (channel->channelMode)
+	WINPR_ASSERT(channel->onFrontData);
+	switch (channel->onFrontData(pdata, channel, data, size, flags, totalSize))
 	{
-		case PF_UTILS_CHANNEL_BLOCK:
-			return TRUE;
-		case PF_UTILS_CHANNEL_PASSTHROUGH:
-		{
-			proxyChannelDataEventInfo ev;
+	case PF_CHANNEL_RESULT_PASS: {
+		proxyChannelDataEventInfo ev = { 0 };
 
-			ev.channel_id = channelId;
-			ev.channel_name = channel->channel_name;
-			ev.data = data;
-			ev.data_len = size;
-			ev.flags = flags;
-			ev.total_size = totalSize;
-
-			if (!pf_modules_run_filter(pdata->module, FILTER_TYPE_SERVER_PASSTHROUGH_CHANNEL_DATA,
-			                           pdata, &ev))
-				return TRUE; /* Silently ignore */
-
-			return IFCALLRESULT(TRUE, pc->sendChannelData, pc, &ev);
-		}
-		case PF_UTILS_CHANNEL_INTERCEPT:
-			return pf_server_receive_channel_intercept(pdata, channelId, channel->channel_name,
-			                                           data, size, flags, totalSize);
-		default:
-			break;
+		ev.channel_id = channelId;
+		ev.channel_name = channel->channel_name;
+		ev.data = data;
+		ev.data_len = size;
+		ev.flags = flags;
+		ev.total_size = totalSize;
+		return IFCALLRESULT(TRUE, pc->sendChannelData, pc, &ev);
 	}
+	case PF_CHANNEL_RESULT_DROP:
+		return TRUE;
+	case PF_CHANNEL_RESULT_ERROR:
+		return FALSE;
+	}
+
 
 original_cb:
 	WINPR_ASSERT(pdata->server_receive_channel_data_original);
@@ -441,12 +442,12 @@ static BOOL pf_server_initialize_peer_connection(freerdp_peer* peer)
 
 	WINPR_ASSERT(peer);
 
-	settings = peer->settings;
-	WINPR_ASSERT(settings);
-
 	ps = (pServerContext*)peer->context;
 	if (!ps)
 		return FALSE;
+
+	settings = peer->context->settings;
+	WINPR_ASSERT(settings);
 
 	pdata = proxy_data_new();
 	if (!pdata)
@@ -461,7 +462,9 @@ static BOOL pf_server_initialize_peer_connection(freerdp_peer* peer)
 
 	/* currently not supporting GDI orders */
 	ZeroMemory(settings->OrderSupport, 32);
-	peer->update->autoCalculateBitmapData = FALSE;
+
+	WINPR_ASSERT(peer->context->update);
+	peer->context->update->autoCalculateBitmapData = FALSE;
 
 	settings->SupportMonitorLayoutPdu = TRUE;
 	settings->SupportGraphicsPipeline = config->GFX;
@@ -509,7 +512,7 @@ static BOOL pf_server_initialize_peer_connection(freerdp_peer* peer)
 	peer->Activate = pf_server_activate;
 	peer->Logon = pf_server_logon;
 	peer->AdjustMonitorsLayout = pf_server_adjust_monitor_layout;
-	peer->settings->MultifragMaxRequestSize = 0xFFFFFF; /* FIXME */
+	settings->MultifragMaxRequestSize = 0xFFFFFF; /* FIXME */
 
 	/* virtual channels receive data hook */
 	pdata->server_receive_channel_data_original = peer->ReceiveChannelData;
