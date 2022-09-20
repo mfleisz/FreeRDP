@@ -182,6 +182,8 @@ static const size_t bool_list_indices[] = {
 static const size_t uint16_list_indices[] = {
 	FreeRDP_DesktopOrientation,
 	FreeRDP_ProxyPort,
+	FreeRDP_TLSMaxVersion,
+	FreeRDP_TLSMinVersion,
 };
 
 #define have_uint32_list_indices
@@ -325,6 +327,7 @@ static const size_t string_list_indices[] = {
 	FreeRDP_AlternateShell,
 	FreeRDP_AssistanceFile,
 	FreeRDP_AuthenticationServiceClass,
+	FreeRDP_BitmapCachePersistFile,
 	FreeRDP_CardName,
 	FreeRDP_CertificateAcceptedFingerprints,
 	FreeRDP_CertificateContent,
@@ -355,6 +358,7 @@ static const size_t string_list_indices[] = {
 	FreeRDP_KerberosArmor,
 	FreeRDP_KerberosCache,
 	FreeRDP_KerberosKdc,
+	FreeRDP_KerberosKeytab,
 	FreeRDP_KerberosLifeTime,
 	FreeRDP_KerberosRealm,
 	FreeRDP_KerberosRenewableLifeTime,
@@ -373,8 +377,6 @@ static const size_t string_list_indices[] = {
 	FreeRDP_ProxyPassword,
 	FreeRDP_ProxyUsername,
 	FreeRDP_RDP2TCPArgs,
-	FreeRDP_RdpKeyContent,
-	FreeRDP_RdpKeyFile,
 	FreeRDP_ReaderName,
 	FreeRDP_RedirectionAcceptedCert,
 	FreeRDP_RedirectionDomain,
@@ -396,7 +398,9 @@ static const size_t string_list_indices[] = {
 	FreeRDP_ShellWorkingDirectory,
 	FreeRDP_SmartcardCertificate,
 	FreeRDP_SmartcardPrivateKey,
+	FreeRDP_SspiModule,
 	FreeRDP_TargetNetAddress,
+	FreeRDP_TlsSecretsFile,
 	FreeRDP_TransportDumpFile,
 	FreeRDP_Username,
 	FreeRDP_WindowTitle,

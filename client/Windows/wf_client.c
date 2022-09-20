@@ -116,16 +116,7 @@ static BOOL wf_end_paint(rdpContext* context)
 		updateRect.right = extents->right;
 		updateRect.bottom = extents->bottom;
 
-		if (wfc->xScrollVisible)
-		{
-			updateRect.left -= MIN(updateRect.left, wfc->xCurrentScroll);
-			updateRect.right -= MIN(updateRect.right, wfc->xCurrentScroll);
-		}
-		if (wfc->yScrollVisible)
-		{
-			updateRect.top -= MIN(updateRect.top, wfc->yCurrentScroll);
-			updateRect.bottom -= MIN(updateRect.bottom, wfc->yCurrentScroll);
-		}
+		wf_scale_rect(wfc, &updateRect);
 
 		InvalidateRect(wfc->hwnd, &updateRect, FALSE);
 
@@ -200,7 +191,7 @@ static BOOL wf_desktop_resize(rdpContext* context)
 
 	if (wfc->fullscreen != TRUE)
 	{
-		if (wfc->hwnd)
+		if (wfc->hwnd && !settings->SmartSizing)
 			SetWindowPos(wfc->hwnd, HWND_TOP, -1, -1, settings->DesktopWidth + wfc->diff.x,
 			             settings->DesktopHeight + wfc->diff.y, SWP_NOMOVE);
 	}
@@ -273,9 +264,6 @@ static BOOL wf_pre_connect(freerdp* instance)
 		freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, desktopHeight);
 	}
 
-	if (!freerdp_client_load_addins(context->channels, context->settings))
-		return -1;
-
 	rc = freerdp_keyboard_init(freerdp_settings_get_uint32(settings, FreeRDP_KeyboardLayout));
 	freerdp_settings_set_uint32(settings, FreeRDP_KeyboardLayout, rc);
 	PubSub_SubscribeChannelConnected(instance->context->pubSub, wf_OnChannelConnectedEventHandler);
@@ -284,10 +272,24 @@ static BOOL wf_pre_connect(freerdp* instance)
 	return TRUE;
 }
 
+static void wf_append_item_to_system_menu(HMENU hMenu, UINT fMask, UINT wID, const wchar_t* text,
+                                          wfContext* wfc)
+{
+	MENUITEMINFO item_info = { 0 };
+	item_info.fMask = fMask;
+	item_info.cbSize = sizeof(MENUITEMINFO);
+	item_info.wID = wID;
+	item_info.fType = MFT_STRING;
+	item_info.dwTypeData = _wcsdup(text);
+	item_info.cch = (UINT)_wcslen(text);
+	if (wfc)
+		item_info.dwItemData = (ULONG_PTR)wfc;
+	InsertMenuItem(hMenu, wfc->systemMenuInsertPosition++, TRUE, &item_info);
+}
+
 static void wf_add_system_menu(wfContext* wfc)
 {
 	HMENU hMenu;
-	MENUITEMINFO item_info;
 
 	if (wfc->fullscreen && !wfc->fullscreen_toggle)
 	{
@@ -300,20 +302,19 @@ static void wf_add_system_menu(wfContext* wfc)
 	}
 
 	hMenu = GetSystemMenu(wfc->hwnd, FALSE);
-	ZeroMemory(&item_info, sizeof(MENUITEMINFO));
-	item_info.fMask = MIIM_CHECKMARKS | MIIM_FTYPE | MIIM_ID | MIIM_STRING | MIIM_DATA;
-	item_info.cbSize = sizeof(MENUITEMINFO);
-	item_info.wID = SYSCOMMAND_ID_SMARTSIZING;
-	item_info.fType = MFT_STRING;
-	item_info.dwTypeData = _wcsdup(_T("Smart sizing"));
-	item_info.cch = (UINT)_wcslen(_T("Smart sizing"));
-	item_info.dwItemData = (ULONG_PTR)wfc;
-	InsertMenuItem(hMenu, 6, TRUE, &item_info);
+
+	wf_append_item_to_system_menu(hMenu,
+	                              MIIM_CHECKMARKS | MIIM_FTYPE | MIIM_ID | MIIM_STRING | MIIM_DATA,
+	                              SYSCOMMAND_ID_SMARTSIZING, L"Smart sizing", wfc);
 
 	if (wfc->common.context.settings->SmartSizing)
 	{
 		CheckMenuItem(hMenu, SYSCOMMAND_ID_SMARTSIZING, MF_CHECKED);
 	}
+
+	if (wfc->common.context.settings->RemoteAssistanceMode)
+		wf_append_item_to_system_menu(hMenu, MIIM_FTYPE | MIIM_ID | MIIM_STRING,
+		                              SYSCOMMAND_ID_REQUEST_CONTROL, L"Request control", wfc);
 }
 
 static WCHAR* wf_window_get_title(rdpSettings* settings)
@@ -498,7 +499,7 @@ static BOOL wf_authenticate_raw(freerdp* instance, const char* title, char** use
 		strncpy(Domain, *domain, CREDUI_MAX_DOMAIN_TARGET_LENGTH);
 	}
 
-    if (!(*UserName && *Password))
+	if (!(*UserName && *Password))
 	{
 		if (!wfc->isConsole && wfc->common.context.settings->CredentialsFromStdin)
 			WLog_ERR(TAG, "Flag for stdin read present but stdin is redirected; using GUI");
@@ -591,8 +592,6 @@ static WCHAR* wf_format_text(const WCHAR* fmt, ...)
 	int rc;
 	size_t size = 0;
 	WCHAR* buffer = NULL;
-	if (!buffer)
-		return NULL;
 
 	do
 	{
@@ -791,7 +790,8 @@ static DWORD wf_is_x509_certificate_trusted(const char* common_name, const char*
 		goto CleanUp;
 	}
 
-	WLog_INFO(TAG, "CertVerifyCertificateChainPolicy succeeded for %s (%s) issued by %s", common_name, subject, issuer);
+	WLog_INFO(TAG, "CertVerifyCertificateChainPolicy succeeded for %s (%s) issued by %s",
+	          common_name, subject, issuer);
 
 	hr = S_OK;
 CleanUp:
@@ -803,7 +803,7 @@ CleanUp:
 		wf_report_error(NULL, hr);
 	}
 
-  free(derPubKey);
+	free(derPubKey);
 
 	if (NULL != pChainContext)
 	{
@@ -1330,7 +1330,7 @@ static BOOL wfreerdp_client_new(freerdp* instance, rdpContext* context)
 		instance->VerifyChangedCertificateEx = wf_verify_changed_certificate_ex;
 		instance->PresentGatewayMessage = wf_present_gateway_message;
 	}
-	
+
 #ifdef WITH_PROGRESS_BAR
 	CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 	CoCreateInstance(&CLSID_TaskbarList, NULL, CLSCTX_ALL, &IID_ITaskbarList3,
@@ -1368,6 +1368,13 @@ static int wfreerdp_client_start(rdpContext* context)
 	hWndParent = (HWND)context->settings->ParentWindowId;
 	context->settings->EmbeddedWindow = (hWndParent) ? TRUE : FALSE;
 	wfc->hWndParent = hWndParent;
+
+	/* initial windows system item position where we will insert new menu item
+	 * after default 5 items (restore, move, size, minimize, maximize)
+	 * gets incremented each time wf_append_item_to_system_menu is called
+	 * or maybe could use GetMenuItemCount() to get initial item count ? */
+	wfc->systemMenuInsertPosition = 6;
+
 	wfc->hInstance = hInstance;
 	wfc->cursor = LoadCursor(NULL, IDC_ARROW);
 	wfc->icon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON1));

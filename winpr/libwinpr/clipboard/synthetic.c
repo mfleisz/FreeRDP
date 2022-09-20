@@ -62,7 +62,7 @@ static void* clipboard_synthesize_cf_text(wClipboard* clipboard, UINT32 formatId
 		return pDstData;
 	}
 	else if ((formatId == CF_TEXT) || (formatId == CF_OEMTEXT) ||
-	         (formatId == ClipboardGetFormatId(clipboard, "UTF8_STRING")) ||
+	         (formatId == ClipboardGetFormatId(clipboard, mime_utf8_string)) ||
 	         (formatId == ClipboardGetFormatId(clipboard, "text/plain")) ||
 	         (formatId == ClipboardGetFormatId(clipboard, "TEXT")) ||
 	         (formatId == ClipboardGetFormatId(clipboard, "STRING")))
@@ -126,7 +126,7 @@ static void* clipboard_synthesize_cf_unicodetext(wClipboard* clipboard, UINT32 f
 	WCHAR* pDstData = NULL;
 
 	if ((formatId == CF_TEXT) || (formatId == CF_OEMTEXT) ||
-	    (formatId == ClipboardGetFormatId(clipboard, "UTF8_STRING")) ||
+	    (formatId == ClipboardGetFormatId(clipboard, mime_utf8_string)) ||
 	    (formatId == ClipboardGetFormatId(clipboard, "text/plain")) ||
 	    (formatId == ClipboardGetFormatId(clipboard, "TEXT")) ||
 	    (formatId == ClipboardGetFormatId(clipboard, "STRING")))
@@ -153,7 +153,7 @@ static void* clipboard_synthesize_cf_unicodetext(wClipboard* clipboard, UINT32 f
 }
 
 /**
- * "UTF8_STRING":
+ * mime_utf8_string:
  *
  * Null-terminated UTF-8 string with LF line endings.
  */
@@ -348,7 +348,8 @@ static void* clipboard_synthesize_html_format(wClipboard* clipboard, UINT32 form
 
 	if (formatId == ClipboardGetFormatId(clipboard, "text/html"))
 	{
-		INT64 SrcSize = (INT64)*pSize;
+		const INT64 SrcSize = (INT64)*pSize;
+		const size_t DstSize = SrcSize + 200;
 		char* body;
 		char num[20] = { 0 };
 
@@ -378,12 +379,12 @@ static void* clipboard_synthesize_html_format(wClipboard* clipboard, UINT32 form
 			}
 		}
 
-		pDstData = (char*)calloc(1, SrcSize + 200);
+		pDstData = (char*)calloc(1, DstSize);
 
 		if (!pDstData)
 			goto fail;
 
-		sprintf_s(pDstData, SrcSize + 200,
+		sprintf_s(pDstData, DstSize,
 		          "Version:0.9\r\n"
 		          "StartHTML:0000000000\r\n"
 		          "EndHTML:0000000000\r\n"
@@ -395,29 +396,42 @@ static void* clipboard_synthesize_html_format(wClipboard* clipboard, UINT32 form
 			body = strstr(pSrcData.cpc, "<BODY");
 
 		/* StartHTML */
-		sprintf_s(num, sizeof(num), "%010" PRIuz "", strnlen(pDstData, SrcSize + 200));
+		sprintf_s(num, sizeof(num), "%010" PRIuz "", strnlen(pDstData, DstSize));
 		CopyMemory(&pDstData[23], num, 10);
 
 		if (!body)
-			strcat(pDstData, "<HTML><BODY>");
+		{
+			if (!winpr_str_append("<HTML><BODY>", pDstData, DstSize, NULL))
+				goto fail;
+		}
 
-		strcat(pDstData, "<!--StartFragment-->");
+		if (!winpr_str_append("<!--StartFragment-->", pDstData, DstSize, NULL))
+			goto fail;
+
 		/* StartFragment */
 		sprintf_s(num, sizeof(num), "%010" PRIuz "", strnlen(pDstData, SrcSize + 200));
 		CopyMemory(&pDstData[69], num, 10);
-		strcat(pDstData, pSrcData.cpc);
+
+		if (!winpr_str_append(pSrcData.cpc, pDstData, DstSize, NULL))
+			goto fail;
+
 		/* EndFragment */
 		sprintf_s(num, sizeof(num), "%010" PRIuz "", strnlen(pDstData, SrcSize + 200));
 		CopyMemory(&pDstData[93], num, 10);
-		strcat(pDstData, "<!--EndFragment-->");
+
+		if (!winpr_str_append("<!--EndFragment-->", pDstData, DstSize, NULL))
+			goto fail;
 
 		if (!body)
-			strcat(pDstData, "</BODY></HTML>");
+		{
+			if (!winpr_str_append("</BODY></HTML>", pDstData, DstSize, NULL))
+				goto fail;
+		}
 
 		/* EndHTML */
-		sprintf_s(num, sizeof(num), "%010" PRIuz "", strnlen(pDstData, SrcSize + 200));
+		sprintf_s(num, sizeof(num), "%010" PRIuz "", strnlen(pDstData, DstSize));
 		CopyMemory(&pDstData[43], num, 10);
-		*pSize = (UINT32)strlen(pDstData) + 1;
+		*pSize = (UINT32)strnlen(pDstData, DstSize) + 1;
 	}
 fail:
 	free(pSrcData.pv);
@@ -489,7 +503,7 @@ BOOL ClipboardInitSynthesizers(wClipboard* clipboard)
 	ClipboardRegisterSynthesizer(clipboard, CF_TEXT, CF_UNICODETEXT,
 	                             clipboard_synthesize_cf_unicodetext);
 	ClipboardRegisterSynthesizer(clipboard, CF_TEXT, CF_LOCALE, clipboard_synthesize_cf_locale);
-	altFormatId = ClipboardRegisterFormat(clipboard, "UTF8_STRING");
+	altFormatId = ClipboardRegisterFormat(clipboard, mime_utf8_string);
 	ClipboardRegisterSynthesizer(clipboard, CF_TEXT, altFormatId, clipboard_synthesize_utf8_string);
 	/**
 	 * CF_OEMTEXT
@@ -498,7 +512,7 @@ BOOL ClipboardInitSynthesizers(wClipboard* clipboard)
 	ClipboardRegisterSynthesizer(clipboard, CF_OEMTEXT, CF_UNICODETEXT,
 	                             clipboard_synthesize_cf_unicodetext);
 	ClipboardRegisterSynthesizer(clipboard, CF_OEMTEXT, CF_LOCALE, clipboard_synthesize_cf_locale);
-	altFormatId = ClipboardRegisterFormat(clipboard, "UTF8_STRING");
+	altFormatId = ClipboardRegisterFormat(clipboard, mime_utf8_string);
 	ClipboardRegisterSynthesizer(clipboard, CF_OEMTEXT, altFormatId,
 	                             clipboard_synthesize_utf8_string);
 	/**
@@ -509,13 +523,13 @@ BOOL ClipboardInitSynthesizers(wClipboard* clipboard)
 	                             clipboard_synthesize_cf_oemtext);
 	ClipboardRegisterSynthesizer(clipboard, CF_UNICODETEXT, CF_LOCALE,
 	                             clipboard_synthesize_cf_locale);
-	altFormatId = ClipboardRegisterFormat(clipboard, "UTF8_STRING");
+	altFormatId = ClipboardRegisterFormat(clipboard, mime_utf8_string);
 	ClipboardRegisterSynthesizer(clipboard, CF_UNICODETEXT, altFormatId,
 	                             clipboard_synthesize_utf8_string);
 	/**
 	 * UTF8_STRING
 	 */
-	formatId = ClipboardRegisterFormat(clipboard, "UTF8_STRING");
+	formatId = ClipboardRegisterFormat(clipboard, mime_utf8_string);
 
 	if (formatId)
 	{

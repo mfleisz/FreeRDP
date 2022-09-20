@@ -338,6 +338,17 @@ static UINT remdesk_recv_ctl_result_pdu(remdeskPlugin* remdesk, wStream* s,
 	Stream_Read_UINT32(s, result); /* result (4 bytes) */
 	*pResult = result;
 	// WLog_DBG(TAG, "RemdeskRecvResult: 0x%08"PRIX32"", result);
+	switch (result)
+	{
+		case REMDESK_ERROR_HELPEESAIDNO:
+			WLog_DBG(TAG, "remote assistance connection request was denied");
+			return ERROR_CONNECTION_REFUSED;
+			break;
+
+		default:
+			break;
+	}
+
 	return CHANNEL_RC_OK;
 }
 
@@ -819,6 +830,9 @@ static VOID VCAPITYPE remdesk_virtual_channel_open_event_ex(LPVOID lpUserParam, 
 
 	switch (event)
 	{
+		case CHANNEL_EVENT_INITIALIZED:
+			break;
+
 		case CHANNEL_EVENT_DATA_RECEIVED:
 			if (!remdesk || (remdesk->OpenHandle != openHandle))
 			{
@@ -848,6 +862,7 @@ static VOID VCAPITYPE remdesk_virtual_channel_open_event_ex(LPVOID lpUserParam, 
 		default:
 			WLog_ERR(TAG, "unhandled event %" PRIu32 "!", event);
 			error = ERROR_INTERNAL_ERROR;
+			break;
 	}
 
 	if (error && remdesk && remdesk->rdpcontext)

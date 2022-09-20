@@ -19,9 +19,19 @@
 # limitations under the License.
 #
 
-cmake_minimum_required(VERSION 3.4)
+cmake_minimum_required(VERSION 3.9)
 
 project(proxy-capture-plugin VERSION 1.0.0 LANGUAGES C)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS ON)
+
+include(CheckIPOSupported)
+check_ipo_supported(RESULT supported OUTPUT error)
+if (supported)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif()
 
 add_library(${PROJECT_NAME} MODULE
 	cap_main.c
@@ -31,7 +41,7 @@ add_library(${PROJECT_NAME} MODULE
 	cap_protocol.h
 )
 
-target_link_libraries(${PROJECT_NAME} winpr)
+target_link_libraries(${PROJECT_NAME} winpr freerdp)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "")
 set_target_properties(${PROJECT_NAME} PROPERTIES NO_SONAME 1)

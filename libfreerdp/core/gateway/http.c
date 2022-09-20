@@ -56,7 +56,7 @@ struct s_http_context
 	char* RdgConnectionId;
 	char* RdgAuthScheme;
 	BOOL websocketUpgrade;
-	char SecWebsocketKey[16];
+	char* SecWebsocketKey;
 };
 
 struct s_http_request
@@ -273,14 +273,15 @@ BOOL http_context_enable_websocket_upgrade(HttpContext* context, BOOL enable)
 
 	if (enable)
 	{
-		int i;
-		winpr_RAND((BYTE*)context->SecWebsocketKey, 15);
-		for (i = 0; i < 16; i++)
-			context->SecWebsocketKey[i] = (context->SecWebsocketKey[i] | 0x40) & 0x5f;
-		context->SecWebsocketKey[15] = '\0';
+		BYTE key[16];
+		if (winpr_RAND(key, sizeof(key)) != 0)
+			return FALSE;
+
+		context->SecWebsocketKey = crypto_base64_encode(key, sizeof(key));
+		if (!context->SecWebsocketKey)
+			return FALSE;
 	}
-	else
-		context->SecWebsocketKey[0] = '\0';
+
 	context->websocketUpgrade = enable;
 	return TRUE;
 }
@@ -304,6 +305,7 @@ void http_context_free(HttpContext* context)
 {
 	if (context)
 	{
+		free(context->SecWebsocketKey);
 		free(context->UserAgent);
 		free(context->Host);
 		free(context->URI);
@@ -835,6 +837,7 @@ HttpResponse* http_response_recv(rdpTls* tls, BOOL readContentLength)
 		size_t s;
 		char* end;
 		/* Read until we encounter \r\n\r\n */
+		ERR_clear_error();
 		int status = BIO_read(tls->bio, Stream_Pointer(response->data), 1);
 
 		if (status <= 0)
@@ -951,6 +954,7 @@ HttpResponse* http_response_recv(rdpTls* tls, BOOL readContentLength)
 			if (!Stream_EnsureRemainingCapacity(response->data, bodyLength - response->BodyLength))
 				goto out_error;
 
+			ERR_clear_error();
 			status = BIO_read(tls->bio, Stream_Pointer(response->data),
 			                  bodyLength - response->BodyLength);
 
@@ -1123,8 +1127,7 @@ BOOL http_response_is_websocket(HttpContext* http, HttpResponse* response)
 	if (!winpr_Digest_Init(sha1, WINPR_MD_SHA1))
 		goto out;
 
-	if (!winpr_Digest_Update(sha1, (const BYTE*)http->SecWebsocketKey,
-	                         strlen(http->SecWebsocketKey)))
+	if (!winpr_Digest_Update(sha1, (BYTE*)http->SecWebsocketKey, strlen(http->SecWebsocketKey)))
 		goto out;
 	if (!winpr_Digest_Update(sha1, (const BYTE*)WEBSOCKET_MAGIC_GUID, strlen(WEBSOCKET_MAGIC_GUID)))
 		goto out;

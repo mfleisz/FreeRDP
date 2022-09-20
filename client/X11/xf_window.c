@@ -799,6 +799,7 @@ int xf_AppWindowCreate(xfContext* xfc, xfAppWindow* appWindow)
 
 	xf_FixWindowCoordinates(xfc, &appWindow->x, &appWindow->y, &appWindow->width,
 	                        &appWindow->height);
+	appWindow->shmid = -1;
 	appWindow->decorations = FALSE;
 	appWindow->fullscreen = FALSE;
 	appWindow->local_move.state = LMS_NOT_ACTIVE;
@@ -975,7 +976,7 @@ void xf_ShowWindow(xfContext* xfc, xfAppWindow* appWindow, BYTE state)
 			break;
 
 		case WINDOW_SHOW_MINIMIZED:
-		    appWindow->minimized = TRUE;
+			appWindow->minimized = TRUE;
 			XIconifyWindow(xfc->display, appWindow->handle, xfc->screen_number);
 			break;
 
@@ -1155,15 +1156,19 @@ void xf_DestroyWindow(xfContext* xfc, xfAppWindow* appWindow)
 
 xfAppWindow* xf_AppWindowFromX11Window(xfContext* xfc, Window wnd)
 {
-	int index;
-	int count;
+	size_t index;
+	size_t count;
 	ULONG_PTR* pKeys = NULL;
-	xfAppWindow* appWindow;
+
+	WINPR_ASSERT(xfc);
+	if (!xfc->railWindows)
+		return NULL;
+
 	count = HashTable_GetKeys(xfc->railWindows, &pKeys);
 
 	for (index = 0; index < count; index++)
 	{
-		appWindow = xf_rail_get_window(xfc, *(UINT64*)pKeys[index]);
+		xfAppWindow* appWindow = xf_rail_get_window(xfc, *(UINT64*)pKeys[index]);
 
 		if (!appWindow)
 		{

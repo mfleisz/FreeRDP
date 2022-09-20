@@ -180,30 +180,32 @@ static BOOL append_address(rdpAssistanceFile* file, const char* host, const char
 
 static BOOL freerdp_assistance_parse_address_list(rdpAssistanceFile* file, char* list)
 {
+	WLog_DBG(TAG, "freerdp_assistance_parse_address_list list=%s", list);
+
 	BOOL rc = FALSE;
-	char* p;
 
 	if (!file || !list)
 		return FALSE;
 
-	p = list;
+	char* strp = list;
+	char* s = ";";
+	char* token;
 
-	while ((p = strchr(p, ';')) != NULL)
+	// get the first token
+	token = strtok(strp, s);
+
+	// walk through other tokens
+	while (token != NULL)
 	{
-		char* q = strchr(p, ':');
+		char* port = strchr(token, ':');
+		*port = '\0';
+		port++;
 
-		if (!q)
+		if (!append_address(file, token, port))
 			goto out;
 
-		*q = '\0';
-		q++;
-
-		if (!append_address(file, p, q))
-			goto out;
-
-		p = q;
+		token = strtok(NULL, s);
 	}
-
 	rc = TRUE;
 out:
 	return rc;
@@ -457,7 +459,7 @@ static BOOL freerdp_assistance_parse_connection_string2(rdpAssistanceFile* file)
 		q++;
 		length = strlen(p);
 
-		if (length > 8)
+		if (length > 6)
 		{
 			if (!append_address(file, p, port))
 				goto out_fail;
@@ -742,6 +744,7 @@ int freerdp_assistance_parse_file_buffer(rdpAssistanceFile* file, const char* bu
 	char* p;
 	char* q;
 	char* r;
+	char* amp;
 	int status;
 	size_t length;
 
@@ -894,6 +897,10 @@ int freerdp_assistance_parse_file_buffer(rdpAssistanceFile* file, const char* bu
 		if (p)
 		{
 			p += sizeof("PassStub=\"") - 1;
+
+			// needs to be unescaped (&amp; => &)
+			amp = strstr(p, "&amp;");
+
 			q = strchr(p, '"');
 
 			if (!q)
@@ -909,13 +916,31 @@ int freerdp_assistance_parse_file_buffer(rdpAssistanceFile* file, const char* bu
 				return -1;
 			}
 
-			length = q - p;
+			if (amp)
+			{
+				length = q - p - 4;
+			}
+			else
+			{
+				length = q - p;
+			}
+
 			file->PassStub = (char*)malloc(length + 1);
 
 			if (!file->PassStub)
 				return -1;
 
-			CopyMemory(file->PassStub, p, length);
+			if (amp)
+			{
+				// just skip over "amp;" leaving "&"
+				CopyMemory(file->PassStub, p, amp - p + 1);
+				CopyMemory(file->PassStub + (amp - p + 1), amp + 5, q - amp + 5);
+			}
+			else
+			{
+				CopyMemory(file->PassStub, p, length);
+			}
+
 			file->PassStub[length] = '\0';
 		}
 

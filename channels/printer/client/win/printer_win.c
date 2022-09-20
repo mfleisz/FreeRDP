@@ -52,6 +52,7 @@ typedef struct
 
 	size_t id_sequence;
 	size_t references;
+	LPWSTR defaultPrinter;
 } rdpWinPrinterDriver;
 
 typedef struct
@@ -75,22 +76,23 @@ static WCHAR* printer_win_get_printjob_name(size_t id)
 {
 	time_t tt;
 	struct tm tres;
-	struct tm* t;
+	errno_t err;
 	WCHAR* str;
 	size_t len = 1024;
 	int rc;
 
 	tt = time(NULL);
-	t = localtime_s(&tres, &tt);
+	err = localtime_s(&tres, &tt);
 
 	str = calloc(len, sizeof(WCHAR));
 	if (!str)
 		return NULL;
 
-	rc = swprintf_s(
-	    str, len,
-	    WIDEN("FreeRDP Print %04d-%02d-%02d% 02d-%02d-%02d - Job %") WIDEN(PRIuz) WIDEN("\0"),
-	    t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec, id);
+	rc = swprintf_s(str, len,
+	                WIDEN("FreeRDP Print %04d-%02d-%02d% 02d-%02d-%02d - Job %") WIDEN(PRIuz)
+	                    WIDEN("\0"),
+	                tres.tm_year + 1900, tres.tm_mon + 1, tres.tm_mday, tres.tm_hour, tres.tm_min,
+	                tres.tm_sec, id);
 
 	return str;
 }
@@ -232,7 +234,7 @@ static void printer_win_release_ref_printer(rdpPrinter* printer)
 }
 
 static rdpPrinter* printer_win_new_printer(rdpWinPrinterDriver* win_driver, const WCHAR* name,
-                                           const WCHAR* drivername, BOOL is_default)
+                                           const WCHAR* drivername)
 {
 	rdpWinPrinter* win_printer;
 	DWORD needed = 0;
@@ -250,7 +252,7 @@ static rdpPrinter* printer_win_new_printer(rdpWinPrinterDriver* win_driver, cons
 
 	if (!win_printer->printer.name)
 		goto fail;
-	win_printer->printer.is_default = is_default;
+	win_printer->printer.is_default = _wcscmp(name, win_driver->defaultPrinter) == 0;
 
 	win_printer->printer.CreatePrintJob = printer_win_create_printjob;
 	win_printer->printer.FindPrintJob = printer_win_find_printjob;
@@ -344,7 +346,7 @@ static rdpPrinter** printer_win_enum_printers(rdpPrinterDriver* driver)
 	{
 		rdpPrinter* current = printers[num_printers];
 		current = printer_win_new_printer((rdpWinPrinterDriver*)driver, prninfo[i].pPrinterName,
-		                                  prninfo[i].pDriverName, 0);
+		                                  prninfo[i].pDriverName);
 		if (!current)
 		{
 			printer_win_release_enum_printers(printers);
@@ -384,8 +386,7 @@ static rdpPrinter* printer_win_get_printer(rdpPrinterDriver* driver, const char*
 			return NULL;
 	}
 
-	myPrinter = printer_win_new_printer(win_driver, nameW, driverNameW,
-	                                    win_driver->id_sequence == 1 ? TRUE : FALSE);
+	myPrinter = printer_win_new_printer(win_driver, nameW, driverNameW);
 	free(driverNameW);
 	free(nameW);
 
@@ -407,6 +408,7 @@ static void printer_win_release_ref_driver(rdpPrinterDriver* driver)
 	rdpWinPrinterDriver* win = (rdpWinPrinterDriver*)driver;
 	if (win->references <= 1)
 	{
+		free(win->defaultPrinter);
 		free(win);
 		win_driver = NULL;
 	}
@@ -416,6 +418,8 @@ static void printer_win_release_ref_driver(rdpPrinterDriver* driver)
 
 rdpPrinterDriver* win_freerdp_printer_client_subsystem_entry(void)
 {
+	DWORD size;
+
 	if (!win_driver)
 	{
 		win_driver = (rdpWinPrinterDriver*)calloc(1, sizeof(rdpWinPrinterDriver));
@@ -431,6 +435,21 @@ rdpPrinterDriver* win_freerdp_printer_client_subsystem_entry(void)
 		win_driver->driver.ReleaseRef = printer_win_release_ref_driver;
 
 		win_driver->id_sequence = 1;
+
+		GetDefaultPrinter(NULL, &size);
+		if (size)
+		{
+			win_driver->defaultPrinter = (LPWSTR)calloc(size, sizeof(WCHAR));
+
+			if (!win_driver->defaultPrinter)
+			{
+				free(win_driver);
+				return NULL;
+			}
+
+			if (!GetDefaultPrinter(win_driver->defaultPrinter, &size))
+				win_driver->defaultPrinter[0] = "\0";
+		}
 	}
 
 	win_driver->driver.AddRef(&win_driver->driver);

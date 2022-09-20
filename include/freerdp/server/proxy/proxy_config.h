@@ -38,6 +38,9 @@ struct proxy_config
 	BOOL FixedTarget;
 	char* TargetHost;
 	UINT16 TargetPort;
+	char* TargetUser;
+	char* TargetDomain;
+	char* TargetPassword;
 
 	/* input */
 	BOOL Keyboard;
@@ -91,9 +94,6 @@ struct proxy_config
 
 	char* PrivateKeyFile;
 	char* PrivateKeyContent;
-
-	char* RdpKeyFile;
-	char* RdpKeyContent;
 };
 
 #ifdef __cplusplus

@@ -188,7 +188,7 @@ static BOOL pf_config_load_server(wIniFile* ini, proxyConfig* config)
 
 static BOOL pf_config_load_target(wIniFile* ini, proxyConfig* config)
 {
-	const char* target_host;
+	const char* target_value;
 
 	WINPR_ASSERT(config);
 	config->FixedTarget = pf_config_get_bool(ini, "Target", "FixedTarget", FALSE);
@@ -196,14 +196,40 @@ static BOOL pf_config_load_target(wIniFile* ini, proxyConfig* config)
 	if (!pf_config_get_uint16(ini, "Target", "Port", &config->TargetPort, config->FixedTarget))
 		return FALSE;
 
-	target_host = pf_config_get_str(ini, "Target", "Host", config->FixedTarget);
+	if (config->FixedTarget)
+	{
+		target_value = pf_config_get_str(ini, "Target", "Host", TRUE);
+		if (!target_value)
+			return FALSE;
 
-	if (!target_host)
-		return FALSE;
+		config->TargetHost = _strdup(target_value);
+		if (!config->TargetHost)
+			return FALSE;
+	}
 
-	config->TargetHost = _strdup(target_host);
-	if (!config->TargetHost)
-		return FALSE;
+	target_value = pf_config_get_str(ini, "Target", "User", FALSE);
+	if (target_value)
+	{
+		config->TargetUser = _strdup(target_value);
+		if (!config->TargetUser)
+			return FALSE;
+	}
+
+	target_value = pf_config_get_str(ini, "Target", "Password", FALSE);
+	if (target_value)
+	{
+		config->TargetPassword = _strdup(target_value);
+		if (!config->TargetPassword)
+			return FALSE;
+	}
+
+	target_value = pf_config_get_str(ini, "Target", "Domain", FALSE);
+	if (target_value)
+	{
+		config->TargetDomain = _strdup(target_value);
+		if (!config->TargetDomain)
+			return FALSE;
+	}
 
 	return TRUE;
 }
@@ -363,39 +389,6 @@ static BOOL pf_config_load_certificates(wIniFile* ini, proxyConfig* config)
 		return FALSE;
 	}
 
-	tmp1 = pf_config_get_str(ini, "Certificates", "RdpKeyFile", FALSE);
-	if (tmp1)
-	{
-		if (!winpr_PathFileExists(tmp1))
-		{
-			WLog_ERR(TAG, "Certificates/RdpKeyFile file %s does not exist", tmp1);
-			return FALSE;
-		}
-		config->RdpKeyFile = _strdup(tmp1);
-	}
-	tmp2 = pf_config_get_str(ini, "Certificates", "RdpKeyContent", FALSE);
-	if (tmp2)
-	{
-		if (strlen(tmp2) < 1)
-		{
-			WLog_ERR(TAG, "Certificates/RdpKeyContent has invalid empty value");
-			return FALSE;
-		}
-		config->RdpKeyContent = _strdup(tmp2);
-	}
-	if (tmp1 && tmp2)
-	{
-		WLog_ERR(TAG, "Certificates/RdpKeyFile and Certificates/RdpKeyContent are mutually "
-		              "exclusive options");
-		return FALSE;
-	}
-	else if (!tmp1 && !tmp2)
-	{
-		WLog_ERR(TAG, "Certificates/RdpKeyFile or Certificates/RdpKeyContent are "
-		              "required settings");
-		return FALSE;
-	}
-
 	return TRUE;
 }
 
@@ -545,13 +538,6 @@ BOOL pf_server_config_dump(const char* file)
 	                              "<Contents of some private key file in PEM format>") < 0)
 		goto fail;
 
-	if (IniFile_SetKeyValueString(ini, "Certificates", "RdpKeyFile",
-	                              "<absolute path to some private key file> OR") < 0)
-		goto fail;
-	if (IniFile_SetKeyValueString(ini, "Certificates", "RdpKeyContent",
-	                              "<Contents of some private key file in PEM format>") < 0)
-		goto fail;
-
 	/* store configuration */
 	if (IniFile_WriteFile(ini, file) < 0)
 		goto fail;
@@ -636,6 +622,11 @@ void pf_server_config_print(const proxyConfig* config)
 		CONFIG_PRINT_SECTION("Target");
 		CONFIG_PRINT_STR(config, TargetHost);
 		CONFIG_PRINT_UINT16(config, TargetPort);
+
+		if (config->TargetUser)
+			CONFIG_PRINT_STR(config, TargetUser);
+		if (config->TargetDomain)
+			CONFIG_PRINT_STR(config, TargetDomain);
 	}
 
 	CONFIG_PRINT_SECTION("Input");
@@ -700,8 +691,6 @@ void pf_server_config_print(const proxyConfig* config)
 	CONFIG_PRINT_STR_CONTENT(config, CertificateContent);
 	CONFIG_PRINT_STR(config, PrivateKeyFile);
 	CONFIG_PRINT_STR_CONTENT(config, PrivateKeyContent);
-	CONFIG_PRINT_STR(config, RdpKeyFile);
-	CONFIG_PRINT_STR_CONTENT(config, RdpKeyContent);
 }
 
 void pf_server_config_free(proxyConfig* config)
@@ -719,8 +708,6 @@ void pf_server_config_free(proxyConfig* config)
 	free(config->CertificateContent);
 	free(config->PrivateKeyFile);
 	free(config->PrivateKeyContent);
-	free(config->RdpKeyFile);
-	free(config->RdpKeyContent);
 	free(config);
 }
 
@@ -822,10 +809,6 @@ BOOL pf_config_clone(proxyConfig** dst, const proxyConfig* config)
 	if (!pf_config_copy_string(&tmp->PrivateKeyFile, config->PrivateKeyFile))
 		goto fail;
 	if (!pf_config_copy_string(&tmp->PrivateKeyContent, config->PrivateKeyContent))
-		goto fail;
-	if (!pf_config_copy_string(&tmp->RdpKeyFile, config->RdpKeyFile))
-		goto fail;
-	if (!pf_config_copy_string(&tmp->RdpKeyContent, config->RdpKeyContent))
 		goto fail;
 
 	*dst = tmp;

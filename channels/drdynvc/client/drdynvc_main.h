@@ -46,8 +46,8 @@ typedef struct
 	wArrayList* plugin_names;
 	wArrayList* plugins;
 
-	wArrayList* listeners;
-	wArrayList* channels;
+	wHashTable* listeners;
+	wHashTable* channelsById;
 	wStreamPool* pool;
 } DVCMAN;
 
@@ -67,14 +67,22 @@ typedef struct
 
 	DVCMAN* dvcman;
 	const ADDIN_ARGV* args;
-	rdpSettings* settings;
+	rdpContext* context;
 } DVCMAN_ENTRY_POINTS;
+
+typedef enum
+{
+	DVC_CHANNEL_INIT,
+	DVC_CHANNEL_RUNNING,
+	DVC_CHANNEL_CLOSED
+} DVC_CHANNEL_STATE;
 
 typedef struct
 {
 	IWTSVirtualChannel iface;
 
-	int status;
+	volatile LONG refCounter;
+	DVC_CHANNEL_STATE state;
 	DVCMAN* dvcman;
 	void* pInterface;
 	UINT32 channel_id;
@@ -103,6 +111,7 @@ struct drdynvc_plugin
 
 	wLog* log;
 	HANDLE thread;
+	BOOL async;
 	wStream* data_in;
 	void* InitHandle;
 	DWORD OpenHandle;

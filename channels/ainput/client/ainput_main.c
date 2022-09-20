@@ -30,6 +30,7 @@
 
 #include "ainput_main.h"
 #include <freerdp/channels/log.h>
+#include <freerdp/client/channels.h>
 #include <freerdp/client/ainput.h>
 #include <freerdp/channels/ainput.h>
 
@@ -37,36 +38,13 @@
 
 #define TAG CHANNELS_TAG("ainput.client")
 
-typedef struct AINPUT_CHANNEL_CALLBACK_ AINPUT_CHANNEL_CALLBACK;
-struct AINPUT_CHANNEL_CALLBACK_
-{
-	IWTSVirtualChannelCallback iface;
-
-	IWTSPlugin* plugin;
-	IWTSVirtualChannelManager* channel_mgr;
-	IWTSVirtualChannel* channel;
-};
-
-typedef struct AINPUT_LISTENER_CALLBACK_ AINPUT_LISTENER_CALLBACK;
-struct AINPUT_LISTENER_CALLBACK_
-{
-	IWTSListenerCallback iface;
-
-	IWTSPlugin* plugin;
-	IWTSVirtualChannelManager* channel_mgr;
-	AINPUT_CHANNEL_CALLBACK* channel_callback;
-};
-
 typedef struct AINPUT_PLUGIN_ AINPUT_PLUGIN;
 struct AINPUT_PLUGIN_
 {
-	IWTSPlugin iface;
-
-	AINPUT_LISTENER_CALLBACK* listener_callback;
-	IWTSListener* listener;
+	GENERIC_DYNVC_PLUGIN base;
+	AInputClientContext* context;
 	UINT32 MajorVersion;
 	UINT32 MinorVersion;
-	BOOL initialized;
 };
 
 /**
@@ -78,7 +56,7 @@ static UINT ainput_on_data_received(IWTSVirtualChannelCallback* pChannelCallback
 {
 	UINT16 type;
 	AINPUT_PLUGIN* ainput;
-	AINPUT_CHANNEL_CALLBACK* callback = (AINPUT_CHANNEL_CALLBACK*)pChannelCallback;
+	GENERIC_CHANNEL_CALLBACK* callback = (GENERIC_CHANNEL_CALLBACK*)pChannelCallback;
 
 	WINPR_ASSERT(callback);
 	WINPR_ASSERT(data);
@@ -108,7 +86,7 @@ static UINT ainput_on_data_received(IWTSVirtualChannelCallback* pChannelCallback
 static UINT ainput_send_input_event(AInputClientContext* context, UINT64 flags, INT32 x, INT32 y)
 {
 	AINPUT_PLUGIN* ainput;
-	AINPUT_CHANNEL_CALLBACK* callback;
+	GENERIC_CHANNEL_CALLBACK* callback;
 	BYTE buffer[32] = { 0 };
 	UINT64 time;
 	wStream sbuffer = { 0 };
@@ -120,7 +98,6 @@ static UINT ainput_send_input_event(AInputClientContext* context, UINT64 flags, 
 	time = GetTickCount64();
 	ainput = (AINPUT_PLUGIN*)context->handle;
 	WINPR_ASSERT(ainput);
-	WINPR_ASSERT(ainput->listener_callback);
 
 	if (ainput->MajorVersion != AINPUT_VERSION_MAJOR)
 	{
@@ -128,13 +105,13 @@ static UINT ainput_send_input_event(AInputClientContext* context, UINT64 flags, 
 		          ainput->MajorVersion, ainput->MinorVersion);
 		return CHANNEL_RC_UNSUPPORTED_VERSION;
 	}
-	callback = ainput->listener_callback->channel_callback;
+	callback = ainput->base.listener_callback->channel_callback;
 	WINPR_ASSERT(callback);
 
 	{
-		char buffer[128] = { 0 };
+		char ebuffer[128] = { 0 };
 		WLog_VRB(TAG, "[%s] sending timestamp=0x%08" PRIx64 ", flags=%s, %" PRId32 "x%" PRId32,
-		         __FUNCTION__, time, ainput_flags_to_string(flags, buffer, sizeof(buffer)), x, y);
+		         __FUNCTION__, time, ainput_flags_to_string(flags, ebuffer, sizeof(ebuffer)), x, y);
 	}
 
 	/* Message type */
@@ -161,111 +138,37 @@ static UINT ainput_send_input_event(AInputClientContext* context, UINT64 flags, 
  */
 static UINT ainput_on_close(IWTSVirtualChannelCallback* pChannelCallback)
 {
-	AINPUT_CHANNEL_CALLBACK* callback = (AINPUT_CHANNEL_CALLBACK*)pChannelCallback;
+	GENERIC_CHANNEL_CALLBACK* callback = (GENERIC_CHANNEL_CALLBACK*)pChannelCallback;
 
 	free(callback);
 
 	return CHANNEL_RC_OK;
 }
 
-/**
- * Function description
- *
- * @return 0 on success, otherwise a Win32 error code
- */
-static UINT ainput_on_new_channel_connection(IWTSListenerCallback* pListenerCallback,
-                                             IWTSVirtualChannel* pChannel, BYTE* Data,
-                                             BOOL* pbAccept,
-                                             IWTSVirtualChannelCallback** ppCallback)
+static UINT init_plugin_cb(GENERIC_DYNVC_PLUGIN* base, rdpContext* rcontext, rdpSettings* settings)
 {
-	AINPUT_CHANNEL_CALLBACK* callback;
-	AINPUT_LISTENER_CALLBACK* listener_callback = (AINPUT_LISTENER_CALLBACK*)pListenerCallback;
-
-	WINPR_ASSERT(listener_callback);
-	WINPR_UNUSED(Data);
-	WINPR_UNUSED(pbAccept);
-
-	callback = (AINPUT_CHANNEL_CALLBACK*)calloc(1, sizeof(AINPUT_CHANNEL_CALLBACK));
-
-	if (!callback)
-	{
-		WLog_ERR(TAG, "calloc failed!");
+	AINPUT_PLUGIN* ainput = (AINPUT_PLUGIN*)base;
+	AInputClientContext* context = (AInputClientContext*)calloc(1, sizeof(AInputClientContext));
+	if (!context)
 		return CHANNEL_RC_NO_MEMORY;
-	}
 
-	callback->iface.OnDataReceived = ainput_on_data_received;
-	callback->iface.OnClose = ainput_on_close;
-	callback->plugin = listener_callback->plugin;
-	callback->channel_mgr = listener_callback->channel_mgr;
-	callback->channel = pChannel;
-	listener_callback->channel_callback = callback;
+	context->handle = (void*)base;
+	context->AInputSendInputEvent = ainput_send_input_event;
 
-	*ppCallback = &callback->iface;
-
+	ainput->context = context;
+	ainput->base.iface.pInterface = context;
 	return CHANNEL_RC_OK;
 }
 
-/**
- * Function description
- *
- * @return 0 on success, otherwise a Win32 error code
- */
-static UINT ainput_plugin_initialize(IWTSPlugin* pPlugin, IWTSVirtualChannelManager* pChannelMgr)
+static void terminate_plugin_cb(GENERIC_DYNVC_PLUGIN* base)
 {
-	UINT status;
-	AINPUT_PLUGIN* ainput = (AINPUT_PLUGIN*)pPlugin;
-
-	WINPR_ASSERT(ainput);
-
-	if (ainput->initialized)
-	{
-		WLog_ERR(TAG, "[%s] channel initialized twice, aborting", AINPUT_DVC_CHANNEL_NAME);
-		return ERROR_INVALID_DATA;
-	}
-	ainput->listener_callback =
-	    (AINPUT_LISTENER_CALLBACK*)calloc(1, sizeof(AINPUT_LISTENER_CALLBACK));
-
-	if (!ainput->listener_callback)
-	{
-		WLog_ERR(TAG, "calloc failed!");
-		return CHANNEL_RC_NO_MEMORY;
-	}
-
-	ainput->listener_callback->iface.OnNewChannelConnection = ainput_on_new_channel_connection;
-	ainput->listener_callback->plugin = pPlugin;
-	ainput->listener_callback->channel_mgr = pChannelMgr;
-
-	status = pChannelMgr->CreateListener(pChannelMgr, AINPUT_DVC_CHANNEL_NAME, 0,
-	                                     &ainput->listener_callback->iface, &ainput->listener);
-
-	ainput->listener->pInterface = ainput->iface.pInterface;
-	ainput->initialized = status == CHANNEL_RC_OK;
-	return status;
+	AINPUT_PLUGIN* ainput = (AINPUT_PLUGIN*)base;
+	free(ainput->context);
 }
 
-/**
- * Function description
- *
- * @return 0 on success, otherwise a Win32 error code
- */
-static UINT ainput_plugin_terminated(IWTSPlugin* pPlugin)
-{
-	AINPUT_PLUGIN* ainput = (AINPUT_PLUGIN*)pPlugin;
-	if (ainput && ainput->listener_callback)
-	{
-		IWTSVirtualChannelManager* mgr = ainput->listener_callback->channel_mgr;
-		if (mgr)
-			IFCALL(mgr->DestroyListener, mgr, ainput->listener);
-	}
-	if (ainput)
-	{
-		free(ainput->listener_callback);
-		free(ainput->iface.pInterface);
-	}
-	free(ainput);
-
-	return CHANNEL_RC_OK;
-}
+static const IWTSVirtualChannelCallback ainput_functions = { ainput_on_data_received,
+	                                                         NULL, /* Open */
+	                                                         ainput_on_close };
 
 /**
  * Function description
@@ -274,32 +177,7 @@ static UINT ainput_plugin_terminated(IWTSPlugin* pPlugin)
  */
 UINT ainput_DVCPluginEntry(IDRDYNVC_ENTRY_POINTS* pEntryPoints)
 {
-	UINT status = CHANNEL_RC_OK;
-	AINPUT_PLUGIN* ainput = (AINPUT_PLUGIN*)pEntryPoints->GetPlugin(pEntryPoints, "ainput");
-
-	if (!ainput)
-	{
-		AInputClientContext* context = (AInputClientContext*)calloc(1, sizeof(AInputClientContext));
-		ainput = (AINPUT_PLUGIN*)calloc(1, sizeof(AINPUT_PLUGIN));
-
-		if (!ainput || !context)
-		{
-			free(context);
-			free(ainput);
-
-			WLog_ERR(TAG, "calloc failed!");
-			return CHANNEL_RC_NO_MEMORY;
-		}
-
-		ainput->iface.Initialize = ainput_plugin_initialize;
-		ainput->iface.Terminated = ainput_plugin_terminated;
-
-		context->handle = (void*)ainput;
-		context->AInputSendInputEvent = ainput_send_input_event;
-		ainput->iface.pInterface = (void*)context;
-
-		status = pEntryPoints->RegisterPlugin(pEntryPoints, AINPUT_CHANNEL_NAME, &ainput->iface);
-	}
-
-	return status;
+	return freerdp_generic_DVCPluginEntry(pEntryPoints, TAG, AINPUT_DVC_CHANNEL_NAME,
+	                                      sizeof(AINPUT_PLUGIN), sizeof(GENERIC_CHANNEL_CALLBACK),
+	                                      &ainput_functions, init_plugin_cb, terminate_plugin_cb);
 }

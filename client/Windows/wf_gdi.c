@@ -75,7 +75,7 @@ static BOOL wf_decode_color(wfContext* wfc, const UINT32 srcColor, COLORREF* col
 	if (!gdi || !settings)
 		return FALSE;
 
-	SrcFormat = gdi_get_pixel_format(gdi->context->settings->ColorDepth);
+	SrcFormat = gdi_get_pixel_format(freerdp_settings_get_uint32(settings, FreeRDP_ColorDepth));
 
 	if (format)
 		*format = SrcFormat;
@@ -209,7 +209,7 @@ static HBRUSH wf_create_brush(wfContext* wfc, rdpBrush* brush, UINT32 color, UIN
 	return br;
 }
 
-static BOOL wf_scale_rect(wfContext* wfc, RECT* source)
+BOOL wf_scale_rect(wfContext* wfc, RECT* source)
 {
 	UINT32 ww, wh, dw, dh;
 	rdpSettings* settings;
@@ -387,9 +387,30 @@ void wf_resize_window(wfContext* wfc)
 
 		wf_update_canvas_diff(wfc);
 		/* Now resize to get full canvas size and room for caption and borders */
-		SetWindowPos(wfc->hwnd, HWND_TOP, wfc->client_x, wfc->client_y,
-		             wfc->client_width + wfc->diff.x, wfc->client_height + wfc->diff.y,
-		             0 /*SWP_FRAMECHANGED*/);
+		int width, height;
+		if (settings->SmartSizing && settings->SmartSizingWidth && settings->SmartSizingHeight)
+		{
+			width = settings->SmartSizingWidth;
+			height = settings->SmartSizingHeight;
+		}
+		else
+		{
+			width = wfc->client_width + wfc->diff.x;
+			height = wfc->client_height + wfc->diff.y;
+		}
+
+		int xpos, ypos;
+		if ((settings->DesktopPosX != UINT32_MAX) && (settings->DesktopPosY != UINT32_MAX))
+		{
+			xpos = settings->DesktopPosX;
+			ypos = settings->DesktopPosY;
+		}
+		else
+		{
+			xpos = wfc->client_x;
+			ypos = wfc->client_y;
+		}
+		SetWindowPos(wfc->hwnd, HWND_TOP, xpos, ypos, width, height, 0 /*SWP_FRAMECHANGED*/);
 		// wf_size_scrollbars(wfc,  wfc->client_width, wfc->client_height);
 	}
 
@@ -494,7 +515,8 @@ static BOOL wf_gdi_patblt(rdpContext* context, PATBLT_ORDER* patblt)
 	if (!wf_decode_color(wfc, patblt->backColor, &bgcolor, NULL))
 		return FALSE;
 
-	brush = wf_create_brush(wfc, &patblt->brush, fgcolor, context->settings->ColorDepth);
+	brush = wf_create_brush(wfc, &patblt->brush, fgcolor,
+	                        freerdp_settings_get_uint32(context->settings, FreeRDP_ColorDepth));
 	org_bkmode = SetBkMode(wfc->drawing->hdc, OPAQUE);
 	org_bkcolor = SetBkColor(wfc->drawing->hdc, bgcolor);
 	org_textcolor = SetTextColor(wfc->drawing->hdc, fgcolor);

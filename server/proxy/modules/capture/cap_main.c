@@ -58,7 +58,7 @@ static SOCKET capture_plugin_init_socket(const captureConfig* cconfig)
 	status = _connect(sockfd, (const struct sockaddr*)&addr, sizeof(addr));
 	if (status < 0)
 	{
-		close(sockfd);
+		closesocket(sockfd);
 		return -1;
 	}
 
@@ -162,9 +162,11 @@ static BOOL capture_plugin_send_frame(pClientContext* pc, SOCKET socket, const B
 	settings = pc->context.settings;
 	WINPR_ASSERT(settings);
 
-	frame_size = settings->DesktopWidth * settings->DesktopHeight * (settings->ColorDepth / 8);
-	bmp_header = winpr_bitmap_construct_header(settings->DesktopWidth, settings->DesktopHeight,
-	                                           settings->ColorDepth);
+	frame_size = settings->DesktopWidth * settings->DesktopHeight *
+	             (freerdp_settings_get_uint32(settings, FreeRDP_ColorDepth) / 8);
+	bmp_header =
+	    winpr_bitmap_construct_header(settings->DesktopWidth, settings->DesktopHeight,
+	                                  freerdp_settings_get_uint32(settings, FreeRDP_ColorDepth));
 
 	if (!bmp_header)
 		return FALSE;

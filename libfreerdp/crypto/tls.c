@@ -74,6 +74,7 @@ typedef struct
 	CRITICAL_SECTION lock;
 } BIO_RDP_TLS;
 
+static BOOL tls_prep(rdpTls* tls, BIO* underlying, int options, BOOL clientMode);
 static int tls_verify_certificate(rdpTls* tls, CryptoCert cert, const char* hostname, UINT16 port);
 static void tls_print_certificate_name_mismatch_error(const char* hostname, UINT16 port,
                                                       const char* common_name, char** alt_names,
@@ -215,6 +216,7 @@ static int bio_rdp_tls_puts(BIO* bio, const char* str)
 		return 0;
 
 	size = strlen(str);
+	ERR_clear_error();
 	status = BIO_write(bio, str, size);
 	return status;
 }
@@ -644,6 +646,33 @@ out_free:
 	return NULL;
 }
 
+static INIT_ONCE secrets_file_idx_once = INIT_ONCE_STATIC_INIT;
+static int secrets_file_idx = -1;
+
+static BOOL CALLBACK secrets_file_init_cb(PINIT_ONCE once, PVOID param, PVOID* context)
+{
+	secrets_file_idx = SSL_get_ex_new_index(0, NULL, NULL, NULL, NULL);
+
+	return (secrets_file_idx != -1);
+}
+
+static void SSLCTX_keylog_cb(const SSL* ssl, const char* line)
+{
+	char* dfile;
+
+	if (secrets_file_idx == -1)
+		return;
+
+	dfile = SSL_get_ex_data(ssl, secrets_file_idx);
+	if (dfile)
+	{
+		FILE* f = fopen(dfile, "a+");
+		fwrite(line, strlen(line), 1, f);
+		fwrite("\n", 1, 1, f);
+		fclose(f);
+	}
+}
+
 #if OPENSSL_VERSION_NUMBER >= 0x010000000L
 static BOOL tls_prepare(rdpTls* tls, BIO* underlying, const SSL_METHOD* method, int options,
                         BOOL clientMode)
@@ -654,6 +683,7 @@ static BOOL tls_prepare(rdpTls* tls, BIO* underlying, SSL_METHOD* method, int op
 {
 	rdpSettings* settings = tls->settings;
 	tls->ctx = SSL_CTX_new(method);
+
 	tls->underlying = underlying;
 
 	if (!tls->ctx)
@@ -666,8 +696,18 @@ static BOOL tls_prepare(rdpTls* tls, BIO* underlying, SSL_METHOD* method, int op
 	SSL_CTX_set_options(tls->ctx, options);
 	SSL_CTX_set_read_ahead(tls->ctx, 1);
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-	SSL_CTX_set_min_proto_version(tls->ctx, TLS1_VERSION); /* min version */
-	SSL_CTX_set_max_proto_version(tls->ctx, 0); /* highest supported version by library */
+	UINT16 version = freerdp_settings_get_uint16(settings, FreeRDP_TLSMinVersion);
+	if (!SSL_CTX_set_min_proto_version(tls->ctx, version))
+	{
+		WLog_ERR(TAG, "SSL_CTX_set_min_proto_version %s failed", version);
+		return FALSE;
+	}
+	version = freerdp_settings_get_uint16(settings, FreeRDP_TLSMaxVersion);
+	if (!SSL_CTX_set_max_proto_version(tls->ctx, version))
+	{
+		WLog_ERR(TAG, "SSL_CTX_set_max_proto_version %s failed", version);
+		return FALSE;
+	}
 #endif
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
 	SSL_CTX_set_security_level(tls->ctx, settings->TlsSecLevel);
@@ -688,6 +728,21 @@ static BOOL tls_prepare(rdpTls* tls, BIO* underlying, SSL_METHOD* method, int op
 	{
 		WLog_ERR(TAG, "unable to retrieve the SSL of the connection");
 		return FALSE;
+	}
+
+	if (settings->TlsSecretsFile)
+	{
+#if OPENSSL_VERSION_NUMBER >= 0x10101000L
+		InitOnceExecuteOnce(&secrets_file_idx_once, secrets_file_init_cb, NULL, NULL);
+
+		if (secrets_file_idx != -1)
+		{
+			SSL_set_ex_data(tls->ssl, secrets_file_idx, settings->TlsSecretsFile);
+			SSL_CTX_set_keylog_callback(tls->ctx, SSLCTX_keylog_cb);
+		}
+#else
+		WLog_WARN(TAG, "Key-Logging not available - requires OpenSSL 1.1.1 or higher");
+#endif
 	}
 
 	BIO_push(tls->bio, underlying);
@@ -853,6 +908,18 @@ int tls_connect(rdpTls* tls, BIO* underlying)
 	 * support empty fragments. This needs to be disabled.
 	 */
 	options |= SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS;
+
+	if (!tls_prep(tls, underlying, options, TRUE))
+		return 0;
+
+#if !defined(OPENSSL_NO_TLSEXT) && !defined(LIBRESSL_VERSION_NUMBER)
+	SSL_set_tlsext_host_name(tls->ssl, tls->hostname);
+#endif
+	return tls_do_handshake(tls, TRUE);
+}
+
+BOOL tls_prep(rdpTls* tls, BIO* underlying, int options, BOOL clientMode)
+{
 #if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
 	/**
 	 * disable SSLv2 and SSLv3
@@ -860,16 +927,10 @@ int tls_connect(rdpTls* tls, BIO* underlying)
 	options |= SSL_OP_NO_SSLv2;
 	options |= SSL_OP_NO_SSLv3;
 
-	if (!tls_prepare(tls, underlying, SSLv23_client_method(), options, TRUE))
+	return tls_prepare(tls, underlying, SSLv23_client_method(), options, clientMode);
 #else
-	if (!tls_prepare(tls, underlying, TLS_client_method(), options, TRUE))
+	return tls_prepare(tls, underlying, TLS_client_method(), options, clientMode);
 #endif
-		return 0;
-
-#if !defined(OPENSSL_NO_TLSEXT) && !defined(LIBRESSL_VERSION_NUMBER)
-	SSL_set_tlsext_host_name(tls->ssl, tls->hostname);
-#endif
-	return tls_do_handshake(tls, TRUE);
 }
 
 #if defined(MICROSOFT_IOS_SNI_BUG) && !defined(OPENSSL_NO_TLSEXT) && \
@@ -890,6 +951,7 @@ BOOL tls_accept(rdpTls* tls, BIO* underlying, rdpSettings* settings)
 	long options = 0;
 	BIO* bio;
 	EVP_PKEY* privkey;
+	int status;
 	X509* x509;
 
 	/**
@@ -964,10 +1026,16 @@ BOOL tls_accept(rdpTls* tls, BIO* underlying, rdpSettings* settings)
 		return FALSE;
 	}
 
-	if (SSL_use_PrivateKey(tls->ssl, privkey) <= 0)
+	status = SSL_use_PrivateKey(tls->ssl, privkey);
+	/* The local reference to the private key will anyway go out of
+	 * scope; so the reference count should be decremented weither
+	 * SSL_use_PrivateKey succeeds or fails.
+	 */
+	EVP_PKEY_free(privkey);
+
+	if (status <= 0)
 	{
 		WLog_ERR(TAG, "SSL_CTX_use_PrivateKey_file failed");
-		EVP_PKEY_free(privkey);
 		return FALSE;
 	}
 
@@ -989,10 +1057,16 @@ BOOL tls_accept(rdpTls* tls, BIO* underlying, rdpSettings* settings)
 		return FALSE;
 	}
 
-	if (SSL_use_certificate(tls->ssl, x509) <= 0)
+	status = SSL_use_certificate(tls->ssl, x509);
+	/* The local reference to the X509 certificate will anyway go out
+	 * of scope; so the reference count should be decremented weither
+	 * SSL_use_certificate succeeds or fails.
+	 */
+	X509_free(x509);
+
+	if (status <= 0)
 	{
 		WLog_ERR(TAG, "SSL_use_certificate_file failed");
-		X509_free(x509);
 		return FALSE;
 	}
 
@@ -1056,6 +1130,7 @@ int tls_write_all(rdpTls* tls, const BYTE* data, int length)
 
 	while (offset < length)
 	{
+		ERR_clear_error();
 		status = BIO_write(bio, &data[offset], length - offset);
 
 		if (status > 0)

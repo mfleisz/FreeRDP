@@ -190,6 +190,8 @@ static const struct settings_str_entry settings_map[] = {
 	{ FreeRDP_Workarea, 0, "FreeRDP_Workarea" },
 	{ FreeRDP_DesktopOrientation, 1, "FreeRDP_DesktopOrientation" },
 	{ FreeRDP_ProxyPort, 1, "FreeRDP_ProxyPort" },
+	{ FreeRDP_TLSMaxVersion, 1, "FreeRDP_TLSMaxVersion" },
+	{ FreeRDP_TLSMinVersion, 1, "FreeRDP_TLSMinVersion" },
 	{ FreeRDP_AcceptedCertLength, 3, "FreeRDP_AcceptedCertLength" },
 	{ FreeRDP_AuthenticationLevel, 3, "FreeRDP_AuthenticationLevel" },
 	{ FreeRDP_AutoReconnectMaxRetries, 3, "FreeRDP_AutoReconnectMaxRetries" },
@@ -317,6 +319,7 @@ static const struct settings_str_entry settings_map[] = {
 	{ FreeRDP_AlternateShell, 7, "FreeRDP_AlternateShell" },
 	{ FreeRDP_AssistanceFile, 7, "FreeRDP_AssistanceFile" },
 	{ FreeRDP_AuthenticationServiceClass, 7, "FreeRDP_AuthenticationServiceClass" },
+	{ FreeRDP_BitmapCachePersistFile, 7, "FreeRDP_BitmapCachePersistFile" },
 	{ FreeRDP_CardName, 7, "FreeRDP_CardName" },
 	{ FreeRDP_CertificateAcceptedFingerprints, 7, "FreeRDP_CertificateAcceptedFingerprints" },
 	{ FreeRDP_CertificateContent, 7, "FreeRDP_CertificateContent" },
@@ -347,6 +350,7 @@ static const struct settings_str_entry settings_map[] = {
 	{ FreeRDP_KerberosArmor, 7, "FreeRDP_KerberosArmor" },
 	{ FreeRDP_KerberosCache, 7, "FreeRDP_KerberosCache" },
 	{ FreeRDP_KerberosKdc, 7, "FreeRDP_KerberosKdc" },
+	{ FreeRDP_KerberosKeytab, 7, "FreeRDP_KerberosKeytab" },
 	{ FreeRDP_KerberosLifeTime, 7, "FreeRDP_KerberosLifeTime" },
 	{ FreeRDP_KerberosRealm, 7, "FreeRDP_KerberosRealm" },
 	{ FreeRDP_KerberosRenewableLifeTime, 7, "FreeRDP_KerberosRenewableLifeTime" },
@@ -365,8 +369,6 @@ static const struct settings_str_entry settings_map[] = {
 	{ FreeRDP_ProxyPassword, 7, "FreeRDP_ProxyPassword" },
 	{ FreeRDP_ProxyUsername, 7, "FreeRDP_ProxyUsername" },
 	{ FreeRDP_RDP2TCPArgs, 7, "FreeRDP_RDP2TCPArgs" },
-	{ FreeRDP_RdpKeyContent, 7, "FreeRDP_RdpKeyContent" },
-	{ FreeRDP_RdpKeyFile, 7, "FreeRDP_RdpKeyFile" },
 	{ FreeRDP_ReaderName, 7, "FreeRDP_ReaderName" },
 	{ FreeRDP_RedirectionAcceptedCert, 7, "FreeRDP_RedirectionAcceptedCert" },
 	{ FreeRDP_RedirectionDomain, 7, "FreeRDP_RedirectionDomain" },
@@ -388,7 +390,9 @@ static const struct settings_str_entry settings_map[] = {
 	{ FreeRDP_ShellWorkingDirectory, 7, "FreeRDP_ShellWorkingDirectory" },
 	{ FreeRDP_SmartcardCertificate, 7, "FreeRDP_SmartcardCertificate" },
 	{ FreeRDP_SmartcardPrivateKey, 7, "FreeRDP_SmartcardPrivateKey" },
+	{ FreeRDP_SspiModule, 7, "FreeRDP_SspiModule" },
 	{ FreeRDP_TargetNetAddress, 7, "FreeRDP_TargetNetAddress" },
+	{ FreeRDP_TlsSecretsFile, 7, "FreeRDP_TlsSecretsFile" },
 	{ FreeRDP_TransportDumpFile, 7, "FreeRDP_TransportDumpFile" },
 	{ FreeRDP_Username, 7, "FreeRDP_Username" },
 	{ FreeRDP_WindowTitle, 7, "FreeRDP_WindowTitle" },
@@ -424,6 +428,10 @@ static const struct settings_str_entry settings_map[] = {
 BOOL freerdp_settings_clone_keys(rdpSettings* dst, const rdpSettings* src)
 {
 	size_t x;
+
+	WINPR_ASSERT(dst);
+	WINPR_ASSERT(src);
+
 	for (x = 0; x < ARRAYSIZE(settings_map); x++)
 	{
 		const struct settings_str_entry* cur = &settings_map[x];
@@ -503,13 +511,12 @@ BOOL freerdp_settings_clone_keys(rdpSettings* dst, const rdpSettings* src)
 BOOL freerdp_settings_print_diff(wLog* log, DWORD level, const rdpSettings* settings,
                                  const rdpSettings* other)
 {
-	size_t x;
 	BOOL rc = FALSE;
+	size_t x;
 
-	if (!settings && other)
-		rc = TRUE;
-	if (settings && !other)
-		rc = TRUE;
+	WINPR_ASSERT(log);
+	WINPR_ASSERT(settings);
+	WINPR_ASSERT(other);
 
 	for (x = 0; x < ARRAYSIZE(settings_map); x++)
 	{
@@ -522,9 +529,9 @@ BOOL freerdp_settings_print_diff(wLog* log, DWORD level, const rdpSettings* sett
 				BOOL cval = freerdp_settings_get_bool(other, cur->id);
 				if (sval != cval)
 				{
+					rc = TRUE;
 					WLog_Print(log, level, "%s [BOOL]: %s -> %s", cur->str, sval ? "TRUE" : "FALSE",
 					           cval ? "TRUE" : "FALSE");
-					rc = TRUE;
 				}
 			}
 			break;
@@ -534,9 +541,9 @@ BOOL freerdp_settings_print_diff(wLog* log, DWORD level, const rdpSettings* sett
 				UINT16 cval = freerdp_settings_get_uint16(other, cur->id);
 				if (sval != cval)
 				{
+					rc = TRUE;
 					WLog_Print(log, level, "%s [UINT16]: %" PRIu16 " -> %" PRIu16, cur->str, sval,
 					           cval);
-					rc = TRUE;
 				}
 			}
 			break;
@@ -546,9 +553,9 @@ BOOL freerdp_settings_print_diff(wLog* log, DWORD level, const rdpSettings* sett
 				INT16 cval = freerdp_settings_get_int16(other, cur->id);
 				if (sval != cval)
 				{
+					rc = TRUE;
 					WLog_Print(log, level, "%s [INT16]: %" PRId16 " -> %" PRId16, cur->str, sval,
 					           cval);
-					rc = TRUE;
 				}
 			}
 			break;
@@ -558,9 +565,9 @@ BOOL freerdp_settings_print_diff(wLog* log, DWORD level, const rdpSettings* sett
 				UINT32 cval = freerdp_settings_get_uint32(other, cur->id);
 				if (sval != cval)
 				{
+					rc = TRUE;
 					WLog_Print(log, level, "%s [UINT32]: %" PRIu32 " -> %" PRIu32, cur->str, sval,
 					           cval);
-					rc = TRUE;
 				}
 			}
 			break;
@@ -570,9 +577,9 @@ BOOL freerdp_settings_print_diff(wLog* log, DWORD level, const rdpSettings* sett
 				INT32 cval = freerdp_settings_get_int32(other, cur->id);
 				if (sval != cval)
 				{
+					rc = TRUE;
 					WLog_Print(log, level, "%s [INT32]: %" PRId32 " -> %" PRId32, cur->str, sval,
 					           cval);
-					rc = TRUE;
 				}
 			}
 			break;
@@ -582,9 +589,9 @@ BOOL freerdp_settings_print_diff(wLog* log, DWORD level, const rdpSettings* sett
 				UINT64 cval = freerdp_settings_get_uint64(other, cur->id);
 				if (sval != cval)
 				{
+					rc = TRUE;
 					WLog_Print(log, level, "%s [UINT64]: %" PRIu64 " -> %" PRIu64, cur->str, sval,
 					           cval);
-					rc = TRUE;
 				}
 			}
 			break;
@@ -594,9 +601,9 @@ BOOL freerdp_settings_print_diff(wLog* log, DWORD level, const rdpSettings* sett
 				INT64 cval = freerdp_settings_get_int64(other, cur->id);
 				if (sval != cval)
 				{
+					rc = TRUE;
 					WLog_Print(log, level, "%s [INT64]: %" PRId64 " -> %" PRId64, cur->str, sval,
 					           cval);
-					rc = TRUE;
 				}
 			}
 			break;
@@ -608,8 +615,8 @@ BOOL freerdp_settings_print_diff(wLog* log, DWORD level, const rdpSettings* sett
 				{
 					if (!sval || !cval || (strcmp(sval, cval) != 0))
 					{
-						WLog_Print(log, level, "%s [STRING]: '%s' -> '%s'", cur->str, sval, cval);
 						rc = TRUE;
+						WLog_Print(log, level, "%s [STRING]: '%s' -> '%s'", cur->str, sval, cval);
 					}
 				}
 			}
@@ -622,8 +629,8 @@ BOOL freerdp_settings_print_diff(wLog* log, DWORD level, const rdpSettings* sett
 				{
 					if ((sval && !cval) || (!sval && cval))
 					{
-						WLog_Print(log, level, "%s [POINTER]: '%p' -> '%p'", cur->str, sval, cval);
 						rc = TRUE;
+						WLog_Print(log, level, "%s [POINTER]: '%p' -> '%p'", cur->str, sval, cval);
 					}
 				}
 			}
@@ -632,9 +639,14 @@ BOOL freerdp_settings_print_diff(wLog* log, DWORD level, const rdpSettings* sett
 	}
 	return rc;
 }
+
 void freerdp_settings_dump(wLog* log, DWORD level, const rdpSettings* settings)
 {
 	size_t x;
+
+	WINPR_ASSERT(log);
+	WINPR_ASSERT(settings);
+
 	for (x = 0; x < ARRAYSIZE(settings_map); x++)
 	{
 		const struct settings_str_entry* cur = &settings_map[x];
@@ -701,6 +713,9 @@ void freerdp_settings_dump(wLog* log, DWORD level, const rdpSettings* settings)
 void freerdp_settings_free_keys(rdpSettings* dst, BOOL cleanup)
 {
 	size_t x;
+
+	WINPR_ASSERT(dst);
+
 	for (x = 0; x < ARRAYSIZE(settings_map); x++)
 	{
 		const struct settings_str_entry* cur = &settings_map[x];
@@ -719,6 +734,9 @@ void freerdp_settings_free_keys(rdpSettings* dst, BOOL cleanup)
 SSIZE_T freerdp_settings_get_key_for_name(const char* value)
 {
 	size_t x;
+
+	WINPR_ASSERT(value);
+
 	for (x = 0; x < ARRAYSIZE(settings_map); x++)
 	{
 		const struct settings_str_entry* cur = &settings_map[x];
@@ -731,6 +749,9 @@ SSIZE_T freerdp_settings_get_key_for_name(const char* value)
 SSIZE_T freerdp_settings_get_type_for_name(const char* value)
 {
 	size_t x;
+
+	WINPR_ASSERT(value);
+
 	for (x = 0; x < ARRAYSIZE(settings_map); x++)
 	{
 		const struct settings_str_entry* cur = &settings_map[x];
@@ -743,6 +764,7 @@ SSIZE_T freerdp_settings_get_type_for_name(const char* value)
 SSIZE_T freerdp_settings_get_type_for_key(size_t key)
 {
 	size_t x;
+
 	for (x = 0; x < ARRAYSIZE(settings_map); x++)
 	{
 		const struct settings_str_entry* cur = &settings_map[x];
@@ -755,6 +777,7 @@ SSIZE_T freerdp_settings_get_type_for_key(size_t key)
 const char* freerdp_settings_get_name_for_key(size_t key)
 {
 	size_t x;
+
 	for (x = 0; x < ARRAYSIZE(settings_map); x++)
 	{
 		const struct settings_str_entry* cur = &settings_map[x];

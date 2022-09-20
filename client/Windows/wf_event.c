@@ -34,9 +34,9 @@
 
 #include <freerdp/event.h>
 
-static HWND g_focus_hWnd;
-static HWND g_main_hWnd;
-static HWND g_parent_hWnd;
+static HWND g_focus_hWnd = NULL;
+static HWND g_main_hWnd = NULL;
+static HWND g_parent_hWnd = NULL;
 
 #define X_POS(lParam) ((UINT16)(lParam & 0xFFFF))
 #define Y_POS(lParam) ((UINT16)((lParam >> 16) & 0xFFFF))
@@ -61,8 +61,7 @@ static BOOL alt_ctrl_down()
 
 LRESULT CALLBACK wf_ll_kbd_proc(int nCode, WPARAM wParam, LPARAM lParam)
 {
-	LPDWORD ext_proc_id;
-	LPDWORD this_proc_id;
+	DWORD ext_proc_id = 0;
 
 	wfContext* wfc = NULL;
 	DWORD rdp_scancode;
@@ -89,9 +88,9 @@ LRESULT CALLBACK wf_ll_kbd_proc(int nCode, WPARAM wParam, LPARAM lParam)
 		if (gui_thread_info.hwndFocus != wfc->hWndParent)
 		{
 			g_focus_hWnd = NULL;
- 			return CallNextHookEx(NULL, nCode, wParam, lParam);
+			return CallNextHookEx(NULL, nCode, wParam, lParam);
 		}
-		
+
 		g_focus_hWnd = g_main_hWnd;
 	}
 
@@ -678,6 +677,22 @@ LRESULT CALLBACK wf_event_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam
 					CheckMenuItem(hMenu, SYSCOMMAND_ID_SMARTSIZING,
 					              wfc->common.context.settings->SmartSizing ? MF_CHECKED
 					                                                        : MF_UNCHECKED);
+					if (!wfc->common.context.settings->SmartSizing)
+					{
+						SetWindowPos(wfc->hwnd, HWND_TOP, -1, -1,
+						             wfc->common.context.settings->DesktopWidth + wfc->diff.x,
+						             wfc->common.context.settings->DesktopHeight + wfc->diff.y,
+						             SWP_NOMOVE);
+					}
+					else
+					{
+						wf_size_scrollbars(wfc, wfc->client_width, wfc->client_height);
+						wf_send_resize(wfc);
+					}
+				}
+				else if (wParam == SYSCOMMAND_ID_REQUEST_CONTROL)
+				{
+					freerdp_client_encomsp_set_control(wfc->common.encomsp, TRUE);
 				}
 				else
 				{
@@ -708,6 +723,8 @@ LRESULT CALLBACK wf_event_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam
 		case WM_SETFOCUS:
 			DEBUG_KBD("getting focus %X", hWnd);
 
+			freerdp_settings_set_bool(wfc->common.context.settings, FreeRDP_SuspendInput, FALSE);
+
 			if (alt_ctrl_down())
 				g_flipping_in = TRUE;
 
@@ -716,6 +733,8 @@ LRESULT CALLBACK wf_event_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam
 			break;
 
 		case WM_KILLFOCUS:
+			freerdp_settings_set_bool(wfc->common.context.settings, FreeRDP_SuspendInput, TRUE);
+
 			if (g_focus_hWnd == hWnd && wfc && !wfc->fullscreen)
 			{
 				DEBUG_KBD("loosing focus %X", hWnd);

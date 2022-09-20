@@ -178,7 +178,7 @@ static BOOL treat_sc_cert(SmartcardCertInfo* scCert)
 
 		userLen = (size_t)(atPos - scCert->upn);
 		scCert->userHint = malloc(userLen + 1);
-		scCert->domainHint = strdup(atPos + 1);
+		scCert->domainHint = _strdup(atPos + 1);
 
 		if (!scCert->userHint || !scCert->domainHint)
 		{
@@ -237,7 +237,8 @@ static BOOL build_pkinit_args(const rdpSettings* settings, SmartcardCertInfo* sc
 
 static BOOL smartcard_hw_enumerateCerts(const rdpSettings* settings, LPCWSTR csp,
                                         const char* reader, const char* userFilter,
-                                        SmartcardCerts** scCerts, DWORD* retCount)
+                                        const char* domainFilter, SmartcardCerts** scCerts,
+                                        DWORD* retCount)
 {
 	BOOL ret = FALSE;
 	LPWSTR scope = NULL;
@@ -354,7 +355,6 @@ static BOOL smartcard_hw_enumerateCerts(const rdpSettings* settings, LPCWSTR csp
 		if (!getAtr(cert->info.reader, cert->info.atr, &cert->info.atrLength))
 		{
 			WLog_ERR(TAG, "unable to retrieve card ATR for key %s", cert->info.containerName);
-			goto endofloop;
 		}
 
 		/* ========= retrieve the certificate ===============*/
@@ -403,6 +403,16 @@ static BOOL smartcard_hw_enumerateCerts(const rdpSettings* settings, LPCWSTR csp
 
 		if (userFilter && cert->info.userHint && strcmp(cert->info.userHint, userFilter) != 0)
 		{
+			WLog_DBG(TAG, "discarding non matching cert %s@%s", cert->info.userHint,
+			         cert->info.domainHint);
+			goto endofloop;
+		}
+
+		if (domainFilter && cert->info.domainHint &&
+		    strcmp(cert->info.domainHint, domainFilter) != 0)
+		{
+			WLog_DBG(TAG, "discarding non matching cert %s@%s", cert->info.userHint,
+			         cert->info.domainHint);
 			goto endofloop;
 		}
 
@@ -504,7 +514,7 @@ static BOOL smartcard_sw_enumerateCerts(const rdpSettings* settings, SmartcardCe
 	if (ConvertToUnicode(CP_UTF8, 0, "FreeRDP Emulator", -1, &cert->info.reader, 0) < 0)
 		goto out_error;
 
-	cert->info.containerName = strdup("Private Key 00");
+	cert->info.containerName = _strdup("Private Key 00");
 	if (!cert->info.containerName)
 		goto out_error;
 
@@ -542,6 +552,7 @@ BOOL smartcard_enumerateCerts(const rdpSettings* settings, SmartcardCerts** scCe
 	const char* asciiCsp;
 	const char* ReaderName = freerdp_settings_get_string(settings, FreeRDP_ReaderName);
 	const char* Username = freerdp_settings_get_string(settings, FreeRDP_Username);
+	const char* Domain = freerdp_settings_get_string(settings, FreeRDP_Domain);
 	const char* CspName = freerdp_settings_get_string(settings, FreeRDP_CspName);
 
 	WINPR_ASSERT(settings);
@@ -559,7 +570,8 @@ BOOL smartcard_enumerateCerts(const rdpSettings* settings, SmartcardCerts** scCe
 		return FALSE;
 	}
 
-	ret = smartcard_hw_enumerateCerts(settings, csp, ReaderName, Username, scCerts, retCount);
+	ret =
+	    smartcard_hw_enumerateCerts(settings, csp, ReaderName, Username, Domain, scCerts, retCount);
 	free(csp);
 	return ret;
 }

@@ -394,20 +394,7 @@ static UINT rdpdr_process_client_name_request(pf_channel_server_context* rdpdr, 
 		return ERROR_INVALID_DATA;
 
 	Stream_Read_UINT32(s, unicodeFlag);
-	switch (unicodeFlag)
-	{
-		case 1:
-			rdpdr->common.computerNameUnicode = TRUE;
-			break;
-		case 0:
-			rdpdr->common.computerNameUnicode = FALSE;
-			break;
-		default:
-			WLog_WARN(TAG, "[%s | %s]: Invalid unicodeFlag value 0x%08" PRIx32,
-			          rdpdr_component_string(RDPDR_CTYP_CORE),
-			          rdpdr_packetid_string(PAKID_CORE_CLIENT_NAME), unicodeFlag);
-			return ERROR_INVALID_DATA;
-	}
+	rdpdr->common.computerNameUnicode = (unicodeFlag & 1);
 
 	Stream_Read_UINT32(s, codePage);
 	WINPR_UNUSED(codePage); /* Field is ignored */
@@ -462,7 +449,7 @@ static UINT rdpdr_send_client_name_request(pClientContext* pc, pf_channel_client
 	Stream_Write_UINT32(s, rdpdr->common.computerNameUnicode
 	                           ? 1
 	                           : 0); /* unicodeFlag, 0 for ASCII and 1 for Unicode */
-	Stream_Write_UINT32(s, 0); /* codePage, must be set to zero */
+	Stream_Write_UINT32(s, 0);       /* codePage, must be set to zero */
 	Stream_Write_UINT32(s, rdpdr->common.computerNameLen);
 	Stream_Write(s, rdpdr->common.computerName.v, rdpdr->common.computerNameLen);
 	return rdpdr_client_send(pc, s);
@@ -1021,7 +1008,7 @@ static BOOL filter_smartcard_io_requests(pf_channel_client_context* rdpdr, wStre
 	if (Stream_GetRemainingLength(s) >= 4)
 		Stream_Read_UINT32(s, deviceID);
 
-	WLog_DBG(TAG, "got: [%s | %s]: [0x%08]" PRIx32, rdpdr_component_string(component),
+	WLog_DBG(TAG, "got: [%s | %s]: [0x%08" PRIx32 "]", rdpdr_component_string(component),
 	         rdpdr_packetid_string(packetid), deviceID);
 
 	if (component != RDPDR_CTYP_CORE)
@@ -1229,6 +1216,11 @@ BOOL pf_channel_rdpdr_client_handle(pClientContext* pc, UINT16 channelId, const 
 						if (!rdpdr_handle_server_announce_request(pc, rdpdr, s))
 							return FALSE;
 						break;
+					case PAKID_CORE_SERVER_CAPABILITY:
+						rdpdr->state = STATE_CLIENT_EXPECT_SERVER_CORE_CAPABILITY_REQUEST;
+						rdpdr->flags = 0;
+						return pf_channel_rdpdr_client_handle(pc, channelId, channel_name, xdata,
+						                                      xsize, flags, totalSize);
 					case PAKID_CORE_DEVICE_REPLY:
 						break;
 					default:
@@ -1420,7 +1412,7 @@ static BOOL filter_smartcard_device_list_announce_request(pf_channel_server_cont
 	size_t pos;
 	UINT16 component, packetid;
 
-	if (!Stream_CheckAndLogRequiredLength(TAG, s, 12))
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 8))
 		return FALSE;
 
 	pos = Stream_GetPosition(s);
@@ -1709,38 +1701,51 @@ BOOL pf_channel_rdpdr_client_reset(pClientContext* pc)
 	return TRUE;
 }
 
-static PfChannelResult pf_rdpdr_back_data(proxyData* pdata, const pServerChannelContext* channel,
-            const BYTE* xdata, size_t xsize, UINT32 flags,
-            size_t totalSize)
+static PfChannelResult pf_rdpdr_back_data(proxyData* pdata,
+                                          const pServerStaticChannelContext* channel,
+                                          const BYTE* xdata, size_t xsize, UINT32 flags,
+                                          size_t totalSize)
 {
 	WINPR_ASSERT(pdata);
 	WINPR_ASSERT(channel);
 
-	if (!pf_channel_rdpdr_client_handle(pdata->pc, channel->channel_id, channel->channel_name, xdata, xsize, flags, totalSize))
+	if (!pf_channel_rdpdr_client_handle(pdata->pc, channel->channel_id, channel->channel_name,
+	                                    xdata, xsize, flags, totalSize))
 	{
 		WLog_ERR(TAG, "error treating client back data");
 		return PF_CHANNEL_RESULT_ERROR;
 	}
+
+#if defined(WITH_PROXY_EMULATE_SMARTCARD)
+	if (pf_channel_smartcard_client_emulate(pdata->pc))
+		return PF_CHANNEL_RESULT_DROP;
+#endif
 	return PF_CHANNEL_RESULT_PASS;
 }
 
-static PfChannelResult pf_rdpdr_front_data(proxyData* pdata, const pServerChannelContext* channel,
-            const BYTE* xdata, size_t xsize, UINT32 flags,
-            size_t totalSize)
+static PfChannelResult pf_rdpdr_front_data(proxyData* pdata,
+                                           const pServerStaticChannelContext* channel,
+                                           const BYTE* xdata, size_t xsize, UINT32 flags,
+                                           size_t totalSize)
 {
 	WINPR_ASSERT(pdata);
 	WINPR_ASSERT(channel);
 
-	if (!pf_channel_rdpdr_server_handle(pdata->ps, channel->channel_id, channel->channel_name, xdata, xsize, flags, totalSize))
+	if (!pf_channel_rdpdr_server_handle(pdata->ps, channel->channel_id, channel->channel_name,
+	                                    xdata, xsize, flags, totalSize))
 	{
 		WLog_ERR(TAG, "error treating front data");
 		return PF_CHANNEL_RESULT_ERROR;
-
 	}
+
+#if defined(WITH_PROXY_EMULATE_SMARTCARD)
+	if (pf_channel_smartcard_client_emulate(pdata->pc))
+		return PF_CHANNEL_RESULT_DROP;
+#endif
 	return PF_CHANNEL_RESULT_PASS;
 }
 
-BOOL pf_channel_setup_rdpdr(pServerContext* ps, pServerChannelContext* channel)
+BOOL pf_channel_setup_rdpdr(pServerContext* ps, pServerStaticChannelContext* channel)
 {
 	channel->onBackData = pf_rdpdr_back_data;
 	channel->onFrontData = pf_rdpdr_front_data;
@@ -1752,4 +1757,3 @@ BOOL pf_channel_setup_rdpdr(pServerContext* ps, pServerChannelContext* channel)
 
 	return TRUE;
 }
-

@@ -21,6 +21,7 @@
 #include <freerdp/config.h>
 
 #include <winpr/crt.h>
+#include <winpr/string.h>
 #include <winpr/synch.h>
 #include <winpr/assert.h>
 
@@ -390,7 +391,7 @@ BOOL rdp_set_error_info(rdpRdp* rdp, UINT32 errorInfo)
 
 			if (context->pubSub)
 			{
-				ErrorInfoEventArgs e;
+				ErrorInfoEventArgs e = { 0 };
 				EventArgsInit(&e, "freerdp");
 				e.code = rdp->errorInfo;
 				PubSub_OnErrorInfo(context->pubSub, context, &e);
@@ -506,7 +507,7 @@ BOOL rdp_read_header(rdpRdp* rdp, wStream* s, UINT16* length, UINT16* channelId)
 	if (MCSPDU == DomainMCSPDU_DisconnectProviderUltimatum)
 	{
 		int reason = 0;
-		TerminateEventArgs e;
+		TerminateEventArgs e = { 0 };
 		rdpContext* context;
 
 		if (!mcs_recv_disconnect_provider_ultimatum(rdp->mcs, s, &reason))
@@ -534,7 +535,7 @@ BOOL rdp_read_header(rdpRdp* rdp, wStream* s, UINT16* length, UINT16* channelId)
 		utils_abort_connect(rdp);
 		EventArgsInit(&e, "freerdp");
 		e.code = 0;
-		PubSub_OnTerminate(context->pubSub, context, &e);
+		PubSub_OnTerminate(rdp->pubSub, context, &e);
 		return TRUE;
 	}
 
@@ -944,11 +945,11 @@ static BOOL rdp_recv_monitor_layout_pdu(rdpRdp* rdp, wStream* s)
 
 	for (monitor = monitorDefArray, index = 0; index < monitorCount; index++, monitor++)
 	{
-		Stream_Read_INT32(s, monitor->left);    /* left (4 bytes) */
-		Stream_Read_INT32(s, monitor->top);     /* top (4 bytes) */
-		Stream_Read_INT32(s, monitor->right);   /* right (4 bytes) */
-		Stream_Read_INT32(s, monitor->bottom);  /* bottom (4 bytes) */
-		Stream_Read_UINT32(s, monitor->flags);  /* flags (4 bytes) */
+		Stream_Read_INT32(s, monitor->left);   /* left (4 bytes) */
+		Stream_Read_INT32(s, monitor->top);    /* top (4 bytes) */
+		Stream_Read_INT32(s, monitor->right);  /* right (4 bytes) */
+		Stream_Read_INT32(s, monitor->bottom); /* bottom (4 bytes) */
+		Stream_Read_UINT32(s, monitor->flags); /* flags (4 bytes) */
 	}
 
 	IFCALLRET(rdp->update->RemoteMonitors, ret, rdp->context, monitorCount, monitorDefArray);
@@ -1745,7 +1746,7 @@ int rdp_recv_callback(rdpTransport* transport, wStream* s, void* extra)
 		case CONNECTION_STATE_FINALIZATION:
 			status = rdp_recv_pdu(rdp, s);
 
-			if ((status >= 0) && (rdp->finalize_sc_pdus == FINALIZE_SC_COMPLETE))
+			if ((status >= 0) && rdp_finalize_is_flag_set(rdp, FINALIZE_SC_COMPLETE))
 			{
 				rdp_client_transition_to_state(rdp, CONNECTION_STATE_ACTIVE);
 				return 2;
@@ -1889,6 +1890,13 @@ rdpRdp* rdp_new(rdpContext* context)
 	}
 	else
 		rdp->settings = context->settings;
+
+	/* Keep a backup copy of settings for later comparisons */
+	freerdp_settings_free(rdp->originalSettings);
+	rdp->originalSettings = freerdp_settings_clone(rdp->settings);
+	if (!rdp->originalSettings)
+		return FALSE;
+
 	rdp->settings->instance = context->instance;
 
 	context->settings = rdp->settings;
@@ -1971,6 +1979,10 @@ rdpRdp* rdp_new(rdpContext* context)
 	rdp->bulk = bulk_new(context);
 
 	if (!rdp->bulk)
+		goto fail;
+
+	rdp->pubSub = PubSub_New(TRUE);
+	if (!rdp->pubSub)
 		goto fail;
 
 	rdp->abortEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -2070,8 +2082,7 @@ BOOL rdp_reset(rdpRdp* rdp)
 		goto fail;
 
 	rdp->errorInfo = 0;
-	rdp->deactivation_reactivation = FALSE;
-	rdp->finalize_sc_pdus = 0;
+	rdp_finalize_reset_flags(rdp, TRUE);
 
 	rc = TRUE;
 
@@ -2092,6 +2103,7 @@ void rdp_free(rdpRdp* rdp)
 		rdp_reset_free(rdp);
 
 		freerdp_settings_free(rdp->settings);
+		freerdp_settings_free(rdp->originalSettings);
 
 		input_free(rdp->input);
 		update_free(rdp->update);
@@ -2102,6 +2114,7 @@ void rdp_free(rdpRdp* rdp)
 		multitransport_free(rdp->multitransport);
 		bulk_free(rdp->bulk);
 		free(rdp->io);
+		PubSub_Free(rdp->pubSub);
 		if (rdp->abortEvent)
 			CloseHandle(rdp->abortEvent);
 		free(rdp);
@@ -2143,4 +2156,71 @@ void* rdp_get_io_callback_context(rdpRdp* rdp)
 {
 	WINPR_ASSERT(rdp);
 	return rdp->ioContext;
+}
+
+const char* rdp_finalize_flags_to_str(UINT32 flags, char* buffer, size_t size)
+{
+	char number[32] = { 0 };
+	const UINT32 mask = ~(FINALIZE_SC_SYNCHRONIZE_PDU | FINALIZE_SC_CONTROL_COOPERATE_PDU |
+	                      FINALIZE_SC_CONTROL_GRANTED_PDU | FINALIZE_SC_FONT_MAP_PDU |
+	                      FINALIZE_CS_SYNCHRONIZE_PDU | FINALIZE_CS_CONTROL_COOPERATE_PDU |
+	                      FINALIZE_CS_CONTROL_REQUEST_PDU | FINALIZE_CS_PERSISTENT_KEY_LIST_PDU |
+	                      FINALIZE_CS_FONT_LIST_PDU | FINALIZE_DEACTIVATE_REACTIVATE);
+
+	if (flags & FINALIZE_SC_SYNCHRONIZE_PDU)
+		winpr_str_append("FINALIZE_SC_SYNCHRONIZE_PDU", buffer, size, "|");
+	if (flags & FINALIZE_SC_CONTROL_COOPERATE_PDU)
+		winpr_str_append("FINALIZE_SC_CONTROL_COOPERATE_PDU", buffer, size, "|");
+	if (flags & FINALIZE_SC_CONTROL_GRANTED_PDU)
+		winpr_str_append("FINALIZE_SC_CONTROL_GRANTED_PDU", buffer, size, "|");
+	if (flags & FINALIZE_SC_FONT_MAP_PDU)
+		winpr_str_append("FINALIZE_SC_FONT_MAP_PDU", buffer, size, "|");
+	if (flags & FINALIZE_CS_SYNCHRONIZE_PDU)
+		winpr_str_append("FINALIZE_CS_SYNCHRONIZE_PDU", buffer, size, "|");
+	if (flags & FINALIZE_CS_CONTROL_COOPERATE_PDU)
+		winpr_str_append("FINALIZE_CS_CONTROL_COOPERATE_PDU", buffer, size, "|");
+	if (flags & FINALIZE_CS_CONTROL_REQUEST_PDU)
+		winpr_str_append("FINALIZE_CS_CONTROL_REQUEST_PDU", buffer, size, "|");
+	if (flags & FINALIZE_CS_PERSISTENT_KEY_LIST_PDU)
+		winpr_str_append("FINALIZE_CS_PERSISTENT_KEY_LIST_PDU", buffer, size, "|");
+	if (flags & FINALIZE_CS_FONT_LIST_PDU)
+		winpr_str_append("FINALIZE_CS_FONT_LIST_PDU", buffer, size, "|");
+	if (flags & FINALIZE_DEACTIVATE_REACTIVATE)
+		winpr_str_append("FINALIZE_DEACTIVATE_REACTIVATE", buffer, size, "|");
+	if (flags & mask)
+		winpr_str_append("UNKNOWN_FLAG", buffer, size, "|");
+	if (flags == 0)
+		winpr_str_append("NO_FLAG_SET", buffer, size, "|");
+	_snprintf(number, sizeof(number), " [0x%04" PRIx16 "]", flags);
+	winpr_str_append(number, buffer, size, "|");
+	return buffer;
+}
+
+BOOL rdp_finalize_reset_flags(rdpRdp* rdp, BOOL clearAll)
+{
+	WINPR_ASSERT(rdp);
+	WLog_DBG(TAG, "[%s] reset finalize_sc_pdus", rdp_get_state_string(rdp));
+	if (clearAll)
+		rdp->finalize_sc_pdus = 0;
+	else
+		rdp->finalize_sc_pdus &= FINALIZE_DEACTIVATE_REACTIVATE;
+	return TRUE;
+}
+
+BOOL rdp_finalize_set_flag(rdpRdp* rdp, UINT32 flag)
+{
+	char buffer[1024] = { 0 };
+
+	WINPR_ASSERT(rdp);
+
+	WLog_DBG(TAG, "[%s] received flag %s", rdp_get_state_string(rdp),
+	         rdp_finalize_flags_to_str(flag, buffer, sizeof(buffer)));
+	rdp->finalize_sc_pdus |= flag;
+	return TRUE;
+}
+
+BOOL rdp_finalize_is_flag_set(rdpRdp* rdp, UINT32 flag)
+{
+	WINPR_ASSERT(rdp);
+	return (rdp->finalize_sc_pdus & flag) == flag;
 }

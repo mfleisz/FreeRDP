@@ -64,6 +64,8 @@ static BOOL freerdp_client_common_new(freerdp* instance, rdpContext* context)
 	WINPR_ASSERT(instance);
 	WINPR_ASSERT(context);
 
+	instance->LoadChannels = freerdp_client_load_channels;
+
 	pEntryPoints = instance->pClientEntryPoints;
 	WINPR_ASSERT(pEntryPoints);
 	return IFCALLRESULT(TRUE, pEntryPoints->ClientNew, instance, context);
@@ -961,6 +963,95 @@ int freerdp_client_common_stop(rdpContext* context)
 	return 0;
 }
 
+BOOL freerdp_client_encomsp_toggle_control(EncomspClientContext* encomsp)
+{
+	rdpClientContext* cctx;
+	BOOL state;
+
+	WINPR_ASSERT(encomsp);
+	cctx = (rdpClientContext*)encomsp->custom;
+
+	state = cctx->controlToggle;
+	cctx->controlToggle = !cctx->controlToggle;
+	return freerdp_client_encomsp_set_control(encomsp, state);
+}
+
+BOOL freerdp_client_encomsp_set_control(EncomspClientContext* encomsp, BOOL control)
+{
+#if defined(CHANNEL_ENCOMSP_CLIENT)
+	ENCOMSP_CHANGE_PARTICIPANT_CONTROL_LEVEL_PDU pdu = { 0 };
+
+	if (!encomsp)
+		return FALSE;
+
+	pdu.ParticipantId = encomsp->participantId;
+	pdu.Flags = ENCOMSP_REQUEST_VIEW;
+
+	if (control)
+		pdu.Flags |= ENCOMSP_REQUEST_INTERACT;
+
+	encomsp->ChangeParticipantControlLevel(encomsp, &pdu);
+#endif
+	return TRUE;
+}
+
+#if defined(CHANNEL_ENCOMSP_CLIENT)
+static UINT
+client_encomsp_participant_created(EncomspClientContext* context,
+                                   const ENCOMSP_PARTICIPANT_CREATED_PDU* participantCreated)
+{
+	rdpClientContext* cctx;
+	rdpSettings* settings;
+	BOOL request;
+
+	if (!context || !context->custom || !participantCreated)
+		return ERROR_INVALID_PARAMETER;
+
+	cctx = (rdpClientContext*)context->custom;
+	WINPR_ASSERT(cctx);
+
+	settings = cctx->context.settings;
+	WINPR_ASSERT(settings);
+
+	if (participantCreated->Flags & ENCOMSP_IS_PARTICIPANT)
+		context->participantId = participantCreated->ParticipantId;
+
+	request = freerdp_settings_get_bool(settings, FreeRDP_RemoteAssistanceRequestControl);
+	if (request && (participantCreated->Flags & ENCOMSP_MAY_VIEW) &&
+	    !(participantCreated->Flags & ENCOMSP_MAY_INTERACT))
+	{
+		if (!freerdp_client_encomsp_set_control(context, TRUE))
+			return ERROR_INTERNAL_ERROR;
+
+		/* if auto-request-control setting is enabled then only request control once upon connect,
+		 * otherwise it will auto request control again every time server turns off control which
+		 * is a bit annoying */
+		freerdp_settings_set_bool(settings, FreeRDP_RemoteAssistanceRequestControl, FALSE);
+	}
+
+	return CHANNEL_RC_OK;
+}
+
+static void client_encomsp_init(rdpClientContext* cctx, EncomspClientContext* encomsp)
+{
+	cctx->encomsp = encomsp;
+	encomsp->custom = (void*)cctx;
+	encomsp->ParticipantCreated = client_encomsp_participant_created;
+}
+
+static void client_encomsp_uninit(rdpClientContext* cctx, EncomspClientContext* encomsp)
+{
+	if (encomsp)
+	{
+		encomsp->custom = NULL;
+		encomsp->ParticipantCreated = NULL;
+	}
+
+	if (cctx)
+		cctx->encomsp = NULL;
+}
+#endif
+
 void freerdp_client_OnChannelConnectedEventHandler(void* context,
                                                    const ChannelConnectedEventArgs* e)
 {
@@ -1002,6 +1093,12 @@ void freerdp_client_OnChannelConnectedEventHandler(void* context,
 	else if (strcmp(e->name, VIDEO_DATA_DVC_CHANNEL_NAME) == 0)
 	{
 		gdi_video_data_init(cctx->context.gdi, (VideoClientContext*)e->pInterface);
+	}
+#endif
+#if defined(CHANNEL_ENCOMSP_CLIENT)
+	else if (strcmp(e->name, ENCOMSP_SVC_CHANNEL_NAME) == 0)
+	{
+		client_encomsp_init(cctx, (EncomspClientContext*)e->pInterface);
 	}
 #endif
 }
@@ -1047,6 +1144,12 @@ void freerdp_client_OnChannelDisconnectedEventHandler(void* context,
 	else if (strcmp(e->name, VIDEO_DATA_DVC_CHANNEL_NAME) == 0)
 	{
 		gdi_video_data_uninit(cctx->context.gdi, (VideoClientContext*)e->pInterface);
+	}
+#endif
+#if defined(CHANNEL_ENCOMSP_CLIENT)
+	else if (strcmp(e->name, ENCOMSP_SVC_CHANNEL_NAME) == 0)
+	{
+		client_encomsp_uninit(cctx, (EncomspClientContext*)e->pInterface);
 	}
 #endif
 }
@@ -1205,5 +1308,17 @@ BOOL freerdp_client_send_extended_button_event(rdpClientContext* cctx, BOOL rela
 		                                        (UINT16)cctx->lastY);
 	}
 
+	return TRUE;
+}
+BOOL freerdp_client_load_channels(freerdp* instance)
+{
+	WINPR_ASSERT(instance);
+	WINPR_ASSERT(instance->context);
+
+	if (!freerdp_client_load_addins(instance->context->channels, instance->context->settings))
+	{
+		WLog_ERR(TAG, "Failed to load addins [%l08X]", GetLastError());
+		return FALSE;
+	}
 	return TRUE;
 }

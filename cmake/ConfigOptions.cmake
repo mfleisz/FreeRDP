@@ -149,12 +149,16 @@ option(WITH_CCACHE "Use ccache support if available" ON)
 option(WITH_CLANG_FORMAT "Detect clang-format. run 'cmake --build . --target clangformat' to format." ON)
 
 option(WITH_DSP_EXPERIMENTAL "Enable experimental sound encoder/decoder formats" OFF)
-if (WITH_FFMPEG)
-    option(WITH_DSP_FFMPEG "Use FFMPEG for audio encoding/decoding" OFF)
-    option(WITH_VAAPI "Use FFMPEG VAAPI" OFF)
-endif(WITH_FFMPEG)
 
-option(USE_VERSION_FROM_GIT_TAG "Extract FreeRDP version from git tag." OFF)
+option(WITH_FFMPEG "Enable FFMPEG for audio/video encoding/decoding" OFF)
+CMAKE_DEPENDENT_OPTION(WITH_DSP_FFMPEG "Use FFMPEG for audio encoding/decoding" OFF
+	"WITH_FFMPEG" OFF)
+CMAKE_DEPENDENT_OPTION(WITH_VIDEO_FFMPEG "Use FFMPEG for video encoding/decoding" ON
+	"WITH_FFMPEG" OFF)
+CMAKE_DEPENDENT_OPTION(WITH_VAAPI "Use FFMPEG VAAPI" OFF
+	"WITH_VIDEO_FFMPEG" OFF)
+
+option(USE_VERSION_FROM_GIT_TAG "Extract FreeRDP version from git tag." ON)
 
 option(WITH_CAIRO    "Use CAIRO image library for screen resizing" OFF)
 option(WITH_SWSCALE  "Use SWScale image library for screen resizing" OFF)

@@ -28,6 +28,8 @@
 #include <winpr/assert.h>
 #include <winpr/collections.h>
 
+#include <freerdp/utils/string.h>
+
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
@@ -474,18 +476,19 @@ static int xf_keyboard_execute_action_script(xfContext* xfc, XF_MODIFIER_KEYS* m
 	}
 
 	if (mod->Shift)
-		strcat(combination, "Shift+");
+		winpr_str_append("Shift", combination, sizeof(combination), "+");
 
 	if (mod->Ctrl)
-		strcat(combination, "Ctrl+");
+		winpr_str_append("Ctrl", combination, sizeof(combination), "+");
 
 	if (mod->Alt)
-		strcat(combination, "Alt+");
+		winpr_str_append("Alt", combination, sizeof(combination), "+");
 
 	if (mod->Super)
-		strcat(combination, "Super+");
+		winpr_str_append("Super", combination, sizeof(combination), "+");
 
-	strcat(combination, keyStr);
+	winpr_str_append(keyStr, combination, sizeof(combination), NULL);
+
 	count = ArrayList_Count(xfc->keyCombinations);
 
 	for (index = 0; index < count; index++)
@@ -587,7 +590,7 @@ BOOL xf_keyboard_handle_special_keys(xfContext* xfc, KeySym keysym)
 		if (mod.Ctrl && mod.Alt)
 		{
 			/* Ctrl-Alt-C: toggle control */
-			if (xf_toggle_control(xfc))
+			if (freerdp_client_encomsp_toggle_control(xfc->common.encomsp))
 				return TRUE;
 		}
 	}
@@ -693,7 +696,7 @@ void xf_keyboard_handle_special_keys_release(xfContext* xfc, KeySym keysym)
 	{
 		if (!xfc->fullscreen)
 		{
-			xf_toggle_control(xfc);
+			freerdp_client_encomsp_toggle_control(xfc->common.encomsp);
 		}
 
 		xfc->mouse_active = FALSE;

@@ -24,7 +24,7 @@ include(FindCairo)
 # Create imported targets for Intel IPP libraries
 
 if(IPP_FOUND)
-        foreach(ipp_lib ${IPP_LIBRARIES})
+    foreach(ipp_lib ${IPP_LIBRARIES})
         add_library("${ipp_lib}_imported" STATIC IMPORTED)
         set_property(TARGET "${ipp_lib}_imported" PROPERTY IMPORTED_LOCATION "${IPP_LIBRARY_DIRS}/${ipp_lib}")
     endforeach()
@@ -91,11 +91,9 @@ endif(WITH_CAIRO)
 
 # Prefer SWScale over Cairo, both at the same time are not possible.
 if (WITH_SWSCALE)
-    add_definitions(-DSWSCALE_FOUND=1)
     include_directories(${SWScale_INCLUDE_DIR})
     freerdp_library_add(${SWScale_LIBRARY})
 elseif (WITH_CAIRO)
-    add_definitions(-DCAIRO_FOUND=1)
     include_directories(${CAIRO_INCLUDE_DIR})
     freerdp_library_add(${CAIRO_LIBRARY})
 else()
@@ -190,6 +188,8 @@ if (WITH_DSP_FFMPEG)
         ${CODEC_SRCS}
         codec/dsp_ffmpeg.c
         codec/dsp_ffmpeg.h)
+	freerdp_include_directory_add(${FFMPEG_INCLUDE_DIRS})
+	freerdp_library_add(${FFMPEG_LIBRARIES})
 endif (WITH_DSP_FFMPEG)
 
 if (WITH_SOXR)
@@ -241,7 +241,7 @@ if(WITH_OPENH264)
     endif (NOT WITH_OPENH264_LOADING)
 endif()
 
-if(WITH_FFMPEG)
+if(WITH_VIDEO_FFMPEG)
     set(CODEC_SRCS ${CODEC_SRCS} codec/h264_ffmpeg.c)
     freerdp_include_directory_add(${FFMPEG_INCLUDE_DIRS})
     freerdp_library_add(${FFMPEG_LIBRARIES})

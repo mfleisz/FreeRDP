@@ -131,6 +131,7 @@ static BOOL gdi_Bitmap_Decompress(rdpContext* context, rdpBitmap* bitmap, const 
                                   UINT32 DstWidth, UINT32 DstHeight, UINT32 bpp, UINT32 length,
                                   BOOL compressed, UINT32 codecId)
 {
+	int status;
 	UINT32 SrcSize = length;
 	rdpGdi* gdi = context->gdi;
 	UINT32 size = DstWidth * DstHeight;
@@ -151,7 +152,38 @@ static BOOL gdi_Bitmap_Decompress(rdpContext* context, rdpBitmap* bitmap, const 
 
 	if (compressed)
 	{
-		if (bpp < 32)
+		if ((codecId == RDP_CODEC_ID_REMOTEFX) || (codecId == RDP_CODEC_ID_IMAGE_REMOTEFX))
+		{
+			REGION16 invalidRegion;
+			region16_init(&invalidRegion);
+
+			if (!rfx_process_message(context->codecs->rfx, pSrcData, SrcSize, bitmap->left,
+			                         bitmap->top, bitmap->data, bitmap->format, gdi->stride,
+			                         gdi->height, &invalidRegion))
+			{
+				WLog_ERR(TAG, "rfx_process_message failure");
+				return FALSE;
+			}
+
+			status = 1;
+		}
+		else if (codecId == RDP_CODEC_ID_NSCODEC)
+		{
+			status = nsc_process_message(context->codecs->nsc, 32, DstWidth, DstHeight, pSrcData,
+			                             SrcSize, bitmap->data, bitmap->format, 0, 0, 0, DstWidth,
+			                             DstHeight, FREERDP_FLIP_VERTICAL);
+
+			if (status < 1)
+			{
+				WLog_ERR(TAG, "nsc_process_message failure");
+				return FALSE;
+			}
+
+			return freerdp_image_copy(bitmap->data, bitmap->format, 0, 0, 0, DstWidth, DstHeight,
+			                          pSrcData, PIXEL_FORMAT_XRGB32, 0, 0, 0, &gdi->palette,
+			                          FREERDP_FLIP_VERTICAL);
+		}
+		else if (bpp < 32)
 		{
 			if (!interleaved_decompress(context->codecs->interleaved, pSrcData, SrcSize, DstWidth,
 			                            DstHeight, bpp, bitmap->data, bitmap->format, 0, 0, 0,

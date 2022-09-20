@@ -37,25 +37,23 @@
 #include <winpr/stream.h>
 #include <freerdp/freerdp.h>
 #include <freerdp/codec/dsp.h>
+#include <freerdp/client/channels.h>
 #include <freerdp/channels/audin.h>
 
 #include "audin_main.h"
 
-#define MSG_SNDIN_VERSION 0x01
-#define MSG_SNDIN_FORMATS 0x02
-#define MSG_SNDIN_OPEN 0x03
-#define MSG_SNDIN_OPEN_REPLY 0x04
-#define MSG_SNDIN_DATA_INCOMING 0x05
-#define MSG_SNDIN_DATA 0x06
-#define MSG_SNDIN_FORMATCHANGE 0x07
+#define SNDIN_VERSION 0x02
 
-typedef struct
+enum
 {
-	IWTSListenerCallback iface;
-
-	IWTSPlugin* plugin;
-	IWTSVirtualChannelManager* channel_mgr;
-} AUDIN_LISTENER_CALLBACK;
+	MSG_SNDIN_VERSION = 0x01,
+	MSG_SNDIN_FORMATS = 0x02,
+	MSG_SNDIN_OPEN = 0x03,
+	MSG_SNDIN_OPEN_REPLY = 0x04,
+	MSG_SNDIN_DATA_INCOMING = 0x05,
+	MSG_SNDIN_DATA = 0x06,
+	MSG_SNDIN_FORMATCHANGE = 0x07
+} MSG_SNDIN_CMD;
 
 typedef struct
 {
@@ -78,7 +76,7 @@ typedef struct
 {
 	IWTSPlugin iface;
 
-	AUDIN_LISTENER_CALLBACK* listener_callback;
+	GENERIC_LISTENER_CALLBACK* listener_callback;
 
 	/* Parsed plugin data */
 	AUDIO_FORMAT* fixed_format;
@@ -100,6 +98,7 @@ typedef struct
 	IWTSListener* listener;
 
 	BOOL initialized;
+	UINT32 version;
 } AUDIN_PLUGIN;
 
 static BOOL audin_process_addin_args(AUDIN_PLUGIN* audin, const ADDIN_ARGV* args);
@@ -134,7 +133,7 @@ static UINT audin_channel_write_and_free(AUDIN_CHANNEL_CALLBACK* callback, wStre
 static UINT audin_process_version(AUDIN_PLUGIN* audin, AUDIN_CHANNEL_CALLBACK* callback, wStream* s)
 {
 	wStream* out;
-	const UINT32 ClientVersion = 0x01;
+	const UINT32 ClientVersion = SNDIN_VERSION;
 	UINT32 ServerVersion;
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
@@ -145,7 +144,7 @@ static UINT audin_process_version(AUDIN_PLUGIN* audin, AUDIN_CHANNEL_CALLBACK* c
 	           ServerVersion, ClientVersion);
 
 	/* Do not answer server packet, we do not support the channel version. */
-	if (ServerVersion != ClientVersion)
+	if (ServerVersion > ClientVersion)
 	{
 		WLog_Print(audin->log, WLOG_WARN,
 		           "Incompatible channel version server=%" PRIu32
@@ -153,6 +152,7 @@ static UINT audin_process_version(AUDIN_PLUGIN* audin, AUDIN_CHANNEL_CALLBACK* c
 		           ServerVersion, ClientVersion);
 		return CHANNEL_RC_OK;
 	}
+	audin->version = ServerVersion;
 
 	out = Stream_New(NULL, 5);
 
@@ -638,7 +638,7 @@ static UINT audin_on_new_channel_connection(IWTSListenerCallback* pListenerCallb
 {
 	AUDIN_CHANNEL_CALLBACK* callback;
 	AUDIN_PLUGIN* audin;
-	AUDIN_LISTENER_CALLBACK* listener_callback = (AUDIN_LISTENER_CALLBACK*)pListenerCallback;
+	GENERIC_LISTENER_CALLBACK* listener_callback = (GENERIC_LISTENER_CALLBACK*)pListenerCallback;
 
 	if (!listener_callback || !listener_callback->plugin)
 		return ERROR_INTERNAL_ERROR;
@@ -685,7 +685,8 @@ static UINT audin_plugin_initialize(IWTSPlugin* pPlugin, IWTSVirtualChannelManag
 	}
 
 	WLog_Print(audin->log, WLOG_TRACE, "...");
-	audin->listener_callback = (AUDIN_LISTENER_CALLBACK*)calloc(1, sizeof(AUDIN_LISTENER_CALLBACK));
+	audin->listener_callback =
+	    (GENERIC_LISTENER_CALLBACK*)calloc(1, sizeof(GENERIC_LISTENER_CALLBACK));
 
 	if (!audin->listener_callback)
 	{
@@ -1033,8 +1034,7 @@ UINT audin_DVCPluginEntry(IDRDYNVC_ENTRY_POINTS* pEntryPoints)
 	audin->iface.Attached = audin_plugin_attached;
 	audin->iface.Detached = audin_plugin_detached;
 	args = pEntryPoints->GetPluginData(pEntryPoints);
-	audin->rdpcontext =
-	    ((freerdp*)((rdpSettings*)pEntryPoints->GetRdpSettings(pEntryPoints))->instance)->context;
+	audin->rdpcontext = pEntryPoints->GetRdpContext(pEntryPoints);
 
 	if (args)
 	{

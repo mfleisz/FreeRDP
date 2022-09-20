@@ -18,13 +18,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.4)
+cmake_minimum_required(VERSION 3.9)
 
 project(FreeRDP C)
 
-set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
+
+include(CheckIPOSupported)
+check_ipo_supported(RESULT supported OUTPUT error)
+if (supported)
+	set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif()
 
 if(NOT DEFINED VENDOR)
 	set(VENDOR "FreeRDP" CACHE STRING "FreeRDP package vendor")
@@ -304,12 +310,6 @@ set(THREAD_PREFER_PTHREAD_FLAG TRUE)
 
 if(NOT IOS)
 	find_package(Threads REQUIRED)
-endif()
-
-if (IOS)
-	set(HAVE_STRNDUP 1)
-else()
-	CHECK_SYMBOL_EXISTS(strndup string.h HAVE_STRNDUP)
 endif()
 
 # Enable address sanitizer, where supported and when required
@@ -730,6 +730,10 @@ find_feature(Pulse ${PULSE_FEATURE_TYPE} ${PULSE_FEATURE_PURPOSE} ${PULSE_FEATUR
 find_feature(Cups ${CUPS_FEATURE_TYPE} ${CUPS_FEATURE_PURPOSE} ${CUPS_FEATURE_DESCRIPTION})
 find_feature(PCSC ${PCSC_FEATURE_TYPE} ${PCSC_FEATURE_PURPOSE} ${PCSC_FEATURE_DESCRIPTION})
 
+if (WITH_DSP_FFMPEG OR WITH_VIDEO_FFMPEG OR WITH_FFMPEG)
+	set(FFMPEG_FEATURE_TYPE "REQUIRED" )
+endif()
+
 find_feature(FFmpeg ${FFMPEG_FEATURE_TYPE} ${FFMPEG_FEATURE_PURPOSE} ${FFMPEG_FEATURE_DESCRIPTION})
 
 find_feature(JPEG ${JPEG_FEATURE_TYPE} ${JPEG_FEATURE_PURPOSE} ${JPEG_FEATURE_DESCRIPTION})
@@ -746,29 +750,29 @@ if (WITH_OPENH264 AND NOT WITH_OPENH264_LOADING)
 	option(WITH_OPENH264_LOADING "Use LoadLibrary to load openh264 at runtime" OFF)
 endif (WITH_OPENH264 AND NOT WITH_OPENH264_LOADING)
 
-if ((WITH_FFMPEG OR WITH_DSP_FFMPEG) AND NOT FFMPEG_FOUND)
-	message(FATAL_ERROR "FFMPEG support requested but not detected")
-endif()
-set(WITH_FFMPEG ${FFMPEG_FOUND})
-
 # Version check, if we have detected FFMPEG but the version is too old
 # deactivate it as sound backend.
 if (WITH_DSP_FFMPEG)
 	# Deactivate FFmpeg backend for sound, if the version is too old.
 	# See libfreerdp/codec/dsp_ffmpeg.h
 	file(STRINGS "${AVCODEC_INCLUDE_DIR}/libavcodec/version.h" AV_VERSION_FILE REGEX "LIBAVCODEC_VERSION_M[A-Z]+[\t ]*[0-9]+")
+	if (EXISTS "${AVCODEC_INCLUDE_DIR}/libavcodec/version_major.h")
+		file(STRINGS "${AVCODEC_INCLUDE_DIR}/libavcodec/version_major.h" AV_VERSION_FILE2 REGEX "LIBAVCODEC_VERSION_M[A-Z]+[\t ]*[0-9]+")
+		list(APPEND AV_VERSION_FILE ${AV_VERSION_FILE2})
+	endif()
+
 	FOREACH(item ${AV_VERSION_FILE})
 	  STRING(REGEX MATCH "LIBAVCODEC_VERSION_M[A-Z]+[\t ]*[0-9]+" litem ${item})
-	IF(litem)
-			string(REGEX REPLACE "[ \t]+" ";" VSPLIT_LINE ${litem})
-			list(LENGTH VSPLIT_LINE VSPLIT_LINE_LEN)
-			if (NOT "${VSPLIT_LINE_LEN}" EQUAL "2")
-				message(ERROR "invalid entry in libavcodec version header ${item}")
-			endif(NOT "${VSPLIT_LINE_LEN}" EQUAL "2")
-			list(GET VSPLIT_LINE 0 VNAME)
-			list(GET VSPLIT_LINE 1 VVALUE)
-			set(${VNAME} ${VVALUE})
-	ENDIF(litem)
+		IF(litem)
+				string(REGEX REPLACE "[ \t]+" ";" VSPLIT_LINE ${litem})
+				list(LENGTH VSPLIT_LINE VSPLIT_LINE_LEN)
+				if (NOT "${VSPLIT_LINE_LEN}" EQUAL "2")
+					message(ERROR "invalid entry in libavcodec version header ${item}")
+				endif(NOT "${VSPLIT_LINE_LEN}" EQUAL "2")
+				list(GET VSPLIT_LINE 0 VNAME)
+				list(GET VSPLIT_LINE 1 VVALUE)
+				set(${VNAME} ${VVALUE})
+		ENDIF(litem)
 	ENDFOREACH(item ${AV_VERSION_FILE})
 
 	set(AVCODEC_VERSION "${LIBAVCODEC_VERSION_MAJOR}.${LIBAVCODEC_VERSION_MINOR}.${LIBAVCODEC_VERSION_MICRO}")
@@ -800,7 +804,7 @@ if(MBEDTLS_FOUND)
 	add_definitions("-DWITH_MBEDTLS")
 endif()
 
-if (WITH_OPENH264 OR WITH_MEDIA_FOUNDATION OR WITH_FFMPEG OR WITH_MEDIACODEC)
+if (WITH_OPENH264 OR WITH_MEDIA_FOUNDATION OR WITH_VIDEO_FFMPEG OR WITH_MEDIACODEC)
 	set(WITH_GFX_H264 ON)
 else()
 	set(WITH_GFX_H264 OFF)
@@ -966,9 +970,9 @@ endif()
 set(FREERDP_BUILD_CONFIG_LIST "")
 GET_CMAKE_PROPERTY(res VARIABLES)
 FOREACH(var ${res})
-        IF (var MATCHES "^WITH_*|^BUILD_TESTING|^HAVE_*")
-                LIST(APPEND FREERDP_BUILD_CONFIG_LIST "${var}=${${var}}")
-        ENDIF()
+		IF (var MATCHES "^WITH_*|^BUILD_TESTING|^HAVE_*")
+				LIST(APPEND FREERDP_BUILD_CONFIG_LIST "${var}=${${var}}")
+		ENDIF()
 ENDFOREACH()
 string(REPLACE ";" " " FREERDP_BUILD_CONFIG "${FREERDP_BUILD_CONFIG_LIST}")
 

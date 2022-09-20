@@ -57,6 +57,12 @@
 #include "../log.h"
 #define TAG WINPR_TAG("clipboard.posix")
 
+const char* mime_uri_list = "text/uri-list";
+const char* mime_FileGroupDescriptorW = "FileGroupDescriptorW";
+const char* mime_nautilus_clipboard = "x-special/nautilus-clipboard";
+const char* mime_gnome_copied_files = "x-special/gnome-copied-files";
+const char* mime_mate_copied_files = "x-special/mate-copied-files";
+
 struct posix_file
 {
 	char* local_name;
@@ -191,9 +197,12 @@ error:
  * Note that the function converts a single file name component,
  * it does not take care of component separators.
  */
-static WCHAR* convert_local_name_component_to_remote(const char* local_name)
+static WCHAR* convert_local_name_component_to_remote(wClipboard* clipboard, const char* local_name)
 {
+	wClipboardDelegate* delegate = ClipboardGetDelegate(clipboard);
 	WCHAR* remote_name = NULL;
+
+	WINPR_ASSERT(delegate);
 
 	/*
 	 * Note that local file names are not actually guaranteed to be
@@ -212,8 +221,12 @@ static WCHAR* convert_local_name_component_to_remote(const char* local_name)
 	 * Some file names are not valid on Windows. Check for these now
 	 * so that we won't get ourselves into a trouble later as such names
 	 * are known to crash some Windows shells when pasted via clipboard.
+	 *
+	 * The IsFileNameComponentValid callback can be overridden by the API
+	 * user, if it is known, that the connected peer is not on the
+	 * Windows platform.
 	 */
-	if (!ValidFileNameComponent(remote_name))
+	if (!delegate->IsFileNameComponentValid(remote_name))
 	{
 		WLog_ERR(TAG, "invalid file name component: %s", local_name);
 		goto error;
@@ -261,10 +274,12 @@ static WCHAR* concat_remote_name(const WCHAR* dir, const WCHAR* file)
 	return buffer;
 }
 
-static BOOL add_file_to_list(const char* local_name, const WCHAR* remote_name, wArrayList* files);
+static BOOL add_file_to_list(wClipboard* clipboard, const char* local_name,
+                             const WCHAR* remote_name, wArrayList* files);
 
-static BOOL add_directory_entry_to_list(const char* local_dir_name, const WCHAR* remote_dir_name,
-                                        const struct dirent* entry, wArrayList* files)
+static BOOL add_directory_entry_to_list(wClipboard* clipboard, const char* local_dir_name,
+                                        const WCHAR* remote_dir_name, const struct dirent* entry,
+                                        wArrayList* files)
 {
 	BOOL result = FALSE;
 	char* local_name = NULL;
@@ -275,7 +290,7 @@ static BOOL add_directory_entry_to_list(const char* local_dir_name, const WCHAR*
 	if ((strcmp(entry->d_name, ".") == 0) || (strcmp(entry->d_name, "..") == 0))
 		return TRUE;
 
-	remote_base_name = convert_local_name_component_to_remote(entry->d_name);
+	remote_base_name = convert_local_name_component_to_remote(clipboard, entry->d_name);
 
 	if (!remote_base_name)
 		return FALSE;
@@ -284,7 +299,7 @@ static BOOL add_directory_entry_to_list(const char* local_dir_name, const WCHAR*
 	remote_name = concat_remote_name(remote_dir_name, remote_base_name);
 
 	if (local_name && remote_name)
-		result = add_file_to_list(local_name, remote_name, files);
+		result = add_file_to_list(clipboard, local_name, remote_name, files);
 
 	free(remote_base_name);
 	free(remote_name);
@@ -292,8 +307,9 @@ static BOOL add_directory_entry_to_list(const char* local_dir_name, const WCHAR*
 	return result;
 }
 
-static BOOL do_add_directory_contents_to_list(const char* local_name, const WCHAR* remote_name,
-                                              DIR* dirp, wArrayList* files)
+static BOOL do_add_directory_contents_to_list(wClipboard* clipboard, const char* local_name,
+                                              const WCHAR* remote_name, DIR* dirp,
+                                              wArrayList* files)
 {
 	/*
 	 * For some reason POSIX does not require readdir() to be thread-safe.
@@ -325,15 +341,15 @@ static BOOL do_add_directory_contents_to_list(const char* local_name, const WCHA
 			return FALSE;
 		}
 
-		if (!add_directory_entry_to_list(local_name, remote_name, entry, files))
+		if (!add_directory_entry_to_list(clipboard, local_name, remote_name, entry, files))
 			return FALSE;
 	}
 
 	return TRUE;
 }
 
-static BOOL add_directory_contents_to_list(const char* local_name, const WCHAR* remote_name,
-                                           wArrayList* files)
+static BOOL add_directory_contents_to_list(wClipboard* clipboard, const char* local_name,
+                                           const WCHAR* remote_name, wArrayList* files)
 {
 	BOOL result = FALSE;
 	DIR* dirp = NULL;
@@ -347,7 +363,7 @@ static BOOL add_directory_contents_to_list(const char* local_name, const WCHAR* 
 		goto out;
 	}
 
-	result = do_add_directory_contents_to_list(local_name, remote_name, dirp, files);
+	result = do_add_directory_contents_to_list(clipboard, local_name, remote_name, dirp, files);
 
 	if (closedir(dirp))
 	{
@@ -359,7 +375,8 @@ out:
 	return result;
 }
 
-static BOOL add_file_to_list(const char* local_name, const WCHAR* remote_name, wArrayList* files)
+static BOOL add_file_to_list(wClipboard* clipboard, const char* local_name,
+                             const WCHAR* remote_name, wArrayList* files)
 {
 	struct posix_file* file = NULL;
 	WLog_VRB(TAG, "adding file: %s", local_name);
@@ -380,7 +397,7 @@ static BOOL add_file_to_list(const char* local_name, const WCHAR* remote_name, w
 		 * This is effectively a recursive call, but we do not track
 		 * recursion depth, thus filesystem loops can cause a crash.
 		 */
-		if (!add_directory_contents_to_list(local_name, remote_name, files))
+		if (!add_directory_contents_to_list(clipboard, local_name, remote_name, files))
 			return FALSE;
 	}
 
@@ -401,7 +418,7 @@ static const char* get_basename(const char* name)
 	return last_name;
 }
 
-static BOOL process_file_name(const char* local_name, wArrayList* files)
+static BOOL process_file_name(wClipboard* clipboard, const char* local_name, wArrayList* files)
 {
 	BOOL result = FALSE;
 	const char* base_name = NULL;
@@ -412,49 +429,196 @@ static BOOL process_file_name(const char* local_name, wArrayList* files)
 	 * to have names relative to that selection.
 	 */
 	base_name = get_basename(local_name);
-	remote_name = convert_local_name_component_to_remote(base_name);
+	remote_name = convert_local_name_component_to_remote(clipboard, base_name);
 
 	if (!remote_name)
 		return FALSE;
 
-	result = add_file_to_list(local_name, remote_name, files);
+	result = add_file_to_list(clipboard, local_name, remote_name, files);
 	free(remote_name);
 	return result;
 }
 
-static BOOL process_uri(const char* uri, size_t uri_len, wArrayList* files)
+static BOOL is_dos_driver(const char* path, size_t len)
 {
-	const char prefix[] = "file://";
-	BOOL result = FALSE;
-	char* name = NULL;
+	if (len < 2)
+		return FALSE;
+
+	if (path[1] == ':' || path[1] == '|')
+	{
+		if (((path[0] >= 'A') && (path[0] <= 'Z')) || ((path[0] >= 'a') && (path[0] <= 'z')))
+			return TRUE;
+	}
+	return FALSE;
+}
+
+#if !defined(BUILD_TESTING)
+static
+#endif
+    char*
+    parse_uri_to_local_file(const char* uri, size_t uri_len)
+{
+	// URI is specified by RFC 8089: https://datatracker.ietf.org/doc/html/rfc8089
+	const char prefix[] = "file:";
+	const char prefixTraditional[] = "file://";
+	const char* localName = NULL;
+	size_t localLen = 0;
+	char* buffer = NULL;
 	const size_t prefixLen = strnlen(prefix, sizeof(prefix));
+	const size_t prefixTraditionalLen = strnlen(prefixTraditional, sizeof(prefixTraditional));
+
+	WINPR_ASSERT(uri || (uri_len == 0));
+
 	WLog_VRB(TAG, "processing URI: %.*s", uri_len, uri);
 
-	if ((uri_len < prefixLen) || strncmp(uri, prefix, prefixLen))
+	if ((uri_len <= prefixLen) || strncmp(uri, prefix, prefixLen))
 	{
-		WLog_ERR(TAG, "non-'file://' URI schemes are not supported");
-		goto out;
+		WLog_ERR(TAG, "non-'file:' URI schemes are not supported");
+		return NULL;
 	}
 
-	name = decode_percent_encoded_string(uri + prefixLen, uri_len - prefixLen);
+	do
+	{
+		/* https://datatracker.ietf.org/doc/html/rfc8089#appendix-F
+		 * - The minimal representation of a local file in a DOS- or Windows-
+		 *   based environment with no authority field and an absolute path
+		 *   that begins with a drive letter.
+		 *
+		 *   "file:c:/path/to/file"
+		 *
+		 * - Regular DOS or Windows file URIs with vertical line characters in
+		 *   the drive letter construct.
+		 *
+		 *   "file:c|/path/to/file"
+		 *
+		 */
+		if (uri[prefixLen] != '/')
+		{
 
-	if (!name)
-		goto out;
+			if (is_dos_driver(&uri[prefixLen], uri_len - prefixLen))
+			{
+				// Dos and Windows file URI
+				localName = &uri[prefixLen];
+				localLen = uri_len - prefixLen;
+				break;
+			}
+			else
+			{
+				WLog_ERR(TAG, "URI format are not supported: %s", uri);
+				return NULL;
+			}
+		}
 
-	result = process_file_name(name, files);
-out:
-	free(name);
+		/*
+		 * - The minimal representation of a local file with no authority field
+		 *   and an absolute path that begins with a slash "/".  For example:
+		 *
+		 *   "file:/path/to/file"
+		 *
+		 */
+		else if ((uri_len > prefixLen + 1) && (uri[prefixLen + 1] != '/'))
+		{
+			if (is_dos_driver(&uri[prefixLen + 1], uri_len - prefixLen - 1))
+			{
+				// Dos and Windows file URI
+				localName = (char*)(uri + prefixLen + 1);
+				localLen = uri_len - prefixLen - 1;
+			}
+			else
+			{
+				localName = &uri[prefixLen];
+				localLen = uri_len - prefixLen;
+			}
+			break;
+		}
+
+		/*
+		 * - A traditional file URI for a local file with an empty authority.
+		 *
+		 *   "file:///path/to/file"
+		 */
+		if ((uri_len < prefixTraditionalLen) ||
+		    strncmp(uri, prefixTraditional, prefixTraditionalLen))
+		{
+			WLog_ERR(TAG, "non-'file:' URI schemes are not supported");
+			return NULL;
+		}
+
+		localName = &uri[prefixTraditionalLen];
+		localLen = uri_len - prefixTraditionalLen;
+
+		if (localLen < 1)
+		{
+			WLog_ERR(TAG, "empty 'file:' URI schemes are not supported");
+			return NULL;
+		}
+
+		/*
+		 * "file:///c:/path/to/file"
+		 * "file:///c|/path/to/file"
+		 */
+		if (localName[0] != '/')
+		{
+			WLog_ERR(TAG, "URI format are not supported: %s", uri);
+			return NULL;
+		}
+
+		if (is_dos_driver(&localName[1], localLen - 1))
+		{
+			localName++;
+			localLen--;
+		}
+
+	} while (0);
+
+	buffer = calloc(localLen + 1, sizeof(char));
+	if (buffer)
+	{
+		memcpy(buffer, localName, localLen);
+		if (buffer[1] == '|' &&
+		    ((buffer[0] >= 'A' && buffer[0] <= 'Z') || (buffer[0] >= 'a' && buffer[0] <= 'z')))
+			buffer[1] = ':';
+		return buffer;
+	}
+
+	return NULL;
+}
+
+static BOOL process_uri(wClipboard* clipboard, const char* uri, size_t uri_len)
+{
+	// URI is specified by RFC 8089: https://datatracker.ietf.org/doc/html/rfc8089
+	BOOL result = FALSE;
+	char* name = NULL;
+	char* localName = NULL;
+
+	WINPR_ASSERT(clipboard);
+
+	localName = parse_uri_to_local_file(uri, uri_len);
+	if (localName)
+	{
+		name = decode_percent_encoded_string(localName, strlen(localName));
+		free(localName);
+	}
+	if (name)
+	{
+		result = process_file_name(clipboard, name, clipboard->localFiles);
+		free(name);
+	}
+
 	return result;
 }
 
-static BOOL process_uri_list(const char* data, size_t length, wArrayList* files)
+static BOOL process_uri_list(wClipboard* clipboard, const char* data, size_t length)
 {
 	const char* cur = data;
 	const char* lim = data + length;
 	const char* start = NULL;
 	const char* stop = NULL;
+
+	WINPR_ASSERT(clipboard);
+
 	WLog_VRB(TAG, "processing URI list:\n%.*s", length, data);
-	ArrayList_Clear(files);
+	ArrayList_Clear(clipboard->localFiles);
 
 	/*
 	 * The "text/uri-list" Internet Media Type is specified by RFC 2483.
@@ -494,7 +658,7 @@ static BOOL process_uri_list(const char* data, size_t length, wArrayList* files)
 		if (comment)
 			continue;
 
-		if (!process_uri(start, stop - start, files))
+		if (!process_uri(clipboard, start, stop - start))
 			return FALSE;
 	}
 
@@ -560,28 +724,121 @@ error:
 	return NULL;
 }
 
-static void* convert_uri_list_to_filedescriptors(wClipboard* clipboard, UINT32 formatId,
-                                                 const void* data, UINT32* pSize)
+static void* convert_any_uri_list_to_filedescriptors(wClipboard* clipboard, UINT32 formatId,
+                                                     UINT32* pSize)
 {
-	FILEDESCRIPTORW* descriptors = NULL;
+	FILEDESCRIPTORW* descriptors =
+	    convert_local_file_list_to_filedescriptors(clipboard->localFiles);
 
-	if (!clipboard || !data || !pSize)
-		return NULL;
+	WINPR_ASSERT(pSize);
 
-	if (formatId != ClipboardGetFormatId(clipboard, "text/uri-list"))
-		return NULL;
-
-	if (!process_uri_list((const char*)data, *pSize, clipboard->localFiles))
-		return NULL;
-
-	descriptors = convert_local_file_list_to_filedescriptors(clipboard->localFiles);
-
+	*pSize = 0;
 	if (!descriptors)
 		return NULL;
 
-	*pSize = ArrayList_Count(clipboard->localFiles) * sizeof(FILEDESCRIPTORW);
+	*pSize = (UINT32)ArrayList_Count(clipboard->localFiles) * sizeof(FILEDESCRIPTORW);
 	clipboard->fileListSequenceNumber = clipboard->sequenceNumber;
 	return descriptors;
+}
+
+static void* convert_uri_list_to_filedescriptors(wClipboard* clipboard, UINT32 formatId,
+                                                 const void* data, UINT32* pSize)
+{
+	const UINT32 expected = ClipboardGetFormatId(clipboard, mime_uri_list);
+	if (formatId != expected)
+		return NULL;
+	if (!process_uri_list(clipboard, (const char*)data, *pSize))
+		return NULL;
+	return convert_any_uri_list_to_filedescriptors(clipboard, formatId, pSize);
+}
+
+static BOOL process_files(wClipboard* clipboard, const char* data, UINT32 pSize, const char* prefix)
+{
+	const size_t prefix_len = strlen(prefix);
+
+	WINPR_ASSERT(clipboard);
+
+	ArrayList_Clear(clipboard->localFiles);
+
+	if (!data || (pSize < prefix_len))
+		return FALSE;
+	if (strncmp(data, prefix, prefix_len) != 0)
+		return FALSE;
+	data += prefix_len;
+	pSize -= prefix_len;
+
+	BOOL rc = FALSE;
+	char* copy = strndup(data, pSize);
+	if (!copy)
+		goto fail;
+
+	char* endptr = NULL;
+	char* tok = strtok_s(copy, "\n", &endptr);
+	while (tok)
+	{
+		size_t tok_len = strnlen(tok, pSize);
+		if (!process_uri(clipboard, tok, tok_len))
+			goto fail;
+		pSize -= tok_len;
+		tok = strtok_s(NULL, "\n", &endptr);
+	}
+	rc = TRUE;
+
+fail:
+	free(copy);
+	return rc;
+}
+
+static BOOL process_gnome_copied_files(wClipboard* clipboard, const char* data, UINT32 pSize)
+{
+	return process_files(clipboard, data, pSize, "copy\n");
+}
+
+static BOOL process_mate_copied_files(wClipboard* clipboard, const char* data, UINT32 pSize)
+{
+	return process_files(clipboard, data, pSize, "copy\n");
+}
+
+static BOOL process_nautilus_clipboard(wClipboard* clipboard, const char* data, UINT32 pSize)
+{
+	return process_files(clipboard, data, pSize, "x-special/nautilus-clipboard\ncopy\n");
+}
+
+static void* convert_gnome_copied_files_to_filedescriptors(wClipboard* clipboard, UINT32 formatId,
+                                                           const void* data, UINT32* pSize)
+{
+	const UINT32 expected = ClipboardGetFormatId(clipboard, mime_gnome_copied_files);
+	if (formatId != expected)
+		return NULL;
+	if (!process_gnome_copied_files(clipboard, (const char*)data, *pSize))
+		return NULL;
+	return convert_any_uri_list_to_filedescriptors(clipboard, formatId, pSize);
+}
+
+static void* convert_mate_copied_files_to_filedescriptors(wClipboard* clipboard, UINT32 formatId,
+                                                          const void* data, UINT32* pSize)
+{
+	const UINT32 expected = ClipboardGetFormatId(clipboard, mime_mate_copied_files);
+	if (formatId != expected)
+		return NULL;
+
+	if (!process_mate_copied_files(clipboard, (const char*)data, *pSize))
+		return NULL;
+
+	return convert_any_uri_list_to_filedescriptors(clipboard, formatId, pSize);
+}
+
+static void* convert_nautilus_clipboard_to_filedescriptors(wClipboard* clipboard, UINT32 formatId,
+                                                           const void* data, UINT32* pSize)
+{
+	const UINT32 expected = ClipboardGetFormatId(clipboard, mime_nautilus_clipboard);
+	if (formatId != expected)
+		return NULL;
+
+	if (!process_nautilus_clipboard(clipboard, (const char*)data, *pSize))
+		return NULL;
+
+	return convert_any_uri_list_to_filedescriptors(clipboard, formatId, pSize);
 }
 
 static size_t count_special_chars(const WCHAR* str)
@@ -652,7 +909,7 @@ static void* convert_filedescriptors_to_file_list(wClipboard* clipboard, UINT32 
 
 	descriptors = (const FILEDESCRIPTORW*)&src[4];
 
-	if (formatId != ClipboardGetFormatId(clipboard, "FileGroupDescriptorW"))
+	if (formatId != ClipboardGetFormatId(clipboard, mime_FileGroupDescriptorW))
 		return NULL;
 
 	/* Plus 1 for '/' between basepath and filename*/
@@ -763,12 +1020,17 @@ static void* convert_filedescriptors_to_file_list(wClipboard* clipboard, UINT32 
 	return dst;
 }
 
-/* Prepend header of kde dolphin format to file list*/
+/* Prepend header of kde dolphin format to file list
+ * See:
+ *   GTK: https://docs.gtk.org/glib/struct.Uri.html
+ *   uri syntax: https://www.rfc-editor.org/rfc/rfc3986#section-3
+ *   uri-lists format: https://www.rfc-editor.org/rfc/rfc2483#section-5
+ */
 static void* convert_filedescriptors_to_uri_list(wClipboard* clipboard, UINT32 formatId,
                                                  const void* data, UINT32* pSize)
 {
-	return convert_filedescriptors_to_file_list(clipboard, formatId, data, pSize, "", "file:", "\n",
-	                                            FALSE);
+	return convert_filedescriptors_to_file_list(clipboard, formatId, data, pSize, "",
+	                                            "file:", "\r\n", FALSE);
 }
 
 /* Prepend header of common gnome format to file list*/
@@ -831,16 +1093,18 @@ static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 	UINT32 local_gnome_file_format_id;
 	UINT32 local_mate_file_format_id;
 	UINT32 local_nautilus_file_format_id;
-	file_group_format_id = ClipboardRegisterFormat(clipboard, "FileGroupDescriptorW");
-	local_file_format_id = ClipboardRegisterFormat(clipboard, "text/uri-list");
 
 	/*
 	    1. Gnome Nautilus based file manager (Nautilus only with version >= 3.30 AND < 40):
 	        TARGET: UTF8_STRING
 	        format: x-special/nautilus-clipboard\copy\n\file://path\n\0
-	    2. Kde Dolpin:
+	    2. Kde Dolpin and Qt:
 	        TARGET: text/uri-list
-	        format: file:path\n\0
+	        format: file:path\r\n\0
+	        See:
+	          GTK: https://docs.gtk.org/glib/struct.Uri.html
+	          uri syntax: https://www.rfc-editor.org/rfc/rfc3986#section-3
+	          uri-lists fomat: https://www.rfc-editor.org/rfc/rfc2483#section-5
 	    3. Gnome and others (Unity/XFCE/Nautilus < 3.30/Nautilus >= 40):
 	        TARGET: x-special/gnome-copied-files
 	        format: copy\nfile://path\n\0
@@ -851,9 +1115,11 @@ static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 	    TODO: other file managers do not use previous targets and formats.
 	*/
 
-	local_gnome_file_format_id = ClipboardRegisterFormat(clipboard, "x-special/gnome-copied-files");
-	local_mate_file_format_id = ClipboardRegisterFormat(clipboard, "x-special/mate-copied-files");
-	local_nautilus_file_format_id = ClipboardRegisterFormat(clipboard, "UTF8_STRING");
+	local_gnome_file_format_id = ClipboardRegisterFormat(clipboard, mime_gnome_copied_files);
+	local_mate_file_format_id = ClipboardRegisterFormat(clipboard, mime_mate_copied_files);
+	local_nautilus_file_format_id = ClipboardRegisterFormat(clipboard, mime_utf8_string);
+	file_group_format_id = ClipboardRegisterFormat(clipboard, mime_FileGroupDescriptorW);
+	local_file_format_id = ClipboardRegisterFormat(clipboard, mime_uri_list);
 
 	if (!file_group_format_id || !local_file_format_id || !local_gnome_file_format_id ||
 	    !local_mate_file_format_id || !local_nautilus_file_format_id)
@@ -875,13 +1141,27 @@ static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 	                                  convert_filedescriptors_to_uri_list))
 		goto error_free_local_files;
 
+	if (!ClipboardRegisterSynthesizer(clipboard, local_gnome_file_format_id, file_group_format_id,
+	                                  convert_gnome_copied_files_to_filedescriptors))
+		goto error_free_local_files;
+
 	if (!ClipboardRegisterSynthesizer(clipboard, file_group_format_id, local_gnome_file_format_id,
 	                                  convert_filedescriptors_to_gnome_copied_files))
+		goto error_free_local_files;
+
+	if (!ClipboardRegisterSynthesizer(clipboard, local_mate_file_format_id, file_group_format_id,
+	                                  convert_mate_copied_files_to_filedescriptors))
 		goto error_free_local_files;
 
 	if (!ClipboardRegisterSynthesizer(clipboard, file_group_format_id, local_mate_file_format_id,
 	                                  convert_filedescriptors_to_mate_copied_files))
 		goto error_free_local_files;
+
+	if (!ClipboardRegisterSynthesizer(clipboard, local_nautilus_file_format_id,
+	                                  file_group_format_id,
+	                                  convert_nautilus_clipboard_to_filedescriptors))
+		goto error_free_local_files;
+
 	if (!ClipboardRegisterSynthesizer(clipboard, file_group_format_id,
 	                                  local_nautilus_file_format_id,
 	                                  convert_filedescriptors_to_nautilus_clipboard))
@@ -1148,6 +1428,7 @@ static void setup_delegate(wClipboardDelegate* delegate)
 	delegate->ClientRequestFileRange = posix_file_request_range;
 	delegate->ClipboardFileRangeSuccess = dummy_file_range_success;
 	delegate->ClipboardFileRangeFailure = dummy_file_range_failure;
+	delegate->IsFileNameComponentValid = ValidFileNameComponent;
 }
 
 BOOL ClipboardInitPosixFileSubsystem(wClipboard* clipboard)
