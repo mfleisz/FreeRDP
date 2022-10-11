@@ -461,7 +461,11 @@ static CliprdrStream* CliprdrStream_New(ULONG index, void* pData, const FILEDESC
 				free(clipboard->req_fdata);
 			}
 			else
+			{
+				instance->m_lSize.LowPart = instance->m_Dsc.nFileSizeLow;
+				instance->m_lSize.HighPart = instance->m_Dsc.nFileSizeHigh;
 				success = TRUE;
+			}
 		}
 	}
 
@@ -1482,15 +1486,12 @@ static LRESULT CALLBACK cliprdr_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM 
 				case OLE_SETCLIPBOARD:
 					DEBUG_CLIPRDR("info: OLE_SETCLIPBOARD");
 
-					if (S_FALSE == OleIsCurrentClipboard(clipboard->data_obj))
+					if (wf_create_file_obj(clipboard, &clipboard->data_obj))
 					{
-						if (wf_create_file_obj(clipboard, &clipboard->data_obj))
+						if (OleSetClipboard(clipboard->data_obj) != S_OK)
 						{
-							if (OleSetClipboard(clipboard->data_obj) != S_OK)
-							{
-								wf_destroy_file_obj(clipboard->data_obj);
-								clipboard->data_obj = NULL;
-							}
+							wf_destroy_file_obj(clipboard->data_obj);
+							clipboard->data_obj = NULL;
 						}
 					}
 

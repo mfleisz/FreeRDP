@@ -417,6 +417,11 @@ ntlm_AcceptSecurityContext(PCredHandle phCredential, PCtxtHandle phContext, PSec
 	SSPI_CREDENTIALS* credentials;
 	PSecBuffer input_buffer;
 	PSecBuffer output_buffer;
+
+	/* behave like windows SSPIs that don't want empty context */
+	if (phContext && !phContext->dwLower && !phContext->dwUpper)
+		return SEC_E_INVALID_HANDLE;
+
 	context = (NTLM_CONTEXT*)sspi_SecureHandleGetLowerPointer(phContext);
 
 	if (!context)
@@ -541,7 +546,18 @@ static SECURITY_STATUS SEC_ENTRY ntlm_InitializeSecurityContextW(
 	PSecBuffer input_buffer = NULL;
 	PSecBuffer output_buffer = NULL;
 	PSecBuffer channel_bindings = NULL;
+
+	/* behave like windows SSPIs that don't want empty context */
+	if (phContext && !phContext->dwLower && !phContext->dwUpper)
+		return SEC_E_INVALID_HANDLE;
+
 	context = (NTLM_CONTEXT*)sspi_SecureHandleGetLowerPointer(phContext);
+
+	if (pInput)
+	{
+		input_buffer = sspi_FindSecBuffer(pInput, SECBUFFER_TOKEN);
+		channel_bindings = sspi_FindSecBuffer(pInput, SECBUFFER_CHANNEL_BINDINGS);
+	}
 
 	if (!context)
 	{
@@ -575,7 +591,7 @@ static SECURITY_STATUS SEC_ENTRY ntlm_InitializeSecurityContextW(
 		sspi_SecureHandleSetUpperPointer(phNewContext, NTLM_SSP_NAME);
 	}
 
-	if ((!pInput) || (ntlm_get_state(context) == NTLM_STATE_AUTHENTICATE))
+	if ((!input_buffer) || (ntlm_get_state(context) == NTLM_STATE_AUTHENTICATE))
 	{
 		if (!pOutput)
 			return SEC_E_INVALID_TOKEN;
@@ -601,11 +617,6 @@ static SECURITY_STATUS SEC_ENTRY ntlm_InitializeSecurityContextW(
 	}
 	else
 	{
-		if (pInput->cBuffers < 1)
-			return SEC_E_INVALID_TOKEN;
-
-		input_buffer = sspi_FindSecBuffer(pInput, SECBUFFER_TOKEN);
-
 		if (!input_buffer)
 			return SEC_E_INVALID_TOKEN;
 
@@ -963,6 +974,20 @@ static SECURITY_STATUS SEC_ENTRY ntlm_SetContextAttributesA(PCtxtHandle phContex
 	return ntlm_SetContextAttributesW(phContext, ulAttribute, pBuffer, cbBuffer);
 }
 
+static SECURITY_STATUS SEC_ENTRY ntlm_SetCredentialsAttributesW(PCredHandle phCredential,
+                                                                ULONG ulAttribute, void* pBuffer,
+                                                                ULONG cbBuffer)
+{
+	return SEC_E_UNSUPPORTED_FUNCTION;
+}
+
+static SECURITY_STATUS SEC_ENTRY ntlm_SetCredentialsAttributesA(PCredHandle phCredential,
+                                                                ULONG ulAttribute, void* pBuffer,
+                                                                ULONG cbBuffer)
+{
+	return SEC_E_UNSUPPORTED_FUNCTION;
+}
+
 static SECURITY_STATUS SEC_ENTRY ntlm_RevertSecurityContext(PCtxtHandle phContext)
 {
 	return SEC_E_OK;
@@ -1041,7 +1066,7 @@ static SECURITY_STATUS SEC_ENTRY ntlm_EncryptMessage(PCtxtHandle phContext, ULON
 	}
 
 #ifdef WITH_DEBUG_NTLM
-	WLog_DBG(TAG, "Data Buffer (length = %d)", length);
+	WLog_DBG(TAG, "Data Buffer (length = %" PRIuz ")", length);
 	winpr_HexDump(TAG, WLOG_DEBUG, data, length);
 	WLog_DBG(TAG, "Encrypted Data Buffer (length = %" PRIu32 ")", data_buffer->cbBuffer);
 	winpr_HexDump(TAG, WLOG_DEBUG, data_buffer->pvBuffer, data_buffer->cbBuffer);
@@ -1134,7 +1159,7 @@ static SECURITY_STATUS SEC_ENTRY ntlm_DecryptMessage(PCtxtHandle phContext, PSec
 	}
 
 #ifdef WITH_DEBUG_NTLM
-	WLog_DBG(TAG, "Encrypted Data Buffer (length = %d)", length);
+	WLog_DBG(TAG, "Encrypted Data Buffer (length = %" PRIuz ")", length);
 	winpr_HexDump(TAG, WLOG_DEBUG, data, length);
 	WLog_DBG(TAG, "Data Buffer (length = %" PRIu32 ")", data_buffer->cbBuffer);
 	winpr_HexDump(TAG, WLOG_DEBUG, data_buffer->pvBuffer, data_buffer->cbBuffer);
@@ -1264,7 +1289,7 @@ static SECURITY_STATUS SEC_ENTRY ntlm_VerifySignature(PCtxtHandle phContext,
 }
 
 const SecurityFunctionTableA NTLM_SecurityFunctionTableA = {
-	1,                                /* dwVersion */
+	3,                                /* dwVersion */
 	NULL,                             /* EnumerateSecurityPackages */
 	ntlm_QueryCredentialsAttributesA, /* QueryCredentialsAttributes */
 	ntlm_AcquireCredentialsHandleA,   /* AcquireCredentialsHandle */
@@ -1292,10 +1317,11 @@ const SecurityFunctionTableA NTLM_SecurityFunctionTableA = {
 	ntlm_EncryptMessage,              /* EncryptMessage */
 	ntlm_DecryptMessage,              /* DecryptMessage */
 	ntlm_SetContextAttributesA,       /* SetContextAttributes */
+	ntlm_SetCredentialsAttributesA,   /* SetCredentialsAttributes */
 };
 
 const SecurityFunctionTableW NTLM_SecurityFunctionTableW = {
-	1,                                /* dwVersion */
+	3,                                /* dwVersion */
 	NULL,                             /* EnumerateSecurityPackages */
 	ntlm_QueryCredentialsAttributesW, /* QueryCredentialsAttributes */
 	ntlm_AcquireCredentialsHandleW,   /* AcquireCredentialsHandle */
@@ -1322,7 +1348,8 @@ const SecurityFunctionTableW NTLM_SecurityFunctionTableW = {
 	NULL,                             /* QuerySecurityContextToken */
 	ntlm_EncryptMessage,              /* EncryptMessage */
 	ntlm_DecryptMessage,              /* DecryptMessage */
-	ntlm_SetContextAttributesA,       /* SetContextAttributes */
+	ntlm_SetContextAttributesW,       /* SetContextAttributes */
+	ntlm_SetCredentialsAttributesW,   /* SetCredentialsAttributes */
 };
 
 const SecPkgInfoA NTLM_SecPkgInfoA = {

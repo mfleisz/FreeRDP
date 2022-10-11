@@ -202,6 +202,11 @@ static SECURITY_STATUS SEC_ENTRY schannel_InitializeSecurityContextW(
 	SECURITY_STATUS status;
 	SCHANNEL_CONTEXT* context;
 	SCHANNEL_CREDENTIALS* credentials;
+
+	/* behave like windows SSPIs that don't want empty context */
+	if (phContext && !phContext->dwLower && !phContext->dwUpper)
+		return SEC_E_INVALID_HANDLE;
+
 	context = sspi_SecureHandleGetLowerPointer(phContext);
 
 	if (!context)
@@ -250,6 +255,11 @@ static SECURITY_STATUS SEC_ENTRY schannel_AcceptSecurityContext(
 {
 	SECURITY_STATUS status;
 	SCHANNEL_CONTEXT* context;
+
+	/* behave like windows SSPIs that don't want empty context */
+	if (phContext && !phContext->dwLower && !phContext->dwUpper)
+		return SEC_E_INVALID_HANDLE;
+
 	context = (SCHANNEL_CONTEXT*)sspi_SecureHandleGetLowerPointer(phContext);
 
 	if (!context)
@@ -358,7 +368,7 @@ static SECURITY_STATUS SEC_ENTRY schannel_DecryptMessage(PCtxtHandle phContext,
 }
 
 const SecurityFunctionTableA SCHANNEL_SecurityFunctionTableA = {
-	1,                                    /* dwVersion */
+	3,                                    /* dwVersion */
 	NULL,                                 /* EnumerateSecurityPackages */
 	schannel_QueryCredentialsAttributesA, /* QueryCredentialsAttributes */
 	schannel_AcquireCredentialsHandleA,   /* AcquireCredentialsHandle */
@@ -386,10 +396,11 @@ const SecurityFunctionTableA SCHANNEL_SecurityFunctionTableA = {
 	schannel_EncryptMessage,              /* EncryptMessage */
 	schannel_DecryptMessage,              /* DecryptMessage */
 	NULL,                                 /* SetContextAttributes */
+	NULL,                                 /* SetCredentialsAttributes */
 };
 
 const SecurityFunctionTableW SCHANNEL_SecurityFunctionTableW = {
-	1,                                    /* dwVersion */
+	3,                                    /* dwVersion */
 	NULL,                                 /* EnumerateSecurityPackages */
 	schannel_QueryCredentialsAttributesW, /* QueryCredentialsAttributes */
 	schannel_AcquireCredentialsHandleW,   /* AcquireCredentialsHandle */
@@ -417,6 +428,7 @@ const SecurityFunctionTableW SCHANNEL_SecurityFunctionTableW = {
 	schannel_EncryptMessage,              /* EncryptMessage */
 	schannel_DecryptMessage,              /* DecryptMessage */
 	NULL,                                 /* SetContextAttributes */
+	NULL,                                 /* SetCredentialsAttributes */
 };
 
 const SecPkgInfoA SCHANNEL_SecPkgInfoA = {

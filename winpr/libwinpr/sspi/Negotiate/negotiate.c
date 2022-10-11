@@ -136,6 +136,9 @@ typedef struct
 	SecBuffer mic;
 } NegToken;
 
+static const NegToken empty_neg_token = { NOSTATE,        FALSE,          { 0, NULL },
+	                                      { 0, 0, NULL }, { 0, 0, NULL }, { 0, 0, NULL } };
+
 static NEGOTIATE_CONTEXT* negotiate_ContextNew(NEGOTIATE_CONTEXT* init_context)
 {
 	NEGOTIATE_CONTEXT* context = NULL;
@@ -559,14 +562,16 @@ static SECURITY_STATUS SEC_ENTRY negotiate_InitializeSecurityContextW(
 	MechCred* creds;
 	PCtxtHandle sub_context = NULL;
 	PCredHandle sub_cred = NULL;
-	NegToken input_token = { NOSTATE, 0 };
-	NegToken output_token = { NOSTATE, 0 };
+	NegToken input_token = empty_neg_token;
+	NegToken output_token = empty_neg_token;
 	PSecBuffer input_buffer = NULL;
 	PSecBuffer output_buffer = NULL;
-	SecBufferDesc mech_input = { SECBUFFER_VERSION, 1, &input_token.mechToken };
+	PSecBuffer bindings_buffer = NULL;
+	SecBuffer mech_input_buffers[2] = { 0 };
+	SecBufferDesc mech_input = { SECBUFFER_VERSION, 2, mech_input_buffers };
 	SecBufferDesc mech_output = { SECBUFFER_VERSION, 1, &output_token.mechToken };
 	SECURITY_STATUS status = SEC_E_INTERNAL_ERROR;
-	SECURITY_STATUS sub_status;
+	SECURITY_STATUS sub_status = SEC_E_INTERNAL_ERROR;
 	WinPrAsn1Encoder* enc = NULL;
 	wStream s;
 	const Mech* mech;
@@ -574,10 +579,19 @@ static SECURITY_STATUS SEC_ENTRY negotiate_InitializeSecurityContextW(
 	if (!phCredential || !SecIsValidHandle(phCredential))
 		return SEC_E_NO_CREDENTIALS;
 
-	context = sspi_SecureHandleGetLowerPointer(phContext);
 	creds = sspi_SecureHandleGetLowerPointer(phCredential);
+
+	/* behave like windows SSPIs that don't want empty context */
+	if (phContext && !phContext->dwLower && !phContext->dwUpper)
+		return SEC_E_INVALID_HANDLE;
+
+	context = sspi_SecureHandleGetLowerPointer(phContext);
+
 	if (pInput)
+	{
 		input_buffer = sspi_FindSecBuffer(pInput, SECBUFFER_TOKEN);
+		bindings_buffer = sspi_FindSecBuffer(pInput, SECBUFFER_CHANNEL_BINDINGS);
+	}
 	if (pOutput)
 		output_buffer = sspi_FindSecBuffer(pOutput, SECBUFFER_TOKEN);
 
@@ -675,6 +689,9 @@ static SECURITY_STATUS SEC_ENTRY negotiate_InitializeSecurityContextW(
 		output_token.mechTypes.cbBuffer = context->mechTypes.cbBuffer;
 		output_token.mechTypes.pvBuffer = context->mechTypes.pvBuffer;
 		output_token.init = TRUE;
+
+		if (sub_status == SEC_E_OK)
+			context->state = NEGOTIATE_STATE_FINAL_OPTIMISTIC;
 	}
 	else
 	{
@@ -687,15 +704,15 @@ static SECURITY_STATUS SEC_ENTRY negotiate_InitializeSecurityContextW(
 		if (!context->spnego)
 		{
 			return context->mech->pkg->table_w->InitializeSecurityContextW(
-			    sub_cred, sub_context, pszTargetName, fContextReq, Reserved1, TargetDataRep, pInput,
-			    Reserved2, sub_context, pOutput, pfContextAttr, ptsExpiry);
+			    sub_cred, sub_context, pszTargetName, fContextReq | context->mech->flags, Reserved1,
+			    TargetDataRep, pInput, Reserved2, sub_context, pOutput, pfContextAttr, ptsExpiry);
 		}
 
 		if (!negotiate_read_neg_token(input_buffer, &input_token))
 			return SEC_E_INVALID_TOKEN;
 
 		/* On first response check if the server doesn't like out prefered mech */
-		if (context->state == NEGOTIATE_STATE_INITIAL && input_token.supportedMech.len &&
+		if (context->state < NEGOTIATE_STATE_NEGORESP && input_token.supportedMech.len &&
 		    !sspi_gss_oid_compare(&input_token.supportedMech, context->mech->oid))
 		{
 			mech = negotiate_GetMechByOID(&input_token.supportedMech);
@@ -716,7 +733,7 @@ static SECURITY_STATUS SEC_ENTRY negotiate_InitializeSecurityContextW(
 		}
 
 		/* Check neg_state (required on first response) */
-		if (context->state == NEGOTIATE_STATE_INITIAL)
+		if (context->state < NEGOTIATE_STATE_NEGORESP)
 		{
 			switch (input_token.negState)
 			{
@@ -727,8 +744,13 @@ static SECURITY_STATUS SEC_ENTRY negotiate_InitializeSecurityContextW(
 				case REQUEST_MIC:
 					context->mic = TRUE; /* fallthrough */
 				case ACCEPT_INCOMPLETE:
-				case ACCEPT_COMPLETED:
 					context->state = NEGOTIATE_STATE_NEGORESP;
+					break;
+				case ACCEPT_COMPLETED:
+					if (context->state == NEGOTIATE_STATE_INITIAL)
+						context->state = NEGOTIATE_STATE_NEGORESP;
+					else
+						context->state = NEGOTIATE_STATE_FINAL;
 					break;
 			}
 
@@ -739,6 +761,10 @@ static SECURITY_STATUS SEC_ENTRY negotiate_InitializeSecurityContextW(
 		{
 			/* Store the mech token in the output buffer */
 			CopyMemory(&output_token.mechToken, output_buffer, sizeof(SecBuffer));
+
+			mech_input_buffers[0] = input_token.mechToken;
+			if (bindings_buffer)
+				mech_input_buffers[1] = *bindings_buffer;
 
 			status = context->mech->pkg->table_w->InitializeSecurityContextW(
 			    sub_cred, sub_context, pszTargetName, fContextReq | context->mech->flags, Reserved1,
@@ -859,8 +885,8 @@ static SECURITY_STATUS SEC_ENTRY negotiate_AcceptSecurityContext(
 	NEGOTIATE_CONTEXT init_context = { 0 };
 	MechCred* creds;
 	PCredHandle sub_cred = NULL;
-	NegToken input_token = { NOSTATE, 0 };
-	NegToken output_token = { NOSTATE, 0 };
+	NegToken input_token = empty_neg_token;
+	NegToken output_token = empty_neg_token;
 	PSecBuffer input_buffer = NULL;
 	PSecBuffer output_buffer = NULL;
 	SecBufferDesc mech_input = { SECBUFFER_VERSION, 1, &input_token.mechToken };
@@ -874,11 +900,17 @@ static SECURITY_STATUS SEC_ENTRY negotiate_AcceptSecurityContext(
 	if (!phCredential || !SecIsValidHandle(phCredential))
 		return SEC_E_NO_CREDENTIALS;
 
+	creds = sspi_SecureHandleGetLowerPointer(phCredential);
+
 	if (!pInput)
 		return SEC_E_INVALID_TOKEN;
 
+	/* behave like windows SSPIs that don't want empty context */
+	if (phContext && !phContext->dwLower && !phContext->dwUpper)
+		return SEC_E_INVALID_HANDLE;
+
 	context = sspi_SecureHandleGetLowerPointer(phContext);
-	creds = sspi_SecureHandleGetLowerPointer(phCredential);
+
 	input_buffer = sspi_FindSecBuffer(pInput, SECBUFFER_TOKEN);
 	if (pOutput)
 		output_buffer = sspi_FindSecBuffer(pOutput, SECBUFFER_TOKEN);
@@ -1202,6 +1234,77 @@ static SECURITY_STATUS SEC_ENTRY negotiate_SetContextAttributesA(PCtxtHandle phC
 	return SEC_E_UNSUPPORTED_FUNCTION;
 }
 
+static SECURITY_STATUS SEC_ENTRY negotiate_SetCredentialsAttributesW(PCredHandle phCredential,
+                                                                     ULONG ulAttribute,
+                                                                     void* pBuffer, ULONG cbBuffer)
+{
+	MechCred* creds;
+	BOOL success = FALSE;
+	SECURITY_STATUS secStatus;
+
+	creds = sspi_SecureHandleGetLowerPointer(phCredential);
+
+	if (!creds)
+		return SEC_E_INVALID_HANDLE;
+
+	for (size_t i = 0; i < MECH_COUNT; i++)
+	{
+		MechCred* cred = &creds[i];
+
+		WINPR_ASSERT(cred->mech);
+		WINPR_ASSERT(cred->mech->pkg);
+		WINPR_ASSERT(cred->mech->pkg->table);
+		WINPR_ASSERT(cred->mech->pkg->table_w->SetCredentialsAttributesW);
+		secStatus = cred->mech->pkg->table_w->SetCredentialsAttributesW(&cred->cred, ulAttribute,
+		                                                                pBuffer, cbBuffer);
+
+		if (secStatus == SEC_E_OK)
+		{
+			success = TRUE;
+		}
+	}
+
+	// return success if at least one submodule accepts the credential attribute
+	return (success ? SEC_E_OK : SEC_E_UNSUPPORTED_FUNCTION);
+}
+
+static SECURITY_STATUS SEC_ENTRY negotiate_SetCredentialsAttributesA(PCredHandle phCredential,
+                                                                     ULONG ulAttribute,
+                                                                     void* pBuffer, ULONG cbBuffer)
+{
+	MechCred* creds;
+	BOOL success = FALSE;
+	SECURITY_STATUS secStatus;
+
+	creds = sspi_SecureHandleGetLowerPointer(phCredential);
+
+	if (!creds)
+		return SEC_E_INVALID_HANDLE;
+
+	for (size_t i = 0; i < MECH_COUNT; i++)
+	{
+		MechCred* cred = &creds[i];
+
+		if (!cred->valid)
+			continue;
+
+		WINPR_ASSERT(cred->mech);
+		WINPR_ASSERT(cred->mech->pkg);
+		WINPR_ASSERT(cred->mech->pkg->table);
+		WINPR_ASSERT(cred->mech->pkg->table->SetCredentialsAttributesA);
+		secStatus = cred->mech->pkg->table->SetCredentialsAttributesA(&cred->cred, ulAttribute,
+		                                                              pBuffer, cbBuffer);
+
+		if (secStatus == SEC_E_OK)
+		{
+			success = TRUE;
+		}
+	}
+
+	// return success if at least one submodule accepts the credential attribute
+	return (success ? SEC_E_OK : SEC_E_UNSUPPORTED_FUNCTION);
+}
+
 static SECURITY_STATUS SEC_ENTRY negotiate_AcquireCredentialsHandleW(
     SEC_WCHAR* pszPrincipal, SEC_WCHAR* pszPackage, ULONG fCredentialUse, void* pvLogonID,
     void* pAuthData, SEC_GET_KEY_FN pGetKeyFn, void* pvGetKeyArgument, PCredHandle phCredential,
@@ -1413,7 +1516,7 @@ static SECURITY_STATUS SEC_ENTRY negotiate_VerifySignature(PCtxtHandle phContext
 }
 
 const SecurityFunctionTableA NEGOTIATE_SecurityFunctionTableA = {
-	1,                                     /* dwVersion */
+	3,                                     /* dwVersion */
 	NULL,                                  /* EnumerateSecurityPackages */
 	negotiate_QueryCredentialsAttributesA, /* QueryCredentialsAttributes */
 	negotiate_AcquireCredentialsHandleA,   /* AcquireCredentialsHandle */
@@ -1441,10 +1544,11 @@ const SecurityFunctionTableA NEGOTIATE_SecurityFunctionTableA = {
 	negotiate_EncryptMessage,              /* EncryptMessage */
 	negotiate_DecryptMessage,              /* DecryptMessage */
 	negotiate_SetContextAttributesA,       /* SetContextAttributes */
+	negotiate_SetCredentialsAttributesA,   /* SetCredentialsAttributes */
 };
 
 const SecurityFunctionTableW NEGOTIATE_SecurityFunctionTableW = {
-	1,                                     /* dwVersion */
+	3,                                     /* dwVersion */
 	NULL,                                  /* EnumerateSecurityPackages */
 	negotiate_QueryCredentialsAttributesW, /* QueryCredentialsAttributes */
 	negotiate_AcquireCredentialsHandleW,   /* AcquireCredentialsHandle */
@@ -1472,4 +1576,5 @@ const SecurityFunctionTableW NEGOTIATE_SecurityFunctionTableW = {
 	negotiate_EncryptMessage,              /* EncryptMessage */
 	negotiate_DecryptMessage,              /* DecryptMessage */
 	negotiate_SetContextAttributesW,       /* SetContextAttributes */
+	negotiate_SetCredentialsAttributesW,   /* SetCredentialsAttributes */
 };

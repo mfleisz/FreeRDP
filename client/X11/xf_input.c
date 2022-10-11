@@ -641,6 +641,13 @@ int xf_input_event(xfContext* xfc, const XEvent* xevent, XIDeviceEvent* event, i
 	settings = xfc->common.context.settings;
 	WINPR_ASSERT(settings);
 
+	xfWindow* window = xfc->window;
+	if (window)
+	{
+		if (xf_floatbar_is_locked(window->floatbar))
+			return 0;
+	}
+
 	xf_input_show_cursor(xfc);
 
 	switch (evtype)
@@ -692,7 +699,8 @@ int xf_input_event(xfContext* xfc, const XEvent* xevent, XIDeviceEvent* event, i
 			}
 			break;
 		default:
-			WLog_WARN(TAG, "[%s] Unhandled event %d: Event was registered but is not handled!");
+			WLog_WARN(TAG, "[%s] Unhandled event %d: Event was registered but is not handled!",
+			          __FUNCTION__, evtype);
 			break;
 	}
 

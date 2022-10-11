@@ -461,6 +461,10 @@ typedef struct
 /* Security Credentials Attributes */
 
 #define SECPKG_CRED_ATTR_NAMES 1
+#define SECPKG_CRED_ATTR_SSI_PROVIDER 2
+#define SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS 3
+#define SECPKG_CRED_ATTR_CERT 4
+#define SECPKG_CRED_ATTR_PAC_BYPASS 5
 
 typedef struct
 {
@@ -481,6 +485,65 @@ typedef SecPkgCredentials_NamesW* PSecPkgCredentials_NamesW;
 #define SecPkgCredentials_Names SecPkgCredentials_NamesA
 #define PSecPkgCredentials_Names PSecPkgCredentials_NamesA
 #endif
+
+typedef struct _SecPkgCredentials_SSIProviderW
+{
+	SEC_WCHAR* sProviderName;
+	unsigned long ProviderInfoLength;
+	char* ProviderInfo;
+} SecPkgCredentials_SSIProviderW, *PSecPkgCredentials_SSIProviderW;
+
+typedef struct _SecPkgCredentials_SSIProviderA
+{
+	SEC_CHAR* sProviderName;
+	unsigned long ProviderInfoLength;
+	char* ProviderInfo;
+} SecPkgCredentials_SSIProviderA, *PSecPkgCredentials_SSIProviderA;
+
+#ifdef UNICODE
+#define SecPkgCredentials_SSIProvider SecPkgCredentials_SSIProviderW
+#define PSecPkgCredentials_SSIProvider PSecPkgCredentials_SSIProviderW
+#else
+#define SecPkgCredentials_SSIProvider SecPkgCredentials_SSIProviderA
+#define PSecPkgCredentials_SSIProvider PSecPkgCredentials_SSIProviderA
+#endif
+
+#define KDC_PROXY_SETTINGS_V1 1
+#define KDC_PROXY_SETTINGS_FLAGS_FORCEPROXY 0x1
+
+typedef struct _SecPkgCredentials_KdcProxySettingsW
+{
+	ULONG Version;
+	ULONG Flags;
+	USHORT ProxyServerOffset;
+	USHORT ProxyServerLength;
+	USHORT ClientTlsCredOffset;
+	USHORT ClientTlsCredLength;
+} SecPkgCredentials_KdcProxySettingsW, *PSecPkgCredentials_KdcProxySettingsW;
+
+typedef struct _SecPkgCredentials_KdcProxySettingsA
+{
+	ULONG Version;
+	ULONG Flags;
+	USHORT ProxyServerOffset;
+	USHORT ProxyServerLength;
+	USHORT ClientTlsCredOffset;
+	USHORT ClientTlsCredLength;
+} SecPkgCredentials_KdcProxySettingsA, *PSecPkgCredentials_KdcProxySettingsA;
+
+#ifdef UNICODE
+#define SecPkgCredentials_KdcProxySettings SecPkgCredentials_KdcProxySettingsW
+#define PSecPkgCredentials_KdcProxySettings PSecPkgCredentials_KdcProxySettingsW
+#else
+#define SecPkgCredentials_KdcProxySettings SecPkgCredentials_KdcProxySettingsA
+#define PSecPkgCredentials_KdcProxySettings SecPkgCredentials_KdcProxySettingsA
+#endif
+
+typedef struct _SecPkgCredentials_Cert
+{
+	unsigned long EncodedCertSize;
+	unsigned char* EncodedCert;
+} SecPkgCredentials_Cert, *PSecPkgCredentials_Cert;
 
 #endif /* !defined(_WIN32) || defined(_UWP) */
 
@@ -739,6 +802,7 @@ typedef struct
 
 typedef struct
 {
+	char* kdcUrl;
 	char* keytab;
 	char* cache;
 	char* armorCache;
@@ -968,6 +1032,22 @@ typedef SECURITY_STATUS(SEC_ENTRY* SET_CONTEXT_ATTRIBUTES_FN_W)(PCtxtHandle phCo
 #define SET_CONTEXT_ATTRIBUTES_FN SET_CONTEXT_ATTRIBUTES_FN_A
 #endif
 
+typedef SECURITY_STATUS(SEC_ENTRY* SET_CREDENTIALS_ATTRIBUTES_FN_A)(PCredHandle phCredential,
+                                                                    ULONG ulAttribute,
+                                                                    void* pBuffer, ULONG cbBuffer);
+
+typedef SECURITY_STATUS(SEC_ENTRY* SET_CREDENTIALS_ATTRIBUTES_FN_W)(PCredHandle phCredential,
+                                                                    ULONG ulAttribute,
+                                                                    void* pBuffer, ULONG cbBuffer);
+
+#ifdef UNICODE
+#define SetCredentialsAttributes SetCredentialsAttributesW
+#define SET_CREDENTIALS_ATTRIBUTES_FN SET_CREDENTIALS_ATTRIBUTES_FN_W
+#else
+#define SetCredentialsAttributes SetCredentialsAttributesA
+#define SET_CREDENTIALS_ATTRIBUTES_FN SET_CREDENTIALS_ATTRIBUTES_FN_A
+#endif
+
 #define SECURITY_SUPPORT_PROVIDER_INTERFACE_VERSION \
 	1 /* Interface has all routines through DecryptMessage */
 #define SECURITY_SUPPORT_PROVIDER_INTERFACE_VERSION_2 \
@@ -1007,6 +1087,7 @@ typedef struct
 	ENCRYPT_MESSAGE_FN EncryptMessage;
 	DECRYPT_MESSAGE_FN DecryptMessage;
 	SET_CONTEXT_ATTRIBUTES_FN_A SetContextAttributesA;
+	SET_CREDENTIALS_ATTRIBUTES_FN_A SetCredentialsAttributesA;
 } SecurityFunctionTableA;
 typedef SecurityFunctionTableA* PSecurityFunctionTableA;
 
@@ -1040,6 +1121,7 @@ typedef struct
 	ENCRYPT_MESSAGE_FN EncryptMessage;
 	DECRYPT_MESSAGE_FN DecryptMessage;
 	SET_CONTEXT_ATTRIBUTES_FN_W SetContextAttributesW;
+	SET_CREDENTIALS_ATTRIBUTES_FN_W SetCredentialsAttributesW;
 } SecurityFunctionTableW;
 typedef SecurityFunctionTableW* PSecurityFunctionTableW;
 
@@ -1175,6 +1257,30 @@ extern "C"
 
 	/* Custom API */
 
+/* Extended SECPKG_CRED_ATTR IDs begin at 500 */
+#define SECPKG_CRED_ATTR_KDC_URL 501
+
+	typedef struct
+	{
+		SEC_CHAR* KdcUrl;
+	} SecPkgCredentials_KdcUrlA;
+	typedef SecPkgCredentials_KdcUrlA* PSecPkgCredentials_KdcUrlA;
+
+	typedef struct
+	{
+		SEC_WCHAR* KdcUrl;
+	} SecPkgCredentials_KdcUrlW;
+	typedef SecPkgCredentials_KdcUrlW* PSecPkgCredentials_KdcUrlW;
+
+#ifdef UNICODE
+#define SecPkgCredentials_KdcUrl SecPkgCredentials_KdcUrlW
+#define PSecPkgCredentials_KdcUrl PSecPkgCredentials_KdcUrlW
+#else
+#define SecPkgCredentials_KdcUrl SecPkgCredentials_KdcUrlA
+#define PSecPkgCredentials_KdcUrl PSecPkgCredentials_KdcUrlA
+#endif
+
+/* Extended SECPKG_ATTR IDs begin at 1000 */
 #define SECPKG_ATTR_AUTH_IDENTITY 1001
 #define SECPKG_ATTR_AUTH_PASSWORD 1002
 #define SECPKG_ATTR_AUTH_NTLM_HASH 1003
