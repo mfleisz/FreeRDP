@@ -35,6 +35,8 @@ set(${MODULE_PREFIX}_SRCS
 	wf_client.h
 	wf_floatbar.c
 	wf_floatbar.h
+	wf_defaults.h
+	wf_defaults.c
 	resource/wfreerdp.rc
 	resource/resource.h)
 

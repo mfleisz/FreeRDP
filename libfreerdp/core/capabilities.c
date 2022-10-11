@@ -1813,7 +1813,7 @@ static void rdp_write_bitmap_cache_cell_info(wStream* s, BITMAP_CACHE_V2_CELL_IN
 	 * numEntries is in the first 31 bits, while the last bit (k)
 	 * is used to indicate a persistent bitmap cache.
 	 */
-	info = (cellInfo->numEntries | (cellInfo->persistent << 31));
+	info = (cellInfo->numEntries | (((UINT32)cellInfo->persistent) << 31));
 	Stream_Write_UINT32(s, info);
 }
 
@@ -3864,7 +3864,7 @@ static BOOL rdp_read_capability_sets(wStream* s, rdpSettings* settings, UINT16 t
 	if (numberCapabilities)
 	{
 		WLog_ERR(TAG,
-		         "strange we haven't read the number of announced capacity sets, read=%d "
+		         "strange we haven't read the number of announced capacity sets, read=%" PRIu16 " "
 		         "expected=%" PRIu16 "",
 		         count - numberCapabilities, count);
 	}

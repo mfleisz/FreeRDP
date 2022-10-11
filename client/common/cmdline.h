@@ -125,6 +125,8 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	  "later\" option in MSTSC." },
 	{ "drives", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL,
 	  "Redirect all mount points as shares" },
+	{ "dump", COMMAND_LINE_VALUE_REQUIRED, "<record|replay>,<file>", NULL, NULL, -1, NULL,
+	  "record or replay dump" },
 	{ "dvc", COMMAND_LINE_VALUE_REQUIRED, "<channel>[,<options>]", NULL, NULL, -1, NULL,
 	  "Dynamic virtual channel" },
 	{ "dynamic-resolution", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, NULL,
@@ -173,7 +175,7 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 #endif
 	{ "gfx-progressive", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL,
 	  "RDP8 graphics pipeline using progressive codec" },
-	{ "gfx-small-cache", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL,
+	{ "gfx-small-cache", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL,
 	  "RDP8 graphics pipeline using small cache mode" },
 	{ "gfx-thin-client", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL,
 	  "RDP8 graphics pipeline using thin client mode" },

@@ -502,7 +502,7 @@ BOOL freerdp_client_print_command_line_help_ex(int argc, char** argv,
 	printf("Serial Port Redirection: /serial:<name>,<device>,[SerCx2|SerCx|Serial],[permissive]\n");
 	printf("Serial Port Redirection: /serial:COM1,/dev/ttyS0\n");
 	printf("Parallel Port Redirection: /parallel:<name>,<device>\n");
-	printf("Printer Redirection: /printer:<device>,<driver>\n");
+	printf("Printer Redirection: /printer:<device>,<driver>,[default]\n");
 	printf("TCP redirection: /rdp2tcp:/usr/bin/rdp2tcp\n");
 	printf("\n");
 	printf("Audio Output Redirection: /sound:sys:oss,dev:1,format:1\n");
@@ -871,6 +871,7 @@ static int freerdp_client_command_line_post_filter(void* context, COMMAND_LINE_A
 		{
 			size_t x;
 			const CmdLineSubOptions opts[] = {
+				{ "kdc-url:", FreeRDP_KerberosKdcUrl, CMDLINE_SUBOPTION_STRING, NULL },
 				{ "start-time:", FreeRDP_KerberosStartTime, CMDLINE_SUBOPTION_STRING, NULL },
 				{ "lifetime:", FreeRDP_KerberosLifeTime, CMDLINE_SUBOPTION_STRING, NULL },
 				{ "renewable-lifetime:", FreeRDP_KerberosRenewableLifeTime,
@@ -1410,8 +1411,8 @@ static BOOL freerdp_client_detect_command_line(int argc, char** argv, DWORD* fla
 		*flags |= COMMAND_LINE_SIGIL_SLASH | COMMAND_LINE_SIGIL_PLUS_MINUS;
 	}
 
-	WLog_DBG(TAG, "windows: %d/%d posix: %d/%d", windows_cli_status, windows_cli_count,
-	         posix_cli_status, posix_cli_count);
+	WLog_DBG(TAG, "windows: %d/%" PRIuz " posix: %d/%" PRIuz "", windows_cli_status,
+	         windows_cli_count, posix_cli_status, posix_cli_count);
 	if ((posix_cli_count == 0) && (windows_cli_count == 0))
 	{
 		if ((posix_cli_status == COMMAND_LINE_ERROR) && (windows_cli_status == COMMAND_LINE_ERROR))
@@ -2372,6 +2373,42 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		CommandLineSwitchCase(arg, "drives")
 		{
 			settings->RedirectDrives = enable;
+		}
+		CommandLineSwitchCase(arg, "dump")
+		{
+			BOOL failed = FALSE;
+			size_t count = 0;
+			char** args = CommandLineParseCommaSeparatedValues(arg->Value, &count);
+			if (!args || (count != 2))
+				failed = TRUE;
+			else
+			{
+				if (!freerdp_settings_set_string(settings, FreeRDP_TransportDumpFile, args[1]))
+					failed = TRUE;
+				else if (strcmp(args[0], "replay") == 0)
+				{
+					if (!freerdp_settings_set_bool(settings, FreeRDP_TransportDump, FALSE))
+						failed = TRUE;
+					else if (!freerdp_settings_set_bool(settings, FreeRDP_TransportDumpReplay,
+					                                    TRUE))
+						failed = TRUE;
+				}
+				else if (strcmp(args[0], "record") == 0)
+				{
+					if (!freerdp_settings_set_bool(settings, FreeRDP_TransportDump, TRUE))
+						failed = TRUE;
+					else if (!freerdp_settings_set_bool(settings, FreeRDP_TransportDumpReplay,
+					                                    FALSE))
+						failed = TRUE;
+				}
+				else
+				{
+					failed = TRUE;
+				}
+			}
+			free(args);
+			if (failed)
+				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 		}
 		CommandLineSwitchCase(arg, "disable-output")
 		{
@@ -3629,7 +3666,6 @@ BOOL freerdp_client_load_addins(rdpChannels* channels, rdpSettings* settings)
 		{ FreeRDP_EncomspVirtualChannel, ENCOMSP_SVC_CHANNEL_NAME, settings },
 #endif
 		{ FreeRDP_RemdeskVirtualChannel, REMDESK_SVC_CHANNEL_NAME, settings },
-		{ FreeRDP_RDP2TCPArgs, RDP2TCP_DVC_CHANNEL_NAME, settings->RDP2TCPArgs },
 		{ FreeRDP_RemoteApplicationMode, RAIL_SVC_CHANNEL_NAME, settings }
 	};
 	size_t i;
@@ -3854,6 +3890,13 @@ BOOL freerdp_client_load_addins(rdpChannels* channels, rdpSettings* settings)
 					return FALSE;
 			}
 		}
+	}
+
+	if (settings->RDP2TCPArgs)
+	{
+		if (!freerdp_client_load_static_channel_addin(channels, settings, RDP2TCP_DVC_CHANNEL_NAME,
+		                                              settings->RDP2TCPArgs))
+			return FALSE;
 	}
 
 	/* step 4: do the static channels loading and init */

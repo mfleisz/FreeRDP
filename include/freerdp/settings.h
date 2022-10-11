@@ -452,6 +452,7 @@ typedef struct
 {
 	RDPDR_DEVICE device;
 	char* DriverName;
+	BOOL IsDefault;
 } RDPDR_PRINTER;
 
 typedef struct
@@ -677,7 +678,7 @@ typedef struct
 #define FreeRDP_ReaderName (1293)
 #define FreeRDP_ContainerName (1294)
 #define FreeRDP_CspName (1295)
-#define FreeRDP_KerberosKdc (1344)
+#define FreeRDP_KerberosKdcUrl (1344)
 #define FreeRDP_KerberosRealm (1345)
 #define FreeRDP_KerberosStartTime (1346)
 #define FreeRDP_KerberosLifeTime (1347)
@@ -1187,7 +1188,7 @@ struct rdp_settings
 	UINT64 padding1344[1344 - 1296];    /* 1296 */
 
 	/* Kerberos Authentication */
-	ALIGN64 char* KerberosKdc;               /* 1344 */
+	ALIGN64 char* KerberosKdcUrl;            /* 1344 */
 	ALIGN64 char* KerberosRealm;             /* 1345 */
 	ALIGN64 char* KerberosStartTime;         /* 1346 */
 	ALIGN64 char* KerberosLifeTime;          /* 1347 */

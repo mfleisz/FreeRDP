@@ -36,6 +36,7 @@
 #include "../resource/resource.h"
 
 #include "wf_client.h"
+#include "wf_defaults.h"
 
 #include <shellapi.h>
 
@@ -106,6 +107,8 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 		ret = freerdp_client_settings_command_line_status_print(settings, status, argc, argv);
 		goto out;
 	}
+
+	AddDefaultSettings(settings);
 
 	if (freerdp_client_start(context) != 0)
 		goto out;
