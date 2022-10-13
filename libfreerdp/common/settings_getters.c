@@ -2379,6 +2379,9 @@ const char* freerdp_settings_get_string(const rdpSettings* settings, size_t id)
 		case FreeRDP_AssistanceFile:
 			return settings->AssistanceFile;
 
+		case FreeRDP_AuthenticationPackageList:
+			return settings->AuthenticationPackageList;
+
 		case FreeRDP_AuthenticationServiceClass:
 			return settings->AuthenticationServiceClass;
 
@@ -2642,6 +2645,9 @@ char* freerdp_settings_get_string_writable(rdpSettings* settings, size_t id)
 
 		case FreeRDP_AssistanceFile:
 			return settings->AssistanceFile;
+
+		case FreeRDP_AuthenticationPackageList:
+			return settings->AuthenticationPackageList;
 
 		case FreeRDP_AuthenticationServiceClass:
 			return settings->AuthenticationServiceClass;
@@ -2916,6 +2922,9 @@ BOOL freerdp_settings_set_string_(rdpSettings* settings, size_t id, const char* 
 
 		case FreeRDP_AssistanceFile:
 			return update_string(&settings->AssistanceFile, cnv.cc, len, cleanup);
+
+		case FreeRDP_AuthenticationPackageList:
+			return update_string(&settings->AuthenticationPackageList, cnv.cc, len, cleanup);
 
 		case FreeRDP_AuthenticationServiceClass:
 			return update_string(&settings->AuthenticationServiceClass, cnv.cc, len, cleanup);

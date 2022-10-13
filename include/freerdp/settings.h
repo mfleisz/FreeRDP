@@ -90,7 +90,11 @@ typedef enum
 	RDP_VERSION_10_4 = 0x00080009,
 	RDP_VERSION_10_5 = 0x0008000a,
 	RDP_VERSION_10_6 = 0x0008000b,
-	RDP_VERSION_10_7 = 0x0008000C
+	RDP_VERSION_10_7 = 0x0008000C,
+	RDP_VERSION_10_8 = 0x0008000D,
+	RDP_VERSION_10_9 = 0x0008000E,
+	RDP_VERSION_10_10 = 0x0008000F,
+	RDP_VERSION_10_11 = 0x00080010,
 } RDP_VERSION;
 
 /* Color depth */
@@ -641,6 +645,7 @@ typedef struct
 #define FreeRDP_TLSMinVersion (1107)
 #define FreeRDP_TLSMaxVersion (1108)
 #define FreeRDP_TlsSecretsFile (1109)
+#define FreeRDP_AuthenticationPackageList (1110)
 #define FreeRDP_MstscCookieMode (1152)
 #define FreeRDP_CookieMaxLength (1153)
 #define FreeRDP_PreconnectionId (1154)
@@ -1131,7 +1136,8 @@ struct rdp_settings
 	ALIGN64 UINT16 TLSMinVersion;              /* 1107 */
 	ALIGN64 UINT16 TLSMaxVersion;              /* 1108 */
 	ALIGN64 char* TlsSecretsFile;              /* 1109 */
-	UINT64 padding1152[1152 - 1110];           /* 1110 */
+	ALIGN64 char* AuthenticationPackageList;   /* 1110 */
+	UINT64 padding1152[1152 - 1111];           /* 1111 */
 
 	/* Connection Cookie */
 	ALIGN64 BOOL MstscCookieMode;      /* 1152 */
@@ -1827,6 +1833,8 @@ extern "C"
 
 	FREERDP_API char* freerdp_rail_support_flags_to_string(UINT32 flags, char* buffer,
 	                                                       size_t length);
+
+	FREERDP_API const char* freerdp_rdp_version_string(UINT32 version);
 
 #ifdef __cplusplus
 }
