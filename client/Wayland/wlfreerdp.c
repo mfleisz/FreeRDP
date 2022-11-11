@@ -623,6 +623,7 @@ static BOOL wlf_client_new(freerdp* instance, rdpContext* context)
 	instance->PostConnect = wl_post_connect;
 	instance->PostDisconnect = wl_post_disconnect;
 	instance->AuthenticateEx = client_cli_authenticate_ex;
+	instance->ChooseSmartcard = client_cli_choose_smartcard;
 	instance->VerifyCertificateEx = client_cli_verify_certificate_ex;
 	instance->VerifyChangedCertificateEx = client_cli_verify_changed_certificate_ex;
 	instance->PresentGatewayMessage = client_cli_present_gateway_message;
@@ -660,6 +661,7 @@ static int wfl_client_start(rdpContext* context)
 
 static int RdpClientEntry(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 {
+	WINPR_ASSERT(pEntryPoints);
 	ZeroMemory(pEntryPoints, sizeof(RDP_CLIENT_ENTRY_POINTS));
 	pEntryPoints->Version = RDP_CLIENT_INTERFACE_VERSION;
 	pEntryPoints->Size = sizeof(RDP_CLIENT_ENTRY_POINTS_V1);

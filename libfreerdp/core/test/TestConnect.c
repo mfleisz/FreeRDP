@@ -2,7 +2,9 @@
 #include <winpr/path.h>
 #include <winpr/crypto.h>
 #include <winpr/pipe.h>
+
 #include <freerdp/freerdp.h>
+#include <freerdp/gdi/gdi.h>
 #include <freerdp/client/cmdline.h>
 
 static HANDLE s_sync = NULL;
@@ -23,6 +25,9 @@ static int runInstance(int argc, char* argv[], freerdp** inst, DWORD timeout)
 
 	if (inst)
 		*inst = context->instance;
+
+	if (!freerdp_settings_set_bool(context->settings, FreeRDP_DeactivateClientDecoding, TRUE))
+		return FALSE;
 
 	if (freerdp_client_settings_parse_command_line(context->settings, argc, argv, FALSE) < 0)
 		goto finish;
@@ -220,10 +225,10 @@ static int testSuccess(int port)
 {
 	int r;
 	int rc = -2;
-	STARTUPINFOA si;
-	PROCESS_INFORMATION process;
+	STARTUPINFOA si = { 0 };
+	PROCESS_INFORMATION process = { 0 };
 	char arg1[] = "/v:127.0.0.1:XXXXX";
-	char* clientArgs[] = { "test", "/v:127.0.0.1:XXXXX", "/cert-ignore", "/rfx", NULL };
+	char* clientArgs[] = { "test", "/v:127.0.0.1:XXXXX", "/cert:ignore", "/rfx", NULL };
 	char* commandLine = NULL;
 	size_t commandLineLen;
 	int argc = 4;
@@ -266,7 +271,6 @@ static int testSuccess(int port)
 		goto fail;
 
 	_snprintf(commandLine, commandLineLen, "%s --port=%d", exe, port);
-	memset(&si, 0, sizeof(si));
 	si.cb = sizeof(si);
 
 	if (!CreateProcessA(NULL, commandLine, NULL, NULL, FALSE, 0, NULL, wpath, &si, &process))

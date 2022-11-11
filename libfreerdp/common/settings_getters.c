@@ -438,6 +438,9 @@ BOOL freerdp_settings_get_bool(const rdpSettings* settings, size_t id)
 		case FreeRDP_SendPreconnectionPdu:
 			return settings->SendPreconnectionPdu;
 
+		case FreeRDP_ServerLicenseRequired:
+			return settings->ServerLicenseRequired;
+
 		case FreeRDP_ServerMode:
 			return settings->ServerMode;
 
@@ -556,7 +559,9 @@ BOOL freerdp_settings_get_bool(const rdpSettings* settings, size_t id)
 			return settings->Workarea;
 
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 }
@@ -1065,7 +1070,7 @@ BOOL freerdp_settings_set_bool(rdpSettings* settings, size_t id, BOOL val)
 			break;
 
 		case FreeRDP_RelativeMouseInput:
-			settings->RelativeMouseInput = val;
+			settings->RelativeMouseInput = cnv.c;
 			break;
 
 		case FreeRDP_RemdeskVirtualChannel:
@@ -1114,6 +1119,10 @@ BOOL freerdp_settings_set_bool(rdpSettings* settings, size_t id, BOOL val)
 
 		case FreeRDP_SendPreconnectionPdu:
 			settings->SendPreconnectionPdu = cnv.c;
+			break;
+
+		case FreeRDP_ServerLicenseRequired:
+			settings->ServerLicenseRequired = cnv.c;
 			break;
 
 		case FreeRDP_ServerMode:
@@ -1273,7 +1282,9 @@ BOOL freerdp_settings_set_bool(rdpSettings* settings, size_t id, BOOL val)
 			break;
 
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 	return TRUE;
@@ -1285,8 +1296,29 @@ UINT16 freerdp_settings_get_uint16(const rdpSettings* settings, size_t id)
 
 	switch (id)
 	{
+		case FreeRDP_CapsGeneralCompressionLevel:
+			return settings->CapsGeneralCompressionLevel;
+
+		case FreeRDP_CapsGeneralCompressionTypes:
+			return settings->CapsGeneralCompressionTypes;
+
+		case FreeRDP_CapsProtocolVersion:
+			return settings->CapsProtocolVersion;
+
+		case FreeRDP_CapsRemoteUnshareFlag:
+			return settings->CapsRemoteUnshareFlag;
+
+		case FreeRDP_CapsUpdateCapabilityFlag:
+			return settings->CapsUpdateCapabilityFlag;
+
 		case FreeRDP_DesktopOrientation:
 			return settings->DesktopOrientation;
+
+		case FreeRDP_OrderSupportFlags:
+			return settings->OrderSupportFlags;
+
+		case FreeRDP_OrderSupportFlagsEx:
+			return settings->OrderSupportFlagsEx;
 
 		case FreeRDP_ProxyPort:
 			return settings->ProxyPort;
@@ -1297,8 +1329,13 @@ UINT16 freerdp_settings_get_uint16(const rdpSettings* settings, size_t id)
 		case FreeRDP_TLSMinVersion:
 			return settings->TLSMinVersion;
 
+		case FreeRDP_TextANSICodePage:
+			return settings->TextANSICodePage;
+
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 }
@@ -1318,8 +1355,36 @@ BOOL freerdp_settings_set_uint16(rdpSettings* settings, size_t id, UINT16 val)
 
 	switch (id)
 	{
+		case FreeRDP_CapsGeneralCompressionLevel:
+			settings->CapsGeneralCompressionLevel = cnv.c;
+			break;
+
+		case FreeRDP_CapsGeneralCompressionTypes:
+			settings->CapsGeneralCompressionTypes = cnv.c;
+			break;
+
+		case FreeRDP_CapsProtocolVersion:
+			settings->CapsProtocolVersion = cnv.c;
+			break;
+
+		case FreeRDP_CapsRemoteUnshareFlag:
+			settings->CapsRemoteUnshareFlag = cnv.c;
+			break;
+
+		case FreeRDP_CapsUpdateCapabilityFlag:
+			settings->CapsUpdateCapabilityFlag = cnv.c;
+			break;
+
 		case FreeRDP_DesktopOrientation:
 			settings->DesktopOrientation = cnv.c;
+			break;
+
+		case FreeRDP_OrderSupportFlags:
+			settings->OrderSupportFlags = cnv.c;
+			break;
+
+		case FreeRDP_OrderSupportFlagsEx:
+			settings->OrderSupportFlagsEx = cnv.c;
 			break;
 
 		case FreeRDP_ProxyPort:
@@ -1334,8 +1399,14 @@ BOOL freerdp_settings_set_uint16(rdpSettings* settings, size_t id, UINT16 val)
 			settings->TLSMinVersion = cnv.c;
 			break;
 
+		case FreeRDP_TextANSICodePage:
+			settings->TextANSICodePage = cnv.c;
+			break;
+
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 	return TRUE;
@@ -1348,7 +1419,9 @@ INT16 freerdp_settings_get_int16(const rdpSettings* settings, size_t id)
 	switch (id)
 	{
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 }
@@ -1369,7 +1442,9 @@ BOOL freerdp_settings_set_int16(rdpSettings* settings, size_t id, INT16 val)
 	switch (id)
 	{
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 	return TRUE;
@@ -1684,6 +1759,12 @@ UINT32 freerdp_settings_get_uint32(const rdpSettings* settings, size_t id)
 		case FreeRDP_ServerCertificateLength:
 			return settings->ServerCertificateLength;
 
+		case FreeRDP_ServerLicenseProductIssuersCount:
+			return settings->ServerLicenseProductIssuersCount;
+
+		case FreeRDP_ServerLicenseProductVersion:
+			return settings->ServerLicenseProductVersion;
+
 		case FreeRDP_ServerPort:
 			return settings->ServerPort;
 
@@ -1736,7 +1817,9 @@ UINT32 freerdp_settings_get_uint32(const rdpSettings* settings, size_t id)
 			return settings->VirtualChannelCompressionFlags;
 
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 }
@@ -2160,6 +2243,14 @@ BOOL freerdp_settings_set_uint32(rdpSettings* settings, size_t id, UINT32 val)
 			settings->ServerCertificateLength = cnv.c;
 			break;
 
+		case FreeRDP_ServerLicenseProductIssuersCount:
+			settings->ServerLicenseProductIssuersCount = cnv.c;
+			break;
+
+		case FreeRDP_ServerLicenseProductVersion:
+			settings->ServerLicenseProductVersion = cnv.c;
+			break;
+
 		case FreeRDP_ServerPort:
 			settings->ServerPort = cnv.c;
 			break;
@@ -2229,7 +2320,9 @@ BOOL freerdp_settings_set_uint32(rdpSettings* settings, size_t id, UINT32 val)
 			break;
 
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 	return TRUE;
@@ -2248,7 +2341,9 @@ INT32 freerdp_settings_get_int32(const rdpSettings* settings, size_t id)
 			return settings->YPan;
 
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 }
@@ -2277,7 +2372,9 @@ BOOL freerdp_settings_set_int32(rdpSettings* settings, size_t id, INT32 val)
 			break;
 
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 	return TRUE;
@@ -2293,7 +2390,9 @@ UINT64 freerdp_settings_get_uint64(const rdpSettings* settings, size_t id)
 			return settings->ParentWindowId;
 
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 }
@@ -2318,7 +2417,9 @@ BOOL freerdp_settings_set_uint64(rdpSettings* settings, size_t id, UINT64 val)
 			break;
 
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 	return TRUE;
@@ -2331,7 +2432,9 @@ INT64 freerdp_settings_get_int64(const rdpSettings* settings, size_t id)
 	switch (id)
 	{
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 }
@@ -2352,7 +2455,9 @@ BOOL freerdp_settings_set_int64(rdpSettings* settings, size_t id, INT64 val)
 	switch (id)
 	{
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 	return TRUE;
@@ -2589,6 +2694,12 @@ const char* freerdp_settings_get_string(const rdpSettings* settings, size_t id)
 		case FreeRDP_ServerHostname:
 			return settings->ServerHostname;
 
+		case FreeRDP_ServerLicenseCompanyName:
+			return settings->ServerLicenseCompanyName;
+
+		case FreeRDP_ServerLicenseProductName:
+			return settings->ServerLicenseProductName;
+
 		case FreeRDP_ShellWorkingDirectory:
 			return settings->ShellWorkingDirectory;
 
@@ -2604,11 +2715,17 @@ const char* freerdp_settings_get_string(const rdpSettings* settings, size_t id)
 		case FreeRDP_TargetNetAddress:
 			return settings->TargetNetAddress;
 
+		case FreeRDP_TerminalDescriptor:
+			return settings->TerminalDescriptor;
+
 		case FreeRDP_TlsSecretsFile:
 			return settings->TlsSecretsFile;
 
 		case FreeRDP_TransportDumpFile:
 			return settings->TransportDumpFile;
+
+		case FreeRDP_UserSpecifiedServerName:
+			return settings->UserSpecifiedServerName;
 
 		case FreeRDP_Username:
 			return settings->Username;
@@ -2620,7 +2737,9 @@ const char* freerdp_settings_get_string(const rdpSettings* settings, size_t id)
 			return settings->WmClass;
 
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 }
@@ -2856,6 +2975,12 @@ char* freerdp_settings_get_string_writable(rdpSettings* settings, size_t id)
 		case FreeRDP_ServerHostname:
 			return settings->ServerHostname;
 
+		case FreeRDP_ServerLicenseCompanyName:
+			return settings->ServerLicenseCompanyName;
+
+		case FreeRDP_ServerLicenseProductName:
+			return settings->ServerLicenseProductName;
+
 		case FreeRDP_ShellWorkingDirectory:
 			return settings->ShellWorkingDirectory;
 
@@ -2871,11 +2996,17 @@ char* freerdp_settings_get_string_writable(rdpSettings* settings, size_t id)
 		case FreeRDP_TargetNetAddress:
 			return settings->TargetNetAddress;
 
+		case FreeRDP_TerminalDescriptor:
+			return settings->TerminalDescriptor;
+
 		case FreeRDP_TlsSecretsFile:
 			return settings->TlsSecretsFile;
 
 		case FreeRDP_TransportDumpFile:
 			return settings->TransportDumpFile;
+
+		case FreeRDP_UserSpecifiedServerName:
+			return settings->UserSpecifiedServerName;
 
 		case FreeRDP_Username:
 			return settings->Username;
@@ -2887,7 +3018,9 @@ char* freerdp_settings_get_string_writable(rdpSettings* settings, size_t id)
 			return settings->WmClass;
 
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 }
@@ -3133,6 +3266,12 @@ BOOL freerdp_settings_set_string_(rdpSettings* settings, size_t id, const char* 
 		case FreeRDP_ServerHostname:
 			return update_string(&settings->ServerHostname, cnv.cc, len, cleanup);
 
+		case FreeRDP_ServerLicenseCompanyName:
+			return update_string(&settings->ServerLicenseCompanyName, cnv.cc, len, cleanup);
+
+		case FreeRDP_ServerLicenseProductName:
+			return update_string(&settings->ServerLicenseProductName, cnv.cc, len, cleanup);
+
 		case FreeRDP_ShellWorkingDirectory:
 			return update_string(&settings->ShellWorkingDirectory, cnv.cc, len, cleanup);
 
@@ -3148,11 +3287,17 @@ BOOL freerdp_settings_set_string_(rdpSettings* settings, size_t id, const char* 
 		case FreeRDP_TargetNetAddress:
 			return update_string(&settings->TargetNetAddress, cnv.cc, len, cleanup);
 
+		case FreeRDP_TerminalDescriptor:
+			return update_string(&settings->TerminalDescriptor, cnv.cc, len, cleanup);
+
 		case FreeRDP_TlsSecretsFile:
 			return update_string(&settings->TlsSecretsFile, cnv.cc, len, cleanup);
 
 		case FreeRDP_TransportDumpFile:
 			return update_string(&settings->TransportDumpFile, cnv.cc, len, cleanup);
+
+		case FreeRDP_UserSpecifiedServerName:
+			return update_string(&settings->UserSpecifiedServerName, cnv.cc, len, cleanup);
 
 		case FreeRDP_Username:
 			return update_string(&settings->Username, cnv.cc, len, cleanup);
@@ -3164,7 +3309,9 @@ BOOL freerdp_settings_set_string_(rdpSettings* settings, size_t id, const char* 
 			return update_string(&settings->WmClass, cnv.cc, len, cleanup);
 
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 	return TRUE;
@@ -3240,6 +3387,12 @@ void* freerdp_settings_get_pointer_writable(rdpSettings* settings, size_t id)
 		case FreeRDP_ReceivedCapabilities:
 			return settings->ReceivedCapabilities;
 
+		case FreeRDP_ReceivedCapabilityData:
+			return settings->ReceivedCapabilityData;
+
+		case FreeRDP_ReceivedCapabilityDataSizes:
+			return settings->ReceivedCapabilityDataSizes;
+
 		case FreeRDP_RedirectionPassword:
 			return settings->RedirectionPassword;
 
@@ -3251,6 +3404,9 @@ void* freerdp_settings_get_pointer_writable(rdpSettings* settings, size_t id)
 
 		case FreeRDP_ServerCertificate:
 			return settings->ServerCertificate;
+
+		case FreeRDP_ServerLicenseProductIssuers:
+			return settings->ServerLicenseProductIssuers;
 
 		case FreeRDP_ServerRandom:
 			return settings->ServerRandom;
@@ -3268,7 +3424,9 @@ void* freerdp_settings_get_pointer_writable(rdpSettings* settings, size_t id)
 			return settings->instance;
 
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 }
@@ -3354,6 +3512,14 @@ BOOL freerdp_settings_set_pointer(rdpSettings* settings, size_t id, const void* 
 			settings->ReceivedCapabilities = cnv.v;
 			break;
 
+		case FreeRDP_ReceivedCapabilityData:
+			settings->ReceivedCapabilityData = cnv.v;
+			break;
+
+		case FreeRDP_ReceivedCapabilityDataSizes:
+			settings->ReceivedCapabilityDataSizes = cnv.v;
+			break;
+
 		case FreeRDP_RedirectionPassword:
 			settings->RedirectionPassword = cnv.v;
 			break;
@@ -3368,6 +3534,10 @@ BOOL freerdp_settings_set_pointer(rdpSettings* settings, size_t id, const void* 
 
 		case FreeRDP_ServerCertificate:
 			settings->ServerCertificate = cnv.v;
+			break;
+
+		case FreeRDP_ServerLicenseProductIssuers:
+			settings->ServerLicenseProductIssuers = cnv.v;
 			break;
 
 		case FreeRDP_ServerRandom:
@@ -3391,7 +3561,9 @@ BOOL freerdp_settings_set_pointer(rdpSettings* settings, size_t id, const void* 
 			break;
 
 		default:
-			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz, __FUNCTION__, id);
+			WLog_ERR(TAG, "[%s] Invalid key index %" PRIuz " [%s|%s]", __FUNCTION__, id,
+			         freerdp_settings_get_name_for_key(id),
+			         freerdp_settings_get_type_name_for_key(id));
 			return FALSE;
 	}
 	return TRUE;

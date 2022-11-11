@@ -24,15 +24,15 @@
 
 BOOL freerdp_smartcard_list(const rdpSettings* settings)
 {
-	SmartcardCerts* certs = NULL;
+	SmartcardCertInfo** certs = NULL;
 	DWORD i, count;
 
-	if (!smartcard_enumerateCerts(settings, &certs, &count))
+	if (!smartcard_enumerateCerts(settings, &certs, &count, FALSE))
 		return FALSE;
 
 	for (i = 0; i < count; i++)
 	{
-		const SmartcardCertInfo* info = smartcard_getCertInfo(certs, i);
+		const SmartcardCertInfo* info = certs[i];
 		char asciiStr[256] = { 0 };
 
 		WINPR_ASSERT(info);
@@ -50,11 +50,13 @@ BOOL freerdp_smartcard_list(const rdpSettings* settings)
 		printf("\t* slotId: %" PRIu32 "\n", info->slotId);
 		printf("\t* pkinitArgs: %s\n", info->pkinitArgs);
 #endif
-		printf("\t* containerName: %s\n", info->containerName);
+		if (WideCharToMultiByte(CP_UTF8, 0, info->containerName, -1, asciiStr, sizeof(asciiStr),
+		                        NULL, NULL) > 0)
+			printf("\t* containerName: %s\n", asciiStr);
 		if (info->upn)
 			printf("\t* UPN: %s\n", info->upn);
 	}
-	smartcardCerts_Free(&certs);
+	smartcardCertList_Free(certs, count);
 
 	return TRUE;
 }

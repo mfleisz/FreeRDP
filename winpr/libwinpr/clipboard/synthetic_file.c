@@ -59,7 +59,6 @@ struct synthetic_file
 {
 	WCHAR* local_name;
 	WCHAR* remote_name;
-	FILETIME last_write_time;
 
 	HANDLE fd;
 	INT64 offset;
@@ -71,6 +70,8 @@ struct synthetic_file
 	DWORD nFileSizeHigh;
 	DWORD nFileSizeLow;
 };
+
+void free_synthetic_file(struct synthetic_file* file);
 
 static struct synthetic_file* make_synthetic_file(const WCHAR* local_name, const WCHAR* remote_name)
 {
@@ -103,26 +104,30 @@ static struct synthetic_file* make_synthetic_file(const WCHAR* local_name, const
 	if (!file->remote_name)
 		goto fail;
 
+	const size_t len = _wcslen(file->remote_name);
+	for (size_t x = 0; x < len; x++)
+	{
+		if (file->remote_name[x] == '/')
+			file->remote_name[x] = '\\';
+	}
+
 	file->dwFileAttributes = fd.dwFileAttributes;
-	file->last_write_time = fd.ftLastWriteTime;
+	file->ftCreationTime = fd.ftCreationTime;
+	file->ftLastWriteTime = fd.ftLastWriteTime;
+	file->ftLastAccessTime = fd.ftLastAccessTime;
 	file->nFileSizeHigh = fd.nFileSizeHigh;
 	file->nFileSizeLow = fd.nFileSizeLow;
 
 	return file;
 fail:
-	free(file->local_name);
-	free(file->remote_name);
-	free(file);
-
+	free_synthetic_file(file);
 	return NULL;
 }
 
 static UINT synthetic_file_read_close(struct synthetic_file* file, BOOL force);
 
-static void free_synthetic_file(void* the_file)
+void free_synthetic_file(struct synthetic_file* file)
 {
-	struct synthetic_file* file = the_file;
-
 	if (!file)
 		return;
 
@@ -330,9 +335,9 @@ static BOOL do_add_directory_contents_to_list(wClipboard* clipboard, const WCHAR
 		BOOL bRet = FindNextFileW(hFind, &FileData);
 		if (!bRet)
 		{
-			WLog_WARN(TAG, "FindNextFile failed (%" PRIu32 ")", GetLastError());
 			if (ERROR_NO_MORE_FILES == GetLastError())
 				return TRUE;
+			WLog_WARN(TAG, "FindNextFile failed (%" PRIu32 ")", GetLastError());
 			return FALSE;
 		}
 
@@ -991,6 +996,12 @@ static void* convert_filedescriptors_to_mate_copied_files(wClipboard* clipboard,
 	return pDstData;
 }
 
+static void array_free_synthetic_file(void* the_file)
+{
+	struct synthetic_file* file = the_file;
+	free_synthetic_file(file);
+}
+
 static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 {
 	wObject* obj;
@@ -1037,7 +1048,7 @@ static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 		goto error;
 
 	obj = ArrayList_Object(clipboard->localFiles);
-	obj->fnObjectFree = free_synthetic_file;
+	obj->fnObjectFree = array_free_synthetic_file;
 
 	if (!ClipboardRegisterSynthesizer(clipboard, local_file_format_id, file_group_format_id,
 	                                  convert_uri_list_to_filedescriptors))

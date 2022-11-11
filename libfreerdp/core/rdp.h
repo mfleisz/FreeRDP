@@ -192,7 +192,7 @@ struct rdp_rdp
 	UINT32 errorInfo;
 	UINT32 finalize_sc_pdus;
 	BOOL resendFocus;
-	BOOL AwaitCapabilities;
+
 	UINT64 inBytes;
 	UINT64 inPackets;
 	UINT64 outBytes;
@@ -201,7 +201,12 @@ struct rdp_rdp
 	rdpTransportIo* io;
 	void* ioContext;
 	HANDLE abortEvent;
+
 	wPubSub* pubSub;
+
+	BOOL was_deactivated;
+	UINT32 deactivated_width;
+	UINT32 deactivated_height;
 };
 
 FREERDP_LOCAL BOOL rdp_read_security_header(wStream* s, UINT16* flags, UINT16* length);
@@ -219,7 +224,7 @@ FREERDP_LOCAL wStream* rdp_send_stream_init(rdpRdp* rdp);
 FREERDP_LOCAL wStream* rdp_send_stream_pdu_init(rdpRdp* rdp);
 
 FREERDP_LOCAL BOOL rdp_read_header(rdpRdp* rdp, wStream* s, UINT16* length, UINT16* channel_id);
-FREERDP_LOCAL void rdp_write_header(rdpRdp* rdp, wStream* s, UINT16 length, UINT16 channel_id);
+FREERDP_LOCAL BOOL rdp_write_header(rdpRdp* rdp, wStream* s, UINT16 length, UINT16 channel_id);
 
 FREERDP_LOCAL BOOL rdp_send_pdu(rdpRdp* rdp, wStream* s, UINT16 type, UINT16 channel_id);
 

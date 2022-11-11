@@ -615,7 +615,9 @@ static BOOL xf_event_FocusIn(xfContext* xfc, const XFocusInEvent* event, BOOL ap
 
 	/* Release all keys, should already be done at FocusOut but might be missed
 	 * if the WM decided to use an alternate event order */
-	xf_keyboard_release_all_keypress(xfc);
+	if (!xfc->remote_app)
+		xf_keyboard_release_all_keypress(xfc);
+
 	xf_pointer_update_scale(xfc);
 
 	if (app)
@@ -805,6 +807,8 @@ static BOOL xf_event_ConfigureNotify(xfContext* xfc, const XConfigureEvent* even
 			appWindow->width = event->width;
 			appWindow->height = event->height;
 
+			xf_AppWindowResize(xfc, appWindow);
+
 			/*
 			 * Additional checks for not in a local move and not ignoring configure to send
 			 * position update to server, also should the window not be focused then do not
@@ -856,7 +860,8 @@ static BOOL xf_event_UnmapNotify(xfContext* xfc, const XUnmapEvent* event, BOOL 
 	WINPR_ASSERT(xfc);
 	WINPR_ASSERT(event);
 
-	xf_keyboard_release_all_keypress(xfc);
+	if (!xfc->remote_app)
+		xf_keyboard_release_all_keypress(xfc);
 
 	if (!app)
 		gdi_send_suppress_output(xfc->common.context.gdi, TRUE);

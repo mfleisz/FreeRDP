@@ -124,8 +124,7 @@ struct rdp_nla
 
 	rdpCredsspAuth* auth;
 	char* pkinitArgs;
-	SmartcardCerts* smartcardCerts;
-	DWORD nsmartcardCerts;
+	SmartcardCertInfo* smartcardCert;
 	BYTE certSha1[20];
 };
 
@@ -187,7 +186,6 @@ static const UINT32 NonceLength = 32;
 
 static BOOL nla_adjust_settings_from_smartcard(rdpNla* nla)
 {
-	const SmartcardCertInfo* info = NULL;
 	rdpSettings* settings;
 	BOOL ret = FALSE;
 
@@ -200,35 +198,18 @@ static BOOL nla_adjust_settings_from_smartcard(rdpNla* nla)
 	if (!settings->SmartcardLogon)
 		return TRUE;
 
-	smartcardCerts_Free(&nla->smartcardCerts);
+	smartcardCertInfo_Free(nla->smartcardCert);
 
-	if (!smartcard_enumerateCerts(settings, &nla->smartcardCerts, &nla->nsmartcardCerts))
+	if (!smartcard_getCert(nla->rdpcontext, &nla->smartcardCert, FALSE))
 	{
-		WLog_ERR(TAG, "unable to list smartcard certificates");
+		WLog_ERR(TAG, "unable to get smartcard certificate for logon");
 		return FALSE;
 	}
 
-	if (nla->nsmartcardCerts < 1)
-	{
-		WLog_ERR(TAG, "no smartcard certificates found");
-		goto out;
-	}
-
-	if (nla->nsmartcardCerts != 1)
-		goto setup_pin;
-
-	info = smartcard_getCertInfo(nla->smartcardCerts, 0);
-	if (!info)
-		goto out;
-
-	/*
-	 * just one result let's try to fill missing parameters
-	 */
-
 	if (!settings->CspName)
 	{
-		if (info->csp &&
-		    ConvertFromUnicode(CP_UTF8, 0, info->csp, -1, &settings->CspName, 0, NULL, FALSE) <= 0)
+		if (nla->smartcardCert->csp && ConvertFromUnicode(CP_UTF8, 0, nla->smartcardCert->csp, -1,
+		                                                  &settings->CspName, 0, NULL, FALSE) <= 0)
 		{
 			WLog_ERR(TAG, "unable to set CSP name");
 			goto out;
@@ -240,56 +221,37 @@ static BOOL nla_adjust_settings_from_smartcard(rdpNla* nla)
 		}
 	}
 
-	if (!settings->Username && info->userHint)
+	if (!settings->ReaderName && nla->smartcardCert->reader)
 	{
-		if (!freerdp_settings_set_string(settings, FreeRDP_Username, info->userHint))
-		{
-			WLog_ERR(TAG, "unable to copy certificate username");
-			goto out;
-		}
-	}
-
-	if (!settings->Domain && info->domainHint)
-	{
-		if (!freerdp_settings_set_string(settings, FreeRDP_Domain, info->domainHint))
-		{
-			WLog_ERR(TAG, "unable to copy certificate domain");
-			goto out;
-		}
-	}
-
-	if (!settings->ReaderName && info->reader)
-	{
-		if (ConvertFromUnicode(CP_UTF8, 0, info->reader, -1, &settings->ReaderName, 0, NULL, NULL) <
-		    0)
+		if (ConvertFromUnicode(CP_UTF8, 0, nla->smartcardCert->reader, -1, &settings->ReaderName, 0,
+		                       NULL, NULL) < 0)
 		{
 			WLog_ERR(TAG, "unable to copy reader name");
 			goto out;
 		}
 	}
 
-	if (!settings->ContainerName && info->containerName)
+	if (!settings->ContainerName && nla->smartcardCert->containerName)
 	{
-		if (!freerdp_settings_set_string(settings, FreeRDP_ContainerName, info->containerName))
+		if (ConvertFromUnicode(CP_UTF8, 0, nla->smartcardCert->containerName, -1,
+		                       &settings->ContainerName, 0, NULL, NULL) < 0)
 		{
 			WLog_ERR(TAG, "unable to copy container name");
 			goto out;
 		}
 	}
 
-	memcpy(nla->certSha1, info->sha1Hash, sizeof(nla->certSha1));
+	memcpy(nla->certSha1, nla->smartcardCert->sha1Hash, sizeof(nla->certSha1));
 
-	if (info->pkinitArgs)
+	if (nla->smartcardCert->pkinitArgs)
 	{
-		nla->pkinitArgs = _strdup(info->pkinitArgs);
+		nla->pkinitArgs = _strdup(nla->smartcardCert->pkinitArgs);
 		if (!nla->pkinitArgs)
 		{
 			WLog_ERR(TAG, "unable to copy pkinitArgs");
 			goto out;
 		}
 	}
-
-setup_pin:
 
 	ret = TRUE;
 out:
@@ -469,8 +431,9 @@ static int nla_client_init(rdpNla* nla)
 	if (!nla_client_setup_identity(nla))
 		return -1;
 
-	if (!credssp_auth_setup_client(nla->auth, "TERMSRV", settings->ServerHostname, nla->identity,
-	                               nla->pkinitArgs))
+	const char* hostname = freerdp_settings_get_server_name(settings);
+
+	if (!credssp_auth_setup_client(nla->auth, "TERMSRV", hostname, nla->identity, nla->pkinitArgs))
 		return -1;
 
 	tls = transport_get_tls(nla->transport);
@@ -1410,9 +1373,8 @@ BOOL nla_send(rdpNla* nla)
 	/* errorCode [4] INTEGER */
 	if (nla->errorCode && nla->peerVersion >= 3 && nla->peerVersion != 5)
 	{
-		char buffer[1024];
-		WLog_DBG(TAG, "   ----->> error code %s 0x%08" PRIx32,
-		         winpr_strerror(nla->errorCode, buffer, sizeof(buffer)), nla->errorCode);
+		WLog_DBG(TAG, "   ----->> error code %s 0x%08" PRIx32, NtStatus2Tag(nla->errorCode),
+		         nla->errorCode);
 		if (!WinPrAsn1EncContextualInteger(enc, 4, nla->errorCode))
 			goto fail;
 	}
@@ -1533,8 +1495,8 @@ static int nla_decode_ts_request(rdpNla* nla, wStream* s)
 				if (!WinPrAsn1DecReadInteger(&dec2, &val))
 					return -1;
 				nla->errorCode = (UINT)val;
-				WLog_DBG(TAG, "   <<----- error code %s 0x%08" PRIx32,
-				         winpr_strerror(nla->errorCode, buffer, sizeof(buffer)), nla->errorCode);
+				WLog_DBG(TAG, "   <<----- error code %s 0x%08" PRIx32, NtStatus2Tag(nla->errorCode),
+				         nla->errorCode);
 				break;
 			case 5:
 				WLog_DBG(TAG, "   <<----- client nonce");
@@ -1698,7 +1660,7 @@ void nla_free(rdpNla* nla)
 	if (!nla)
 		return;
 
-	smartcardCerts_Free(&nla->smartcardCerts);
+	smartcardCertInfo_Free(nla->smartcardCert);
 	sspi_SecBufferFree(&nla->pubKeyAuth);
 	sspi_SecBufferFree(&nla->authInfo);
 	sspi_SecBufferFree(&nla->negoToken);

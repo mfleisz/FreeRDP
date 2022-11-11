@@ -58,6 +58,7 @@ typedef RDP_CLIENT_ENTRY_POINTS_V1 RDP_CLIENT_ENTRY_POINTS;
 #include <freerdp/heartbeat.h>
 
 typedef struct stream_dump_context rdpStreamDumpContext;
+typedef struct SmartcardCertInfo_st SmartcardCertInfo;
 
 #ifdef __cplusplus
 extern "C"
@@ -79,17 +80,32 @@ extern "C"
 		CONNECTION_STATE_INITIAL,
 		CONNECTION_STATE_NEGO,
 		CONNECTION_STATE_NLA,
-		CONNECTION_STATE_MCS_CONNECT,
+		CONNECTION_STATE_MCS_CREATE_REQUEST,
+		CONNECTION_STATE_MCS_CREATE_RESPONSE,
 		CONNECTION_STATE_MCS_ERECT_DOMAIN,
 		CONNECTION_STATE_MCS_ATTACH_USER,
-		CONNECTION_STATE_MCS_CHANNEL_JOIN,
+		CONNECTION_STATE_MCS_ATTACH_USER_CONFIRM,
+		CONNECTION_STATE_MCS_CHANNEL_JOIN_REQUEST,
+		CONNECTION_STATE_MCS_CHANNEL_JOIN_RESPONSE,
 		CONNECTION_STATE_RDP_SECURITY_COMMENCEMENT,
 		CONNECTION_STATE_SECURE_SETTINGS_EXCHANGE,
-		CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT,
+		CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT_REQUEST,
+		CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT_RESPONSE,
 		CONNECTION_STATE_LICENSING,
-		CONNECTION_STATE_MULTITRANSPORT_BOOTSTRAPPING,
-		CONNECTION_STATE_CAPABILITIES_EXCHANGE,
-		CONNECTION_STATE_FINALIZATION,
+		CONNECTION_STATE_MULTITRANSPORT_BOOTSTRAPPING_REQUEST,
+		CONNECTION_STATE_MULTITRANSPORT_BOOTSTRAPPING_RESPONSE,
+		CONNECTION_STATE_CAPABILITIES_EXCHANGE_DEMAND_ACTIVE,
+		CONNECTION_STATE_CAPABILITIES_EXCHANGE_MONITOR_LAYOUT,
+		CONNECTION_STATE_CAPABILITIES_EXCHANGE_CONFIRM_ACTIVE,
+		CONNECTION_STATE_FINALIZATION_SYNC,
+		CONNECTION_STATE_FINALIZATION_COOPERATE,
+		CONNECTION_STATE_FINALIZATION_REQUEST_CONTROL,
+		CONNECTION_STATE_FINALIZATION_PERSISTENT_KEY_LIST,
+		CONNECTION_STATE_FINALIZATION_FONT_LIST,
+		CONNECTION_STATE_FINALIZATION_CLIENT_SYNC,
+		CONNECTION_STATE_FINALIZATION_CLIENT_COOPERATE,
+		CONNECTION_STATE_FINALIZATION_CLIENT_GRANTED_CONTROL,
+		CONNECTION_STATE_FINALIZATION_CLIENT_FONT_MAP,
 		CONNECTION_STATE_ACTIVE
 	} CONNECTION_STATE;
 
@@ -117,6 +133,8 @@ extern "C"
 	                              char** domain);
 	typedef BOOL (*pAuthenticateEx)(freerdp* instance, char** username, char** password,
 	                                char** domain, rdp_auth_reason reason);
+	typedef BOOL (*pChooseSmartcard)(SmartcardCertInfo** cert_list, DWORD count, DWORD* choice,
+	                                 BOOL gateway);
 
 	/** @brief Callback used if user interaction is required to accept
 	 *         an unknown certificate.
@@ -493,7 +511,12 @@ owned by rdpRdp */
 		                                 Callback for authentication.
 		                                 It is used to get the username/password. The reason
 		                                 argument tells why it was called.  */
-		UINT64 paddingE[80 - 70];               /* 70 */
+		ALIGN64 pChooseSmartcard
+		    ChooseSmartcard;      /* (offset 70)
+		                        Callback for choosing a smartcard for logon.
+		                        Used when multiple smartcards are available. Returns an index into a list
+		                        of SmartcardCertInfo pointers	*/
+		UINT64 paddingE[80 - 71]; /* 71 */
 	};
 
 	struct rdp_channel_handles
@@ -606,6 +629,9 @@ owned by rdpRdp */
 	FREERDP_API const char* freerdp_state_string(CONNECTION_STATE state);
 
 	FREERDP_API BOOL freerdp_channels_from_mcs(rdpSettings* settings, const rdpContext* context);
+
+	FREERDP_API BOOL freerdp_is_valid_mcs_create_request(const BYTE* data, size_t size);
+	FREERDP_API BOOL freerdp_is_valid_mcs_create_response(const BYTE* data, size_t size);
 
 #ifdef __cplusplus
 }

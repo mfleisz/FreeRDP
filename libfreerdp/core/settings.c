@@ -321,22 +321,46 @@ BOOL freerdp_capability_buffer_allocate(rdpSettings* settings, UINT32 count)
 	memset(tmp, 0, count * sizeof(BYTE));
 	settings->ReceivedCapabilities = tmp;
 
-	return settings->ReceivedCapabilities != NULL;
+	tmp = realloc(settings->ReceivedCapabilityData, count * sizeof(BYTE*));
+	if (!tmp)
+		return FALSE;
+	memset(tmp, 0, count * sizeof(BYTE*));
+	settings->ReceivedCapabilityData = tmp;
+
+	tmp = realloc(settings->ReceivedCapabilityDataSizes, count * sizeof(UINT32));
+	if (!tmp)
+		return FALSE;
+	memset(tmp, 0, count * sizeof(UINT32));
+	settings->ReceivedCapabilityDataSizes = tmp;
+
+	return (settings->ReceivedCapabilities && settings->ReceivedCapabilityData &&
+	        settings->ReceivedCapabilityDataSizes);
 }
 
 rdpSettings* freerdp_settings_new(DWORD flags)
 {
 	size_t x;
 	char* base;
+	char* issuers[] = { "FreeRDP", "FreeRDP-licenser" };
 	rdpSettings* settings = (rdpSettings*)calloc(1, sizeof(rdpSettings));
 
 	if (!settings)
 		return NULL;
 
+	if (!freerdp_settings_set_string(settings, FreeRDP_ServerLicenseCompanyName, "FreeRDP"))
+		goto out_fail;
+	if (!freerdp_settings_set_string(settings, FreeRDP_ServerLicenseProductName,
+	                                 "FreeRDP-licensing-server"))
+		goto out_fail;
+	if (!freerdp_settings_set_uint32(settings, FreeRDP_ServerLicenseProductVersion, 1))
+		goto out_fail;
+	if (!freerdp_server_license_issuers_copy(settings, issuers, ARRAYSIZE(issuers)))
+		goto out_fail;
+
 	if (!freerdp_settings_set_bool(settings, FreeRDP_UnicodeInput, TRUE) ||
 	    !freerdp_settings_set_bool(settings, FreeRDP_HasHorizontalWheel, TRUE) ||
 	    !freerdp_settings_set_bool(settings, FreeRDP_HasExtendedMouseEvent, TRUE) ||
-	    !freerdp_settings_set_bool(settings, FreeRDP_HiDefRemoteApp, FALSE) ||
+	    !freerdp_settings_set_bool(settings, FreeRDP_HiDefRemoteApp, TRUE) ||
 	    !freerdp_settings_set_uint32(
 	        settings, FreeRDP_RemoteApplicationSupportMask,
 	        RAIL_LEVEL_SUPPORTED | RAIL_LEVEL_DOCKED_LANGBAR_SUPPORTED |
@@ -344,10 +368,16 @@ rdpSettings* freerdp_settings_new(DWORD flags)
 	            RAIL_LEVEL_SERVER_TO_CLIENT_IME_SYNC_SUPPORTED |
 	            RAIL_LEVEL_HIDE_MINIMIZED_APPS_SUPPORTED | RAIL_LEVEL_WINDOW_CLOAKING_SUPPORTED |
 	            RAIL_LEVEL_HANDSHAKE_EX_SUPPORTED) ||
+	    !freerdp_settings_set_uint16(settings, FreeRDP_TextANSICodePage, CP_UTF8) ||
+	    !freerdp_settings_set_uint16(settings, FreeRDP_OrderSupportFlags,
+	                                 NEGOTIATE_ORDER_SUPPORT | ZERO_BOUNDS_DELTA_SUPPORT |
+	                                     COLOR_INDEX_SUPPORT) ||
 	    !freerdp_settings_set_bool(settings, FreeRDP_SupportHeartbeatPdu, TRUE) ||
 	    !freerdp_settings_set_bool(settings, FreeRDP_ServerMode,
 	                               (flags & FREERDP_SETTINGS_SERVER_MODE) ? TRUE : FALSE) ||
 	    !freerdp_settings_set_bool(settings, FreeRDP_WaitForOutputBufferFlush, TRUE) ||
+	    !freerdp_settings_set_uint32(settings, FreeRDP_ClusterInfoFlags,
+	                                 REDIRECTION_SUPPORTED | (REDIRECTION_VERSION4 << 2)) ||
 	    !freerdp_settings_set_uint32(settings, FreeRDP_MaxTimeInCheckLoop, 100) ||
 	    !freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, 1024) ||
 	    !freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, 768) ||
@@ -582,7 +612,7 @@ rdpSettings* freerdp_settings_new(DWORD flags)
 	    !freerdp_settings_set_bool(settings, FreeRDP_AutoReconnectionEnabled, FALSE) ||
 	    !freerdp_settings_set_uint32(settings, FreeRDP_AutoReconnectMaxRetries, 20) ||
 	    !freerdp_settings_set_bool(settings, FreeRDP_GfxThinClient, TRUE) ||
-	    !freerdp_settings_set_bool(settings, FreeRDP_GfxSmallCache, TRUE) ||
+	    !freerdp_settings_set_bool(settings, FreeRDP_GfxSmallCache, FALSE) ||
 	    !freerdp_settings_set_bool(settings, FreeRDP_GfxProgressive, FALSE) ||
 	    !freerdp_settings_set_bool(settings, FreeRDP_GfxProgressiveV2, FALSE) ||
 	    !freerdp_settings_set_bool(settings, FreeRDP_GfxPlanar, TRUE) ||
@@ -710,6 +740,7 @@ out_fail:
 
 static void freerdp_settings_free_internal(rdpSettings* settings)
 {
+	freerdp_server_license_issuers_free(settings);
 	freerdp_target_net_addresses_free(settings);
 	freerdp_device_collection_free(settings);
 	freerdp_static_channel_collection_free(settings);
@@ -759,6 +790,10 @@ static BOOL freerdp_settings_int_buffer_copy(rdpSettings* _settings, const rdpSe
 		if (!freerdp_settings_set_pointer_len(_settings, FreeRDP_ClientRandom, data, len))
 			return FALSE;
 	}
+	if (!freerdp_server_license_issuers_copy(_settings, settings->ServerLicenseProductIssuers,
+	                                         settings->ServerLicenseProductIssuersCount))
+		return FALSE;
+
 	{
 		const void* data = freerdp_settings_get_pointer(settings, FreeRDP_ServerCertificate);
 		const UINT32 len = freerdp_settings_get_uint32(settings, FreeRDP_ServerCertificateLength);
@@ -1025,7 +1060,6 @@ BOOL freerdp_settings_copy(rdpSettings* _settings, const rdpSettings* settings)
 	_settings->ChannelDefArray = NULL;
 	_settings->MonitorDefArray = NULL;
 	_settings->MonitorIds = NULL;
-	_settings->ReceivedCapabilities = NULL;
 	_settings->OrderSupport = NULL;
 	_settings->BitmapCacheV2CellInfo = NULL;
 	_settings->GlyphCache = NULL;
@@ -1039,6 +1073,12 @@ BOOL freerdp_settings_copy(rdpSettings* _settings, const rdpSettings* settings)
 	_settings->DeviceArray = NULL;
 	_settings->StaticChannelArray = NULL;
 	_settings->DynamicChannelArray = NULL;
+	_settings->ReceivedCapabilities = NULL;
+	_settings->ReceivedCapabilityData = NULL;
+	_settings->ReceivedCapabilityDataSizes = NULL;
+
+	_settings->ServerLicenseProductIssuersCount = 0;
+	_settings->ServerLicenseProductIssuers = NULL;
 
 	_settings->XSelectionAtom = NULL;
 	if (!rc)

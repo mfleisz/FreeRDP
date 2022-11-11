@@ -399,9 +399,6 @@ BOOL rdp_set_error_info(rdpRdp* rdp, UINT32 errorInfo)
 		}
 		else
 			WLog_ERR(TAG, "%s missing context=%p", __FUNCTION__, context);
-
-		/* Ensure the connection is terminated */
-		utils_abort_connect(rdp);
 	}
 	else
 	{
@@ -567,14 +564,14 @@ BOOL rdp_read_header(rdpRdp* rdp, wStream* s, UINT16* length, UINT16* channelId)
  * @param channel_id channel id
  */
 
-void rdp_write_header(rdpRdp* rdp, wStream* s, UINT16 length, UINT16 channelId)
+BOOL rdp_write_header(rdpRdp* rdp, wStream* s, UINT16 length, UINT16 channelId)
 {
-	int body_length;
 	DomainMCSPDU MCSPDU;
 
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(rdp->settings);
 	WINPR_ASSERT(s);
+	WINPR_ASSERT(length >= RDP_PACKET_HEADER_MAX_LENGTH);
 
 	MCSPDU = (rdp->settings->ServerMode) ? DomainMCSPDU_SendDataIndication
 	                                     : DomainMCSPDU_SendDataRequest;
@@ -582,18 +579,22 @@ void rdp_write_header(rdpRdp* rdp, wStream* s, UINT16 length, UINT16 channelId)
 	if ((rdp->sec_flags & SEC_ENCRYPT) &&
 	    (rdp->settings->EncryptionMethods == ENCRYPTION_METHOD_FIPS))
 	{
-		int pad;
-		body_length = length - RDP_PACKET_HEADER_MAX_LENGTH - 16;
-		pad = 8 - (body_length % 8);
+		const UINT16 body_length = length - RDP_PACKET_HEADER_MAX_LENGTH;
+		const UINT16 pad = 8 - (body_length % 8);
 
 		if (pad != 8)
 			length += pad;
 	}
 
-	mcs_write_domain_mcspdu_header(s, MCSPDU, length, 0);
-	per_write_integer16(s, rdp->mcs->userId, MCS_BASE_CHANNEL_ID); /* initiator */
-	per_write_integer16(s, channelId, 0);                          /* channelId */
-	Stream_Write_UINT8(s, 0x70);                                   /* dataPriority + segmentation */
+	if (!mcs_write_domain_mcspdu_header(s, MCSPDU, length, 0))
+		return FALSE;
+	if (!per_write_integer16(s, rdp->mcs->userId, MCS_BASE_CHANNEL_ID)) /* initiator */
+		return FALSE;
+	if (!per_write_integer16(s, channelId, 0)) /* channelId */
+		return FALSE;
+	if (!Stream_EnsureRemainingCapacity(s, 3))
+		return FALSE;
+	Stream_Write_UINT8(s, 0x70); /* dataPriority + segmentation */
 	/*
 	 * We always encode length in two bytes, even though we could use
 	 * only one byte if length <= 0x7F. It is just easier that way,
@@ -602,6 +603,7 @@ void rdp_write_header(rdpRdp* rdp, wStream* s, UINT16 length, UINT16 channelId)
 	 */
 	length = (length - RDP_PACKET_HEADER_MAX_LENGTH) | 0x8000;
 	Stream_Write_UINT16_BE(s, length); /* userData (OCTET_STRING) */
+	return TRUE;
 }
 
 static BOOL rdp_security_stream_out(rdpRdp* rdp, wStream* s, int length, UINT32 sec_flags,
@@ -814,11 +816,8 @@ BOOL rdp_send_message_channel_pdu(rdpRdp* rdp, wStream* s, UINT16 sec_flags)
 	UINT16 length;
 	UINT32 pad;
 
-	if (!s)
-		return FALSE;
-
-	if (!rdp)
-		goto fail;
+	WINPR_ASSERT(rdp);
+	WINPR_ASSERT(s);
 
 	length = Stream_GetPosition(s);
 	Stream_SetPosition(s, 0);
@@ -1045,7 +1044,7 @@ int rdp_recv_data_pdu(rdpRdp* rdp, wStream* s)
 			break;
 
 		case DATA_PDU_TYPE_SYNCHRONIZE:
-			if (!rdp_recv_synchronize_pdu(rdp, cs))
+			if (!rdp_recv_server_synchronize_pdu(rdp, cs))
 			{
 				WLog_ERR(TAG, "DATA_PDU_TYPE_SYNCHRONIZE - rdp_recv_synchronize_pdu() failed");
 				goto out_fail;
@@ -1179,13 +1178,13 @@ int rdp_recv_message_channel_pdu(rdpRdp* rdp, wStream* s, UINT16 securityFlags)
 	if (securityFlags & SEC_AUTODETECT_REQ)
 	{
 		/* Server Auto-Detect Request PDU */
-		return rdp_recv_autodetect_request_packet(rdp, s);
+		return autodetect_recv_request_packet(rdp->autodetect, s);
 	}
 
 	if (securityFlags & SEC_AUTODETECT_RSP)
 	{
 		/* Client Auto-Detect Response PDU */
-		return rdp_recv_autodetect_response_packet(rdp, s);
+		return autodetect_recv_response_packet(rdp->autodetect, s);
 	}
 
 	if (securityFlags & SEC_HEARTBEAT)
@@ -1196,11 +1195,41 @@ int rdp_recv_message_channel_pdu(rdpRdp* rdp, wStream* s, UINT16 securityFlags)
 
 	if (securityFlags & SEC_TRANSPORT_REQ)
 	{
+		HRESULT hr = E_ABORT;
 		/* Initiate Multitransport Request PDU */
-		return rdp_recv_multitransport_packet(rdp, s);
+		// TODO: This message is server -> client only
+		int rc = multitransport_client_recv_request(rdp->multitransport, s);
+		if (rc < 0)
+			return rc;
+		if (!multitransport_client_send_response(rdp->multitransport, hr))
+			return -1;
+		return 1;
 	}
 
-	return -1;
+	if (securityFlags & SEC_TRANSPORT_RSP)
+	{
+		/* Initiate Multitransport Request PDU */
+		HRESULT hr; // TODO: Do something with this result
+		// TODO: This message is client -> server only
+		return multitransport_server_recv_response(rdp->multitransport, s, &hr) ? 0 : -1;
+	}
+
+	if (securityFlags & SEC_LICENSE_PKT)
+	{
+		return license_recv(rdp->license, s);
+	}
+
+	if (securityFlags & SEC_LICENSE_ENCRYPT_CS)
+	{
+		return license_recv(rdp->license, s);
+	}
+
+	if (securityFlags & SEC_LICENSE_ENCRYPT_SC)
+	{
+		return license_recv(rdp->license, s);
+	}
+
+	return 1;
 }
 
 int rdp_recv_out_of_sequence_pdu(rdpRdp* rdp, wStream* s)
@@ -1579,35 +1608,95 @@ static int rdp_recv_fastpath_pdu(rdpRdp* rdp, wStream* s)
 
 static int rdp_recv_pdu(rdpRdp* rdp, wStream* s)
 {
-	if (tpkt_verify_header(s))
+	const int rc = tpkt_verify_header(s);
+	if (rc > 0)
 		return rdp_recv_tpkt_pdu(rdp, s);
-	else
+	else if (rc == 0)
 		return rdp_recv_fastpath_pdu(rdp, s);
+	else
+		return rc;
 }
 
-int rdp_recv_callback(rdpTransport* transport, wStream* s, void* extra)
+typedef enum
 {
-	int status = 0;
+	STATE_RUN_ACTIVE = 2,
+	STATE_RUN_REDIRECT = 1,
+	STATE_RUN_SUCCESS = 0,
+	STATE_RUN_FAILED = -1,
+	STATE_RUN_TRY_AGAIN = -23,
+	STATE_RUN_CONTINUE = -24
+} state_run_t;
+
+static BOOL state_run_failed(int status)
+{
+	switch (status)
+	{
+		case STATE_RUN_CONTINUE:
+		case STATE_RUN_TRY_AGAIN:
+			return FALSE;
+		default:
+			break;
+	}
+	if (status < STATE_RUN_SUCCESS)
+		return TRUE;
+	return FALSE;
+}
+
+static BOOL state_run_success(int status)
+{
+	return status >= STATE_RUN_SUCCESS;
+}
+
+static const char* state_run_result_string(int status, char* buffer, size_t buffersize)
+{
+	const char* name;
+
+	switch (status)
+	{
+		case STATE_RUN_ACTIVE:
+			name = "STATE_RUN_ACTIVE";
+			break;
+		case STATE_RUN_REDIRECT:
+			name = "STATE_RUN_REDIRECT";
+			break;
+		case STATE_RUN_SUCCESS:
+			name = "STATE_RUN_SUCCESS";
+			break;
+		case STATE_RUN_FAILED:
+			name = "STATE_RUN_FAILED";
+			break;
+		case STATE_RUN_TRY_AGAIN:
+			name = "STATE_RUN_TRY_AGAIN";
+			break;
+		case STATE_RUN_CONTINUE:
+			name = "STATE_RUN_CONTINUE";
+			break;
+		default:
+			name = "STATE_RUN_UNKNOWN";
+			break;
+	}
+
+	_snprintf(buffer, buffersize, "%s [%d]", name, status);
+	return buffer;
+}
+
+static int rdp_recv_callback_int(rdpTransport* transport, wStream* s, void* extra)
+{
+	const UINT32 mask = FINALIZE_SC_SYNCHRONIZE_PDU | FINALIZE_SC_CONTROL_COOPERATE_PDU |
+	                    FINALIZE_SC_CONTROL_GRANTED_PDU | FINALIZE_SC_FONT_MAP_PDU;
+	int status = STATE_RUN_SUCCESS;
 	rdpRdp* rdp = (rdpRdp*)extra;
 
 	WINPR_ASSERT(transport);
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(s);
-	/*
-	 * At any point in the connection sequence between when all
-	 * MCS channels have been joined and when the RDP connection
-	 * enters the active state, an auto-detect PDU can be received
-	 * on the MCS message channel.
-	 */
-	if ((rdp_get_state(rdp) > CONNECTION_STATE_MCS_CHANNEL_JOIN) &&
-	    (rdp_get_state(rdp) < CONNECTION_STATE_ACTIVE))
-	{
-		if (rdp_client_connect_auto_detect(rdp, s))
-			return 0;
-	}
 
 	switch (rdp_get_state(rdp))
 	{
+		case CONNECTION_STATE_NEGO:
+			rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_CREATE_REQUEST);
+			status = STATE_RUN_CONTINUE;
+			break;
 		case CONNECTION_STATE_NLA:
 			if (nla_get_state(rdp->nla) < NLA_STATE_AUTH_INFO)
 			{
@@ -1615,7 +1704,7 @@ int rdp_recv_callback(rdpTransport* transport, wStream* s, void* extra)
 				{
 					WLog_ERR(TAG, "%s: %s - nla_recv_pdu() fail", __FUNCTION__,
 					         rdp_get_state_string(rdp));
-					return -1;
+					status = STATE_RUN_FAILED;
 				}
 			}
 			else if (nla_get_state(rdp->nla) == NLA_STATE_POST_NEGO)
@@ -1626,155 +1715,306 @@ int rdp_recv_callback(rdpTransport* transport, wStream* s, void* extra)
 				{
 					WLog_ERR(TAG, "%s: %s - nego_recv() fail", __FUNCTION__,
 					         rdp_get_state_string(rdp));
-					return -1;
+					status = STATE_RUN_FAILED;
 				}
-
-				if (!nla_set_state(rdp->nla, NLA_STATE_FINAL))
-					return -1;
+				else if (!nla_set_state(rdp->nla, NLA_STATE_FINAL))
+					status = STATE_RUN_FAILED;
 			}
 
-			if (nla_get_state(rdp->nla) == NLA_STATE_AUTH_INFO)
+			if (state_run_success(status))
 			{
-				transport_set_nla_mode(rdp->transport, FALSE);
-
-				if (rdp->settings->VmConnectMode)
+				if (nla_get_state(rdp->nla) == NLA_STATE_AUTH_INFO)
 				{
-					if (!nego_set_state(rdp->nego, NEGO_STATE_NLA))
-						return -1;
+					transport_set_nla_mode(rdp->transport, FALSE);
 
-					if (!nego_set_requested_protocols(rdp->nego, PROTOCOL_HYBRID | PROTOCOL_SSL))
-						return -1;
-
-					nego_send_negotiation_request(rdp->nego);
-
-					if (!nla_set_state(rdp->nla, NLA_STATE_POST_NEGO))
-						return -1;
-				}
-				else
-				{
-					if (!nla_set_state(rdp->nla, NLA_STATE_FINAL))
-						return -1;
+					if (rdp->settings->VmConnectMode)
+					{
+						if (!nego_set_state(rdp->nego, NEGO_STATE_NLA))
+							status = STATE_RUN_FAILED;
+						else if (!nego_set_requested_protocols(rdp->nego,
+						                                       PROTOCOL_HYBRID | PROTOCOL_SSL))
+							status = STATE_RUN_FAILED;
+						else
+						{
+							if (!nego_send_negotiation_request(rdp->nego))
+								status = STATE_RUN_FAILED;
+							else if (!nla_set_state(rdp->nla, NLA_STATE_POST_NEGO))
+								status = STATE_RUN_FAILED;
+						}
+					}
+					else
+					{
+						if (!nla_set_state(rdp->nla, NLA_STATE_FINAL))
+							status = STATE_RUN_FAILED;
+					}
 				}
 			}
-
-			if (nla_get_state(rdp->nla) == NLA_STATE_FINAL)
+			if (state_run_success(status))
 			{
-				nla_free(rdp->nla);
-				rdp->nla = NULL;
 
-				rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_CONNECT);
-				if (!mcs_client_begin(rdp->mcs))
+				if (nla_get_state(rdp->nla) == NLA_STATE_FINAL)
 				{
-					WLog_ERR(TAG, "%s: %s - mcs_client_begin() fail", __FUNCTION__,
-					         rdp_get_state_string(rdp));
-					return -1;
+					rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_CREATE_REQUEST);
+					status = STATE_RUN_TRY_AGAIN;
 				}
 			}
-
 			break;
 
-		case CONNECTION_STATE_MCS_CONNECT:
+		case CONNECTION_STATE_MCS_CREATE_REQUEST:
+			if (!mcs_client_begin(rdp->mcs))
+			{
+				WLog_ERR(TAG, "%s: %s - mcs_client_begin() fail", __FUNCTION__,
+				         rdp_get_state_string(rdp));
+				status = STATE_RUN_FAILED;
+			}
+			else
+			{
+				rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_CREATE_RESPONSE);
+			}
+			break;
+
+		case CONNECTION_STATE_MCS_CREATE_RESPONSE:
 			if (!mcs_recv_connect_response(rdp->mcs, s))
 			{
 				WLog_ERR(TAG, "mcs_recv_connect_response failure");
-				return -1;
+				status = STATE_RUN_FAILED;
 			}
-
-			if (!mcs_send_erect_domain_request(rdp->mcs))
+			else
 			{
-				WLog_ERR(TAG, "mcs_send_erect_domain_request failure");
-				return -1;
+				rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_ERECT_DOMAIN);
+				if (!mcs_send_erect_domain_request(rdp->mcs))
+				{
+					WLog_ERR(TAG, "mcs_send_erect_domain_request failure");
+					status = STATE_RUN_FAILED;
+				}
+				else
+				{
+					rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_ATTACH_USER);
+					if (!mcs_send_attach_user_request(rdp->mcs))
+					{
+						WLog_ERR(TAG, "mcs_send_attach_user_request failure");
+						status = STATE_RUN_FAILED;
+					}
+					else
+						rdp_client_transition_to_state(rdp,
+						                               CONNECTION_STATE_MCS_ATTACH_USER_CONFIRM);
+				}
 			}
-
-			if (!mcs_send_attach_user_request(rdp->mcs))
-			{
-				WLog_ERR(TAG, "mcs_send_attach_user_request failure");
-				return -1;
-			}
-
-			rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_ATTACH_USER);
 			break;
 
-		case CONNECTION_STATE_MCS_ATTACH_USER:
+		case CONNECTION_STATE_MCS_ATTACH_USER_CONFIRM:
 			if (!mcs_recv_attach_user_confirm(rdp->mcs, s))
 			{
 				WLog_ERR(TAG, "mcs_recv_attach_user_confirm failure");
-				return -1;
+				status = STATE_RUN_FAILED;
 			}
-
-			if (!mcs_send_channel_join_request(rdp->mcs, rdp->mcs->userId))
+			else
 			{
-				WLog_ERR(TAG, "mcs_send_channel_join_request failure");
-				return -1;
+				rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_CHANNEL_JOIN_REQUEST);
+				if (!mcs_send_channel_join_request(rdp->mcs, rdp->mcs->userId))
+				{
+					WLog_ERR(TAG, "mcs_send_channel_join_request failure");
+					status = STATE_RUN_FAILED;
+				}
+				else
+					rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_CHANNEL_JOIN_RESPONSE);
 			}
-
-			rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_CHANNEL_JOIN);
 			break;
 
-		case CONNECTION_STATE_MCS_CHANNEL_JOIN:
+		case CONNECTION_STATE_MCS_CHANNEL_JOIN_RESPONSE:
 			if (!rdp_client_connect_mcs_channel_join_confirm(rdp, s))
 			{
 				WLog_ERR(TAG,
 				         "%s: %s - "
 				         "rdp_client_connect_mcs_channel_join_confirm() fail",
 				         __FUNCTION__, rdp_get_state_string(rdp));
-				status = -1;
+				status = STATE_RUN_FAILED;
 			}
 
+			break;
+
+		case CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT_REQUEST:
+			if (!rdp_client_connect_auto_detect(rdp, s))
+			{
+				rdp_client_transition_to_state(rdp, CONNECTION_STATE_LICENSING);
+				status = STATE_RUN_TRY_AGAIN;
+			}
 			break;
 
 		case CONNECTION_STATE_LICENSING:
 			status = rdp_client_connect_license(rdp, s);
 
-			if (status < 0)
-				WLog_DBG(TAG, "%s: %s - rdp_client_connect_license() - %i", __FUNCTION__,
-				         rdp_get_state_string(rdp), status);
-
-			break;
-
-		case CONNECTION_STATE_CAPABILITIES_EXCHANGE:
-			status = rdp_client_connect_demand_active(rdp, s);
-
-			if (status < 0)
-				WLog_DBG(TAG,
-				         "%s: %s - "
-				         "rdp_client_connect_demand_active() - %i",
-				         __FUNCTION__, rdp_get_state_string(rdp), status);
-
-			break;
-
-		case CONNECTION_STATE_FINALIZATION:
-			status = rdp_recv_pdu(rdp, s);
-
-			if ((status >= 0) && rdp_finalize_is_flag_set(rdp, FINALIZE_SC_COMPLETE))
+			if (state_run_failed(status))
 			{
-				rdp_client_transition_to_state(rdp, CONNECTION_STATE_ACTIVE);
-				return 2;
+				char buffer[64] = { 0 };
+				WLog_DBG(TAG, "%s: %s - rdp_client_connect_license() - %s", __FUNCTION__,
+				         rdp_get_state_string(rdp),
+				         state_run_result_string(status, buffer, ARRAYSIZE(buffer)));
 			}
 
-			if (status < 0)
-				WLog_DBG(TAG, "%s: %s - rdp_recv_pdu() - %i", __FUNCTION__,
-				         rdp_get_state_string(rdp), status);
-
 			break;
+
+		case CONNECTION_STATE_MULTITRANSPORT_BOOTSTRAPPING_REQUEST:
+			if (!rdp_client_connect_auto_detect(rdp, s))
+			{
+				rdp_client_transition_to_state(
+				    rdp, CONNECTION_STATE_CAPABILITIES_EXCHANGE_DEMAND_ACTIVE);
+				status = STATE_RUN_TRY_AGAIN;
+			}
+			break;
+
+		case CONNECTION_STATE_CAPABILITIES_EXCHANGE_DEMAND_ACTIVE:
+			status = rdp_client_connect_demand_active(rdp, s);
+
+			if (state_run_failed(status))
+			{
+				char buffer[64] = { 0 };
+				WLog_DBG(TAG,
+				         "%s: %s - "
+				         "rdp_client_connect_demand_active() - %s",
+				         __FUNCTION__, rdp_get_state_string(rdp),
+				         state_run_result_string(status, buffer, ARRAYSIZE(buffer)));
+			}
+			else if (status != STATE_RUN_REDIRECT)
+			{
+				if (!rdp->settings->SupportMonitorLayoutPdu)
+				{
+					rdp_client_transition_to_state(
+					    rdp, CONNECTION_STATE_CAPABILITIES_EXCHANGE_CONFIRM_ACTIVE);
+					status = STATE_RUN_TRY_AGAIN;
+				}
+				else
+				{
+					rdp_client_transition_to_state(
+					    rdp, CONNECTION_STATE_CAPABILITIES_EXCHANGE_MONITOR_LAYOUT);
+				}
+			}
+			break;
+
+		case CONNECTION_STATE_CAPABILITIES_EXCHANGE_MONITOR_LAYOUT:
+			status = rdp_recv_pdu(rdp, s);
+			if (state_run_success(status))
+			{
+				status = STATE_RUN_TRY_AGAIN;
+				rdp_client_transition_to_state(
+				    rdp, CONNECTION_STATE_CAPABILITIES_EXCHANGE_CONFIRM_ACTIVE);
+			}
+			break;
+
+		case CONNECTION_STATE_CAPABILITIES_EXCHANGE_CONFIRM_ACTIVE:
+			status = rdp_client_connect_confirm_active(rdp, s);
+			break;
+
+		case CONNECTION_STATE_FINALIZATION_CLIENT_SYNC:
+		{
+			const UINT32 flags = rdp->finalize_sc_pdus & mask;
+			status = rdp_recv_pdu(rdp, s);
+			if (state_run_success(status))
+			{
+				const UINT32 uflags = rdp->finalize_sc_pdus & mask;
+				if (flags != uflags)
+					rdp_client_transition_to_state(rdp,
+					                               CONNECTION_STATE_FINALIZATION_CLIENT_COOPERATE);
+				else
+					status = STATE_RUN_FAILED;
+			}
+		}
+		break;
+		case CONNECTION_STATE_FINALIZATION_CLIENT_COOPERATE:
+		{
+			const UINT32 flags = rdp->finalize_sc_pdus & mask;
+			status = rdp_recv_pdu(rdp, s);
+			if (state_run_success(status))
+			{
+				const UINT32 uflags = rdp->finalize_sc_pdus & mask;
+				if (flags != uflags)
+					rdp_client_transition_to_state(
+					    rdp, CONNECTION_STATE_FINALIZATION_CLIENT_GRANTED_CONTROL);
+				else
+					status = STATE_RUN_FAILED;
+			}
+		}
+		break;
+		case CONNECTION_STATE_FINALIZATION_CLIENT_GRANTED_CONTROL:
+		{
+			const UINT32 flags = rdp->finalize_sc_pdus & mask;
+			status = rdp_recv_pdu(rdp, s);
+			if (state_run_success(status))
+			{
+				const UINT32 uflags = rdp->finalize_sc_pdus & mask;
+				if (flags != uflags)
+					rdp_client_transition_to_state(rdp,
+					                               CONNECTION_STATE_FINALIZATION_CLIENT_FONT_MAP);
+				else
+					status = STATE_RUN_FAILED;
+			}
+		}
+		break;
+		case CONNECTION_STATE_FINALIZATION_CLIENT_FONT_MAP:
+		{
+			const UINT32 flags = rdp->finalize_sc_pdus & mask;
+			status = rdp_recv_pdu(rdp, s);
+			if (state_run_success(status))
+			{
+				const UINT32 uflags = rdp->finalize_sc_pdus & mask;
+				if (flags == uflags)
+					WLog_WARN(TAG, "Did not receive a FINALIZE_SC_FONT_MAP_PDU");
+
+				{
+					rdp_client_transition_to_state(rdp, CONNECTION_STATE_ACTIVE);
+					status = STATE_RUN_ACTIVE;
+				}
+			}
+
+			if (state_run_failed(status))
+			{
+				char buffer[64] = { 0 };
+				WLog_DBG(TAG, "%s: %s - rdp_recv_pdu() - %s", __FUNCTION__,
+				         rdp_get_state_string(rdp),
+				         state_run_result_string(status, buffer, ARRAYSIZE(buffer)));
+			}
+		}
+		break;
 
 		case CONNECTION_STATE_ACTIVE:
 			status = rdp_recv_pdu(rdp, s);
 
-			if (status < 0)
-				WLog_DBG(TAG, "%s: %s - rdp_recv_pdu() - %i", __FUNCTION__,
-				         rdp_get_state_string(rdp), status);
-
+			if (state_run_failed(status))
+			{
+				char buffer[64] = { 0 };
+				WLog_DBG(TAG, "%s: %s - rdp_recv_pdu() - %s", __FUNCTION__,
+				         rdp_get_state_string(rdp),
+				         state_run_result_string(status, buffer, ARRAYSIZE(buffer)));
+			}
 			break;
 
 		default:
 			WLog_ERR(TAG, "%s: %s state %d", __FUNCTION__, rdp_get_state_string(rdp),
 			         rdp_get_state(rdp));
-			status = -1;
+			status = STATE_RUN_FAILED;
 			break;
 	}
 
+	if (state_run_failed(status))
+	{
+		char buffer[64] = { 0 };
+		WLog_ERR(TAG, "%s: %s status %s", __FUNCTION__, rdp_get_state_string(rdp),
+		         state_run_result_string(status, buffer, ARRAYSIZE(buffer)));
+	}
 	return status;
+}
+
+int rdp_recv_callback(rdpTransport* transport, wStream* s, void* extra)
+{
+	state_run_t rc = STATE_RUN_FAILED;
+	const size_t start = Stream_GetPosition(s);
+	do
+	{
+		if (rc == STATE_RUN_TRY_AGAIN)
+			Stream_SetPosition(s, start);
+		rc = rdp_recv_callback_int(transport, s, extra);
+	} while ((rc == STATE_RUN_TRY_AGAIN) || (rc == STATE_RUN_CONTINUE));
+	return rc;
 }
 
 BOOL rdp_send_channel_data(rdpRdp* rdp, UINT16 channelId, const BYTE* data, size_t size)
@@ -1971,7 +2211,8 @@ rdpRdp* rdp_new(rdpContext* context)
 	if (!rdp->heartbeat)
 		goto fail;
 
-	rdp->multitransport = multitransport_new();
+	rdp->multitransport = multitransport_new(rdp, INITIATE_REQUEST_PROTOCOL_UDPFECL |
+	                                                  INITIATE_REQUEST_PROTOCOL_UDPFECR);
 
 	if (!rdp->multitransport)
 		goto fail;
@@ -2082,9 +2323,7 @@ BOOL rdp_reset(rdpRdp* rdp)
 		goto fail;
 
 	rdp->errorInfo = 0;
-	rdp_finalize_reset_flags(rdp, TRUE);
-
-	rc = TRUE;
+	rc = rdp_finalize_reset_flags(rdp, TRUE);
 
 fail:
 	return rc;

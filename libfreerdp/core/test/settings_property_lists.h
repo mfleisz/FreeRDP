@@ -2,7 +2,8 @@
 #define TEST_SETTINGS_PROPERTY_LISTS
 
 #define have_bool_list_indices
-static const size_t bool_list_indices[] = {
+static const size_t bool_list_indices[] =
+{
 	FreeRDP_AllowCacheWaitingList,
 	FreeRDP_AllowDesktopComposition,
 	FreeRDP_AllowFontSmoothing,
@@ -125,6 +126,7 @@ static const size_t bool_list_indices[] = {
 	FreeRDP_RedirectSerialPorts,
 	FreeRDP_RedirectSmartCards,
 	FreeRDP_RefreshRect,
+	FreeRDP_RelativeMouseInput,
 	FreeRDP_RemdeskVirtualChannel,
 	FreeRDP_RemoteAppLanguageBarSupported,
 	FreeRDP_RemoteApplicationMode,
@@ -137,6 +139,7 @@ static const size_t bool_list_indices[] = {
 	FreeRDP_RestrictedAdminModeRequired,
 	FreeRDP_SaltedChecksum,
 	FreeRDP_SendPreconnectionPdu,
+	FreeRDP_ServerLicenseRequired,
 	FreeRDP_ServerMode,
 	FreeRDP_SmartSizing,
 	FreeRDP_SmartcardEmulation,
@@ -179,15 +182,25 @@ static const size_t bool_list_indices[] = {
 };
 
 #define have_uint16_list_indices
-static const size_t uint16_list_indices[] = {
+static const size_t uint16_list_indices[] =
+{
+	FreeRDP_CapsGeneralCompressionLevel,
+	FreeRDP_CapsGeneralCompressionTypes,
+	FreeRDP_CapsProtocolVersion,
+	FreeRDP_CapsRemoteUnshareFlag,
+	FreeRDP_CapsUpdateCapabilityFlag,
 	FreeRDP_DesktopOrientation,
+	FreeRDP_OrderSupportFlags,
+	FreeRDP_OrderSupportFlagsEx,
 	FreeRDP_ProxyPort,
 	FreeRDP_TLSMaxVersion,
 	FreeRDP_TLSMinVersion,
+	FreeRDP_TextANSICodePage,
 };
 
 #define have_uint32_list_indices
-static const size_t uint32_list_indices[] = {
+static const size_t uint32_list_indices[] =
+{
 	FreeRDP_AcceptedCertLength,
 	FreeRDP_AuthenticationLevel,
 	FreeRDP_AutoReconnectMaxRetries,
@@ -289,6 +302,8 @@ static const size_t uint32_list_indices[] = {
 	FreeRDP_RequestedProtocols,
 	FreeRDP_SelectedProtocol,
 	FreeRDP_ServerCertificateLength,
+	FreeRDP_ServerLicenseProductIssuersCount,
+	FreeRDP_ServerLicenseProductVersion,
 	FreeRDP_ServerPort,
 	FreeRDP_ServerRandomLength,
 	FreeRDP_ShareId,
@@ -309,18 +324,21 @@ static const size_t uint32_list_indices[] = {
 };
 
 #define have_int32_list_indices
-static const size_t int32_list_indices[] = {
+static const size_t int32_list_indices[] =
+{
 	FreeRDP_XPan,
 	FreeRDP_YPan,
 };
 
 #define have_uint64_list_indices
-static const size_t uint64_list_indices[] = {
+static const size_t uint64_list_indices[] =
+{
 	FreeRDP_ParentWindowId,
 };
 
 #define have_string_list_indices
-static const size_t string_list_indices[] = {
+static const size_t string_list_indices[] =
+{
 	FreeRDP_AcceptedCert,
 	FreeRDP_ActionScript,
 	FreeRDP_AllowedTlsCiphers,
@@ -396,20 +414,25 @@ static const size_t string_list_indices[] = {
 	FreeRDP_RemoteAssistanceRCTicket,
 	FreeRDP_RemoteAssistanceSessionId,
 	FreeRDP_ServerHostname,
+	FreeRDP_ServerLicenseCompanyName,
+	FreeRDP_ServerLicenseProductName,
 	FreeRDP_ShellWorkingDirectory,
 	FreeRDP_SmartcardCertificate,
 	FreeRDP_SmartcardPrivateKey,
 	FreeRDP_SspiModule,
 	FreeRDP_TargetNetAddress,
+	FreeRDP_TerminalDescriptor,
 	FreeRDP_TlsSecretsFile,
 	FreeRDP_TransportDumpFile,
+	FreeRDP_UserSpecifiedServerName,
 	FreeRDP_Username,
 	FreeRDP_WindowTitle,
 	FreeRDP_WmClass,
 };
 
 #define have_pointer_list_indices
-static const size_t pointer_list_indices[] = {
+static const size_t pointer_list_indices[] =
+{
 	FreeRDP_BitmapCacheV2CellInfo,
 	FreeRDP_ChannelDefArray,
 	FreeRDP_ClientAutoReconnectCookie,
@@ -427,10 +450,13 @@ static const size_t pointer_list_indices[] = {
 	FreeRDP_RdpServerCertificate,
 	FreeRDP_RdpServerRsaKey,
 	FreeRDP_ReceivedCapabilities,
+	FreeRDP_ReceivedCapabilityData,
+	FreeRDP_ReceivedCapabilityDataSizes,
 	FreeRDP_RedirectionPassword,
 	FreeRDP_RedirectionTsvUrl,
 	FreeRDP_ServerAutoReconnectCookie,
 	FreeRDP_ServerCertificate,
+	FreeRDP_ServerLicenseProductIssuers,
 	FreeRDP_ServerRandom,
 	FreeRDP_StaticChannelArray,
 	FreeRDP_TargetNetAddresses,
@@ -439,3 +465,4 @@ static const size_t pointer_list_indices[] = {
 };
 
 #endif /* TEST_SETTINGS_PROPERTY_LISTS */
+
