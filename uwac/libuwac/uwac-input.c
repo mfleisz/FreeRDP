@@ -134,7 +134,7 @@ static UwacReturnCode set_cursor_image(UwacSeat* seat, uint32_t serial)
 
 	if (surface && buffer)
 	{
-		wl_surface_attach(surface, buffer, -x, -y);
+		wl_surface_attach(surface, buffer, 0, 0);
 		wl_surface_damage(surface, 0, 0, image->width, image->height);
 		wl_surface_commit(surface);
 	}
@@ -729,6 +729,7 @@ static void pointer_handle_enter(void* data, struct wl_pointer* pointer, uint32_
 	}
 
 	input->display->serial = serial;
+	input->display->pointer_focus_serial = serial;
 	window = wl_surface_get_user_data(surface);
 	if (window)
 		window->pointer_enter_serial = serial;
@@ -1191,5 +1192,5 @@ UwacReturnCode UwacSeatSetMouseCursor(UwacSeat* seat, const void* data, size_t l
 	}
 	if (seat && !seat->default_cursor)
 		return UWAC_SUCCESS;
-	return set_cursor_image(seat, seat->display->serial);
+	return set_cursor_image(seat, seat->display->pointer_focus_serial);
 }

@@ -1799,7 +1799,7 @@ static int parse_tls_enforce(rdpSettings* settings, const char* Value)
 	{
 		struct map_t
 		{
-			char* name;
+			const char* name;
 			UINT16 version;
 		};
 		const struct map_t map[] = {
@@ -1862,8 +1862,8 @@ static int parse_tls_options(rdpSettings* settings, const COMMAND_LINE_ARGUMENT_
 	}
 	CommandLineSwitchCase(arg, "enforce-tlsv1_2")
 	{
-		WLog_WARN(TAG, "Option /enforce-tlsv1_2 is deprecated, use /tls:enforce:1_2 instead");
-		rc = parse_tls_enforce(settings, arg->Value);
+		WLog_WARN(TAG, "Option /enforce-tlsv1_2 is deprecated, use /tls:enforce:1.2 instead");
+		rc = parse_tls_enforce(settings, "1.2");
 	}
 #endif
 	CommandLineSwitchDefault(arg)
@@ -2964,15 +2964,27 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 			else
 			{
 				char* c = strchr(arg->Value, ',');
-				if (c)
+				while (c)
 				{
+					char* next = strchr(c + 1, ',');
+					if (next)
+						*next = '\0';
 					*c++ = '\0';
-					if (!option_equals(c, "no-websockets"))
+					if (option_equals(c, "no-websockets"))
+					{
+						if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpUseWebsockets,
+						                               FALSE))
+							return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
+					}
+					else if (option_equals(c, "extauth-sspi-ntlm"))
+					{
+						if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpExtAuthSspiNtln,
+						                               TRUE))
+							return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
+					}
+					else
 						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-
-					if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpUseWebsockets,
-					                               FALSE))
-						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
+					c = next;
 				}
 
 				if (option_equals(arg->Value, "http"))

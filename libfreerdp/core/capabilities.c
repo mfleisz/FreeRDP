@@ -3222,7 +3222,7 @@ static BOOL rdp_read_bitmap_codecs_capability_set(wStream* s, rdpSettings* setti
 				Stream_Read_UINT32(sub, captureFlags);   /* captureFlags (4 bytes) */
 				Stream_Read_UINT32(sub, rfxCapsLength);  /* capsLength (4 bytes) */
 				settings->RemoteFxCaptureFlags = captureFlags;
-				settings->RemoteFxOnly = (captureFlags & CARDP_CAPS_CAPTURE_NON_CAC) ? TRUE : FALSE;
+				settings->RemoteFxOnly = (captureFlags & CARDP_CAPS_CAPTURE_NON_CAC) ? FALSE : TRUE;
 
 				if (rfxCapsLength)
 				{
@@ -4511,7 +4511,8 @@ BOOL rdp_recv_demand_active(rdpRdp* rdp, wStream* s)
 		 * We can receive a Save Session Info Data PDU containing a LogonErrorInfo
 		 * structure at this point from the server to indicate a connection error.
 		 */
-		if (rdp_recv_data_pdu(rdp, s) < 0)
+		state_run_t rc = rdp_recv_data_pdu(rdp, s);
+		if (state_run_failed(rc))
 			return FALSE;
 
 		return FALSE;

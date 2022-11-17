@@ -52,6 +52,7 @@
 #include "rdp.h"
 #include "proxy.h"
 #include "utils.h"
+#include "state.h"
 
 #define TAG FREERDP_TAG("core.transport")
 
@@ -81,6 +82,8 @@ struct rdp_transport
 	BOOL haveMoreBytesToRead;
 	wLog* log;
 	rdpTransportIo io;
+	HANDLE ioEvent;
+	BOOL useIoEvent;
 };
 
 static void transport_ssl_cb(SSL* ssl, int where, int ret)
@@ -354,8 +357,7 @@ BOOL transport_connect_nla(rdpTransport* transport)
 		return FALSE;
 	}
 
-	rdp_client_transition_to_state(rdp, CONNECTION_STATE_NLA);
-	return TRUE;
+	return rdp_client_transition_to_state(rdp, CONNECTION_STATE_NLA);
 }
 
 BOOL transport_connect(rdpTransport* transport, const char* hostname, UINT16 port, DWORD timeout)
@@ -988,7 +990,7 @@ fail:
 
 DWORD transport_get_event_handles(rdpTransport* transport, HANDLE* events, DWORD count)
 {
-	DWORD nCount = 1; /* always the reread Event */
+	DWORD nCount = 0; /* always the reread Event */
 	DWORD tmp;
 
 	WINPR_ASSERT(transport);
@@ -1004,7 +1006,14 @@ DWORD transport_get_event_handles(rdpTransport* transport, HANDLE* events, DWORD
 			return 0;
 		}
 
-		events[0] = transport->rereadEvent;
+		events[nCount++] = transport->rereadEvent;
+
+		if (transport->useIoEvent)
+		{
+			if (count < 2)
+				return 0;
+			events[nCount++] = transport->ioEvent;
+		}
 	}
 
 	if (!transport->GatewayEnabled)
@@ -1022,7 +1031,7 @@ DWORD transport_get_event_handles(rdpTransport* transport, HANDLE* events, DWORD
 
 			if (transport->frontBio)
 			{
-				if (BIO_get_event(transport->frontBio, &events[1]) != 1)
+				if (BIO_get_event(transport->frontBio, &events[nCount]) != 1)
 				{
 					WLog_Print(transport->log, WLOG_ERROR, "%s: error getting the frontBio handle",
 					           __FUNCTION__);
@@ -1036,7 +1045,7 @@ DWORD transport_get_event_handles(rdpTransport* transport, HANDLE* events, DWORD
 	{
 		if (transport->rdg)
 		{
-			tmp = rdg_get_event_handles(transport->rdg, &events[1], count - 1);
+			tmp = rdg_get_event_handles(transport->rdg, &events[nCount], count - nCount);
 
 			if (tmp == 0)
 				return 0;
@@ -1045,7 +1054,7 @@ DWORD transport_get_event_handles(rdpTransport* transport, HANDLE* events, DWORD
 		}
 		else if (transport->tsg)
 		{
-			tmp = tsg_get_event_handles(transport->tsg, &events[1], count - 1);
+			tmp = tsg_get_event_handles(transport->tsg, &events[nCount], count - nCount);
 
 			if (tmp == 0)
 				return 0;
@@ -1107,7 +1116,7 @@ int transport_drain_output_buffer(rdpTransport* transport)
 int transport_check_fds(rdpTransport* transport)
 {
 	int status;
-	int recv_status;
+	state_run_t recv_status;
 	wStream* received;
 	UINT64 now = GetTickCount64();
 	UINT64 dueDate = 0;
@@ -1173,15 +1182,17 @@ int transport_check_fds(rdpTransport* transport)
 		Stream_Release(received);
 
 		/* session redirection or activation */
-		if (recv_status == 1 || recv_status == 2)
+		if (recv_status == STATE_RUN_REDIRECT || recv_status == STATE_RUN_ACTIVE)
 		{
 			return recv_status;
 		}
 
-		if (recv_status < 0)
+		if (state_run_failed(recv_status))
 		{
+			char buffer[64] = { 0 };
 			WLog_Print(transport->log, WLOG_ERROR,
-			           "transport_check_fds: transport->ReceiveCallback() - %i", recv_status);
+			           "transport_check_fds: transport->ReceiveCallback() - %s",
+			           state_run_result_string(recv_status, buffer, ARRAYSIZE(buffer)));
 			return -1;
 		}
 
@@ -1311,6 +1322,11 @@ rdpTransport* transport_new(rdpContext* context)
 	if (!transport->rereadEvent || transport->rereadEvent == INVALID_HANDLE_VALUE)
 		goto fail;
 
+	transport->ioEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+	if (!transport->ioEvent || transport->ioEvent == INVALID_HANDLE_VALUE)
+		goto fail;
+
 	transport->haveMoreBytesToRead = FALSE;
 	transport->blocking = TRUE;
 	transport->GatewayEnabled = FALSE;
@@ -1342,6 +1358,7 @@ void transport_free(rdpTransport* transport)
 	StreamPool_Free(transport->ReceivePool);
 	CloseHandle(transport->connectedEvent);
 	CloseHandle(transport->rereadEvent);
+	CloseHandle(transport->ioEvent);
 	DeleteCriticalSection(&(transport->ReadLock));
 	DeleteCriticalSection(&(transport->WriteLock));
 	free(transport);
@@ -1497,4 +1514,13 @@ HANDLE transport_get_front_bio(rdpTransport* transport)
 
 	BIO_get_event(transport->frontBio, &hEvent);
 	return hEvent;
+}
+
+BOOL transport_io_callback_set_event(rdpTransport* transport, BOOL set)
+{
+	WINPR_ASSERT(transport);
+	transport->useIoEvent = TRUE;
+	if (!set)
+		return ResetEvent(transport->ioEvent);
+	return SetEvent(transport->ioEvent);
 }
