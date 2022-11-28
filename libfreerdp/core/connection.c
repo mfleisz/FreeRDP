@@ -394,7 +394,7 @@ BOOL rdp_client_connect(rdpRdp* rdp)
 	for (; now < dueDate; now = GetTickCount64())
 	{
 		HANDLE events[MAXIMUM_WAIT_OBJECTS] = { 0 };
-		DWORD status = 0;
+		DWORD wstatus = 0;
 		DWORD nevents = freerdp_get_event_handles(rdp->context, events, ARRAYSIZE(events));
 		if (!nevents)
 		{
@@ -402,8 +402,8 @@ BOOL rdp_client_connect(rdpRdp* rdp)
 			return FALSE;
 		}
 
-		status = WaitForMultipleObjectsEx(nevents, events, FALSE, (dueDate - now), TRUE);
-		switch (status)
+		wstatus = WaitForMultipleObjectsEx(nevents, events, FALSE, (dueDate - now), TRUE);
+		switch (wstatus)
 		{
 			case WAIT_TIMEOUT:
 				/* will make us quit with a timeout */
@@ -1584,7 +1584,9 @@ BOOL rdp_server_reactivate(rdpRdp* rdp)
 	rdp_finalize_set_flag(rdp, FINALIZE_DEACTIVATE_REACTIVATE);
 	if (!rdp_server_transition_to_state(rdp, CONNECTION_STATE_CAPABILITIES_EXCHANGE_DEMAND_ACTIVE))
 		return FALSE;
-	return rdp_peer_handle_state_demand_active(client) > 0;
+
+	state_run_t rc = rdp_peer_handle_state_demand_active(client);
+	return state_run_success(rc);
 }
 
 BOOL rdp_server_transition_to_state(rdpRdp* rdp, CONNECTION_STATE state)
@@ -1708,7 +1710,7 @@ BOOL rdp_set_state(rdpRdp* rdp, CONNECTION_STATE state)
 	return TRUE;
 }
 
-const char* rdp_get_state_string(rdpRdp* rdp)
+const char* rdp_get_state_string(const rdpRdp* rdp)
 {
 	CONNECTION_STATE state = rdp_get_state(rdp);
 	return rdp_state_string(state);

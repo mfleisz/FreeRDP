@@ -152,8 +152,6 @@ static BOOL rdp_capability_set_finish(wStream* s, UINT16 header, UINT16 type)
 static BOOL rdp_apply_general_capability_set(rdpSettings* settings, const rdpSettings* src)
 {
 	UINT16 extraFlags;
-	BYTE refreshRectSupport;
-	BYTE suppressOutputSupport;
 
 	WINPR_ASSERT(settings);
 	WINPR_ASSERT(src);
@@ -1082,8 +1080,7 @@ static BOOL rdp_apply_pointer_capability_set(rdpSettings* settings, const rdpSet
 	if (!src->ColorPointerFlag)
 		settings->ColorPointerFlag = FALSE;
 
-	if (settings->ServerMode)
-		settings->PointerCacheSize = src->PointerCacheSize;
+	settings->PointerCacheSize = src->PointerCacheSize;
 
 	return TRUE;
 }
@@ -1114,7 +1111,7 @@ static BOOL rdp_read_pointer_capability_set(wStream* s, rdpSettings* settings)
 
 	WINPR_ASSERT(settings);
 	settings->ColorPointerFlag = colorPointerFlag;
-	settings->PointerCacheSize = pointerCacheSize;
+	settings->PointerCacheSize = MAX(pointerCacheSize, colorPointerCacheSize);
 
 	return TRUE;
 }

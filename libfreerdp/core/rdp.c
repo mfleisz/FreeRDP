@@ -1674,13 +1674,10 @@ static state_run_t rdp_recv_callback_int(rdpTransport* transport, wStream* s, vo
 						else if (!nego_set_requested_protocols(rdp->nego,
 						                                       PROTOCOL_HYBRID | PROTOCOL_SSL))
 							status = STATE_RUN_FAILED;
-						else
-						{
-							if (!nego_send_negotiation_request(rdp->nego))
-								status = STATE_RUN_FAILED;
-							else if (!nla_set_state(rdp->nla, NLA_STATE_POST_NEGO))
-								status = STATE_RUN_FAILED;
-						}
+						else if (!nego_send_negotiation_request(rdp->nego))
+							status = STATE_RUN_FAILED;
+						else if (!nla_set_state(rdp->nla, NLA_STATE_POST_NEGO))
+							status = STATE_RUN_FAILED;
 					}
 					else
 					{
@@ -1697,7 +1694,7 @@ static state_run_t rdp_recv_callback_int(rdpTransport* transport, wStream* s, vo
 					if (!rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_CREATE_REQUEST))
 						status = STATE_RUN_FAILED;
 					else
-						status = STATE_RUN_TRY_AGAIN;
+						status = STATE_RUN_CONTINUE;
 				}
 			}
 			break;
@@ -1711,7 +1708,8 @@ static state_run_t rdp_recv_callback_int(rdpTransport* transport, wStream* s, vo
 			}
 			else if (!rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_CREATE_RESPONSE))
 				status = STATE_RUN_FAILED;
-
+			else if (Stream_GetRemainingLength(s) > 0)
+				status = STATE_RUN_CONTINUE;
 			break;
 
 		case CONNECTION_STATE_MCS_CREATE_RESPONSE:
@@ -1729,19 +1727,16 @@ static state_run_t rdp_recv_callback_int(rdpTransport* transport, wStream* s, vo
 					WLog_ERR(TAG, "mcs_send_erect_domain_request failure");
 					status = STATE_RUN_FAILED;
 				}
-				else
+				else if (!rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_ATTACH_USER))
+					status = STATE_RUN_FAILED;
+				else if (!mcs_send_attach_user_request(rdp->mcs))
 				{
-					if (!rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_ATTACH_USER))
-						status = STATE_RUN_FAILED;
-					else if (!mcs_send_attach_user_request(rdp->mcs))
-					{
-						WLog_ERR(TAG, "mcs_send_attach_user_request failure");
-						status = STATE_RUN_FAILED;
-					}
-					else if (!rdp_client_transition_to_state(
-					             rdp, CONNECTION_STATE_MCS_ATTACH_USER_CONFIRM))
-						status = STATE_RUN_FAILED;
+					WLog_ERR(TAG, "mcs_send_attach_user_request failure");
+					status = STATE_RUN_FAILED;
 				}
+				else if (!rdp_client_transition_to_state(rdp,
+				                                         CONNECTION_STATE_MCS_ATTACH_USER_CONFIRM))
+					status = STATE_RUN_FAILED;
 			}
 			break;
 
@@ -1751,19 +1746,17 @@ static state_run_t rdp_recv_callback_int(rdpTransport* transport, wStream* s, vo
 				WLog_ERR(TAG, "mcs_recv_attach_user_confirm failure");
 				status = STATE_RUN_FAILED;
 			}
-			else
+			else if (!rdp_client_transition_to_state(rdp,
+			                                         CONNECTION_STATE_MCS_CHANNEL_JOIN_REQUEST))
+				status = STATE_RUN_FAILED;
+			else if (!mcs_send_channel_join_request(rdp->mcs, rdp->mcs->userId))
 			{
-				if (!rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_CHANNEL_JOIN_REQUEST))
-					status = STATE_RUN_FAILED;
-				else if (!mcs_send_channel_join_request(rdp->mcs, rdp->mcs->userId))
-				{
-					WLog_ERR(TAG, "mcs_send_channel_join_request failure");
-					status = STATE_RUN_FAILED;
-				}
-				else if (!rdp_client_transition_to_state(
-				             rdp, CONNECTION_STATE_MCS_CHANNEL_JOIN_RESPONSE))
-					status = STATE_RUN_FAILED;
+				WLog_ERR(TAG, "mcs_send_channel_join_request failure");
+				status = STATE_RUN_FAILED;
 			}
+			else if (!rdp_client_transition_to_state(rdp,
+			                                         CONNECTION_STATE_MCS_CHANNEL_JOIN_RESPONSE))
+				status = STATE_RUN_FAILED;
 			break;
 
 		case CONNECTION_STATE_MCS_CHANNEL_JOIN_RESPONSE:
@@ -1830,7 +1823,7 @@ static state_run_t rdp_recv_callback_int(rdpTransport* transport, wStream* s, vo
 					        rdp, CONNECTION_STATE_CAPABILITIES_EXCHANGE_CONFIRM_ACTIVE))
 						status = STATE_RUN_FAILED;
 					else
-						status = STATE_RUN_TRY_AGAIN;
+						status = STATE_RUN_CONTINUE;
 				}
 				else
 				{
@@ -1977,14 +1970,21 @@ state_run_t rdp_recv_callback(rdpTransport* transport, wStream* s, void* extra)
 	do
 	{
 		const rdpRdp* rdp = context->rdp;
-		const char* old = rdp_get_state_string(rdp);
 
 		if (rc == STATE_RUN_TRY_AGAIN)
 			Stream_SetPosition(s, start);
+
+		const char* old = rdp_get_state_string(rdp);
+		const size_t orem = Stream_GetRemainingLength(s);
 		rc = rdp_recv_callback_int(transport, s, extra);
 
-		WLog_VRB(TAG, "(client)[%s -> %s] current return %s", old, rdp_get_state_string(rdp),
-		         state_run_result_string(rc, buffer, sizeof(buffer)));
+		const char* now = rdp_get_state_string(rdp);
+		const size_t rem = Stream_GetRemainingLength(s);
+
+		WLog_VRB(TAG,
+		         "(client)[%s -> %s] current return %s [feeding %" PRIuz " bytes, %" PRIuz
+		         " bytes not processed]",
+		         old, now, state_run_result_string(rc, buffer, sizeof(buffer)), orem, rem);
 	} while ((rc == STATE_RUN_TRY_AGAIN) || (rc == STATE_RUN_CONTINUE));
 	return rc;
 }

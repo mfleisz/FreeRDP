@@ -533,13 +533,9 @@ void WTSVirtualChannelManagerGetFileDescriptor(HANDLE hServer, void** fds, int* 
 BOOL WTSVirtualChannelManagerOpen(HANDLE hServer)
 {
 	WTSVirtualChannelManager* vcm = (WTSVirtualChannelManager*)hServer;
-	const freerdp_peer* client;
 
 	if (!vcm)
 		return FALSE;
-
-	WINPR_ASSERT(vcm->client);
-	client = vcm->client;
 
 	if (vcm->drdynvc_state == DRDYNVC_STATE_NONE)
 	{
@@ -1577,7 +1573,7 @@ BOOL WINAPI FreeRDP_WTSVirtualChannelWrite(HANDLE hChannelHandle, PCHAR Buffer, 
 			Stream_Seek_UINT8(s);
 			cbChId = wts_write_variable_uint(s, channel->channelId);
 
-			if (first && (Length > (UINT32)Stream_GetRemainingLength(s)))
+			if (first && (Length > Stream_GetRemainingLength(s)))
 			{
 				cbLen = wts_write_variable_uint(s, Length);
 				buffer[0] = (DATA_FIRST_PDU << 4) | (cbLen << 2) | cbChId;

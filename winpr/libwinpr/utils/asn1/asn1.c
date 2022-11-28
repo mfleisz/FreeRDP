@@ -23,7 +23,8 @@
 #include <winpr/wlog.h>
 #include <winpr/crt.h>
 
-#define TAG "winpr.asn1"
+#include "../../log.h"
+#define TAG WINPR_TAG("asn1")
 
 typedef struct
 {
@@ -704,8 +705,9 @@ size_t WinPrAsn1EncGeneralString(WinPrAsn1Encoder* enc, WinPrAsn1_STRING str)
 	return WinPrAsn1EncMemoryChunk(enc, ER_TAG_GENERAL_STRING, &chunk);
 }
 
-size_t WinPrAsn1EncContextualMemoryChunk(WinPrAsn1Encoder* enc, BYTE wireType,
-                                         WinPrAsn1_tagId tagId, const WinPrAsn1_MemoryChunk* mchunk)
+static size_t WinPrAsn1EncContextualMemoryChunk(WinPrAsn1Encoder* enc, BYTE wireType,
+                                                WinPrAsn1_tagId tagId,
+                                                const WinPrAsn1_MemoryChunk* mchunk)
 {
 	wStream s;
 	size_t len, outLen;
@@ -892,7 +894,7 @@ static size_t readLen(wStream* s, size_t* len, BOOL derCheck)
 	size_t retLen;
 	size_t ret = 0;
 
-	if (Stream_GetRemainingLength(s) < 1)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 		return 0;
 
 	Stream_Read_UINT8(s, retLen);
@@ -902,7 +904,7 @@ static size_t readLen(wStream* s, size_t* len, BOOL derCheck)
 		BYTE tmp;
 		size_t nBytes = (retLen & 0x7f);
 
-		if (Stream_GetRemainingLength(s) < nBytes)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, nBytes))
 			return 0;
 
 		ret += nBytes;
@@ -928,7 +930,7 @@ static size_t readTagAndLen(WinPrAsn1Decoder* dec, wStream* s, WinPrAsn1_tag* ta
 {
 	size_t lenBytes;
 
-	if (Stream_GetRemainingLength(s) < 1)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 		return FALSE;
 
 	Stream_Read(s, tag, 1);
@@ -973,7 +975,7 @@ size_t WinPrAsn1DecReadTagLenValue(WinPrAsn1Decoder* dec, WinPrAsn1_tag* tag, si
 	if (!ret)
 		return 0;
 
-	if (Stream_GetRemainingLength(&dec->source) < *len)
+	if (!Stream_CheckAndLogRequiredLength(TAG, &dec->source, *len))
 		return 0;
 
 	value->encoding = dec->encoding;
@@ -995,7 +997,7 @@ size_t WinPrAsn1DecReadBoolean(WinPrAsn1Decoder* dec, WinPrAsn1_BOOL* target)
 	ret = readTagAndLen(dec, &dec->source, &tag, &len);
 	if (!ret || tag != ER_TAG_BOOLEAN)
 		return 0;
-	if (Stream_GetRemainingLength(&dec->source) < len || len != 1)
+	if (!Stream_CheckAndLogRequiredLength(TAG, &dec->source, len) || len != 1)
 		return 0;
 
 	Stream_Read_UINT8(&dec->source, v);
@@ -1017,7 +1019,7 @@ static size_t WinPrAsn1DecReadIntegerLike(WinPrAsn1Decoder* dec, WinPrAsn1_tag e
 	ret = readTagAndLen(dec, &dec->source, &tag, &len);
 	if (!ret || tag != expectedTag)
 		return 0;
-	if (Stream_GetRemainingLength(&dec->source) < len || len > 4)
+	if (!Stream_CheckAndLogRequiredLength(TAG, &dec->source, len) || len > 4)
 		return 0;
 
 	ret += len;
@@ -1054,7 +1056,7 @@ static size_t WinPrAsn1DecReadMemoryChunkLike(WinPrAsn1Decoder* dec, WinPrAsn1_t
 	ret = readTagAndLen(dec, &dec->source, &tag, &len);
 	if (!ret || tag != expectedTag)
 		return 0;
-	if (Stream_GetRemainingLength(&dec->source) < len)
+	if (!Stream_CheckAndLogRequiredLength(TAG, &dec->source, len))
 		return 0;
 
 	ret += len;
@@ -1102,7 +1104,7 @@ size_t WinPrAsn1DecReadIA5String(WinPrAsn1Decoder* dec, WinPrAsn1_IA5STRING* tar
 	ret = readTagAndLen(dec, &dec->source, &tag, &len);
 	if (!ret || tag != ER_TAG_IA5STRING)
 		return 0;
-	if (Stream_GetRemainingLength(&dec->source) < len)
+	if (!Stream_CheckAndLogRequiredLength(TAG, &dec->source, len))
 		return 0;
 
 	ret += len;
@@ -1129,7 +1131,7 @@ size_t WinPrAsn1DecReadGeneralString(WinPrAsn1Decoder* dec, WinPrAsn1_STRING* ta
 	ret = readTagAndLen(dec, &dec->source, &tag, &len);
 	if (!ret || tag != ER_TAG_GENERAL_STRING)
 		return 0;
-	if (Stream_GetRemainingLength(&dec->source) < len)
+	if (!Stream_CheckAndLogRequiredLength(TAG, &dec->source, len))
 		return 0;
 
 	ret += len;
@@ -1177,7 +1179,7 @@ size_t WinPrAsn1DecReadUtcTime(WinPrAsn1Decoder* dec, WinPrAsn1_UTCTIME* target)
 	ret = readTagAndLen(dec, &dec->source, &tag, &len);
 	if (!ret || tag != ER_TAG_UTCTIME)
 		return 0;
-	if (Stream_GetRemainingLength(&dec->source) < len || len < 12)
+	if (!Stream_CheckAndLogRequiredLength(TAG, &dec->source, len) || len < 12)
 		return 0;
 
 	Stream_StaticConstInit(s, Stream_Pointer(&dec->source), len);
@@ -1245,7 +1247,7 @@ static size_t readConstructed(WinPrAsn1Decoder* dec, wStream* s, WinPrAsn1_tag* 
 	size_t ret;
 
 	ret = readTagAndLen(dec, s, tag, &len);
-	if (!ret || Stream_GetRemainingLength(s) < len)
+	if (!ret || !Stream_CheckAndLogRequiredLength(TAG, s, len))
 		return 0;
 
 	target->encoding = dec->encoding;
@@ -1338,8 +1340,8 @@ size_t WinPrAsn1DecPeekContextualTag(WinPrAsn1Decoder* dec, WinPrAsn1_tagId* tag
 	return readContextualTag(dec, &staticS, tagId, ctxtDec);
 }
 
-size_t readContextualHeader(WinPrAsn1Decoder* dec, WinPrAsn1_tagId tagId, BOOL* error,
-                            WinPrAsn1Decoder* content)
+static size_t readContextualHeader(WinPrAsn1Decoder* dec, WinPrAsn1_tagId tagId, BOOL* error,
+                                   WinPrAsn1Decoder* content)
 {
 	WinPrAsn1_tag ftag;
 	size_t ret;
