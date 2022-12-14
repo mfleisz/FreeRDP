@@ -67,6 +67,12 @@ struct xf_rail_icon_cache
 	xfRailIcon scratch;
 };
 
+typedef struct
+{
+	xfContext* xfc;
+	const RECTANGLE_16* rect;
+} rail_paint_fn_arg_t;
+
 void xf_rail_enable_remoteapp_mode(xfContext* xfc)
 {
 	if (!xfc->remote_app)
@@ -85,6 +91,7 @@ void xf_rail_disable_remoteapp_mode(xfContext* xfc)
 		xfc->remote_app = FALSE;
 		xf_DestroyDummyWindow(xfc, xfc->drawable);
 		xf_create_window(xfc);
+		xf_create_image(xfc);
 	}
 }
 
@@ -209,63 +216,61 @@ void xf_rail_end_local_move(xfContext* xfc, xfAppWindow* appWindow)
 	appWindow->local_move.state = LMS_TERMINATING;
 }
 
-static void xf_rail_invalidate_region(xfContext* xfc, REGION16* invalidRegion)
+BOOL xf_rail_paint_surface(xfContext* xfc, UINT64 windowId, const RECTANGLE_16* rect)
 {
-	int index;
-	int count = 0;
-	RECTANGLE_16 updateRect;
-	RECTANGLE_16 windowRect;
-	ULONG_PTR* pKeys = NULL;
-	xfAppWindow* appWindow;
-	const RECTANGLE_16* extents;
-	REGION16 windowInvalidRegion;
+	xfAppWindow* appWindow = xf_rail_get_window(xfc, windowId);
+
+	WINPR_ASSERT(rect);
+
+	if (!appWindow)
+		return FALSE;
+
+	const RECTANGLE_16 windowRect = { .left = MAX(appWindow->x, 0),
+		                              .top = MAX(appWindow->y, 0),
+		                              .right = MAX(appWindow->x + appWindow->width, 0),
+		                              .bottom = MAX(appWindow->y + appWindow->height, 0) };
+
+	REGION16 windowInvalidRegion = { 0 };
 	region16_init(&windowInvalidRegion);
-	if (xfc->railWindows)
-		count = HashTable_GetKeys(xfc->railWindows, &pKeys);
+	region16_union_rect(&windowInvalidRegion, &windowInvalidRegion, &windowRect);
+	region16_intersect_rect(&windowInvalidRegion, &windowInvalidRegion, rect);
 
-	for (index = 0; index < count; index++)
+	if (!region16_is_empty(&windowInvalidRegion))
 	{
-		appWindow = xf_rail_get_window(xfc, *(UINT64*)pKeys[index]);
+		const RECTANGLE_16* extents = region16_extents(&windowInvalidRegion);
+		const RECTANGLE_16 updateRect = { .left = extents->left - appWindow->x,
+			                              .top = extents->top - appWindow->y,
+			                              .right = extents->right - appWindow->x,
+			                              .bottom = extents->bottom - appWindow->y };
 
-		if (appWindow)
-		{
-			windowRect.left = MAX(appWindow->x, 0);
-			windowRect.top = MAX(appWindow->y, 0);
-			windowRect.right = MAX(appWindow->x + appWindow->width, 0);
-			windowRect.bottom = MAX(appWindow->y + appWindow->height, 0);
-			region16_clear(&windowInvalidRegion);
-			region16_intersect_rect(&windowInvalidRegion, invalidRegion, &windowRect);
-
-			if (!region16_is_empty(&windowInvalidRegion))
-			{
-				extents = region16_extents(&windowInvalidRegion);
-				updateRect.left = extents->left - appWindow->x;
-				updateRect.top = extents->top - appWindow->y;
-				updateRect.right = extents->right - appWindow->x;
-				updateRect.bottom = extents->bottom - appWindow->y;
-				xf_UpdateWindowArea(xfc, appWindow, updateRect.left, updateRect.top,
-				                    updateRect.right - updateRect.left,
-				                    updateRect.bottom - updateRect.top);
-			}
-		}
+		xf_UpdateWindowArea(xfc, appWindow, updateRect.left, updateRect.top,
+		                    updateRect.right - updateRect.left, updateRect.bottom - updateRect.top);
 	}
-
-	free(pKeys);
 	region16_uninit(&windowInvalidRegion);
+	return TRUE;
 }
 
-void xf_rail_paint(xfContext* xfc, INT32 uleft, INT32 utop, UINT32 uright, UINT32 ubottom)
+static BOOL rail_paint_fn(const void* pvkey, void* value, void* pvarg)
 {
-	REGION16 invalidRegion;
-	RECTANGLE_16 invalidRect;
-	invalidRect.left = uleft;
-	invalidRect.top = utop;
-	invalidRect.right = uright;
-	invalidRect.bottom = ubottom;
-	region16_init(&invalidRegion);
-	region16_union_rect(&invalidRegion, &invalidRegion, &invalidRect);
-	xf_rail_invalidate_region(xfc, &invalidRegion);
-	region16_uninit(&invalidRegion);
+	rail_paint_fn_arg_t* arg = pvarg;
+	WINPR_ASSERT(pvkey);
+	WINPR_ASSERT(arg);
+
+	const UINT64 key = *(const UINT64*)pvkey;
+	return xf_rail_paint_surface(arg->xfc, key, arg->rect);
+}
+
+BOOL xf_rail_paint(xfContext* xfc, const RECTANGLE_16* rect)
+{
+	rail_paint_fn_arg_t arg = { .xfc = xfc, .rect = rect };
+
+	WINPR_ASSERT(xfc);
+	WINPR_ASSERT(rect);
+
+	if (!xfc->railWindows)
+		return TRUE;
+
+	return HashTable_Foreach(xfc->railWindows, rail_paint_fn, &arg);
 }
 
 /* RemoteApp Core Protocol Extension */
@@ -295,8 +300,14 @@ static BOOL xf_rail_window_common(rdpContext* context, const WINDOW_ORDER_INFO* 
 		/* Ensure window always gets a window title */
 		if (fieldFlags & WINDOW_ORDER_FIELD_TITLE)
 		{
+			union
+			{
+				WCHAR* wc;
+				BYTE* b;
+			} cnv;
 			char* title = NULL;
 
+			cnv.b = windowState->titleInfo.string;
 			if (windowState->titleInfo.length == 0)
 			{
 				if (!(title = _strdup("")))
@@ -305,9 +316,8 @@ static BOOL xf_rail_window_common(rdpContext* context, const WINDOW_ORDER_INFO* 
 					/* error handled below */
 				}
 			}
-			else if (ConvertFromUnicode(CP_UTF8, 0, (WCHAR*)windowState->titleInfo.string,
-			                            windowState->titleInfo.length / 2, &title, 0, NULL,
-			                            NULL) < 1)
+			else if (!(title = ConvertWCharNToUtf8Alloc(
+			               cnv.wc, windowState->titleInfo.length / sizeof(WCHAR), NULL)))
 			{
 				WLog_ERR(TAG, "failed to convert window title");
 				/* error handled below */
@@ -390,7 +400,13 @@ static BOOL xf_rail_window_common(rdpContext* context, const WINDOW_ORDER_INFO* 
 	if (fieldFlags & WINDOW_ORDER_FIELD_TITLE)
 	{
 		char* title = NULL;
+		union
+		{
+			WCHAR* wc;
+			BYTE* b;
+		} cnv;
 
+		cnv.b = windowState->titleInfo.string;
 		if (windowState->titleInfo.length == 0)
 		{
 			if (!(title = _strdup("")))
@@ -399,8 +415,8 @@ static BOOL xf_rail_window_common(rdpContext* context, const WINDOW_ORDER_INFO* 
 				return FALSE;
 			}
 		}
-		else if (ConvertFromUnicode(CP_UTF8, 0, (WCHAR*)windowState->titleInfo.string,
-		                            windowState->titleInfo.length / 2, &title, 0, NULL, NULL) < 1)
+		else if (!(title = ConvertWCharNToUtf8Alloc(
+		               cnv.wc, windowState->titleInfo.length / sizeof(WCHAR), NULL)))
 		{
 			WLog_ERR(TAG, "failed to convert window title");
 			return FALSE;

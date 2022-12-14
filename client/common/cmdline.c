@@ -2059,7 +2059,7 @@ static int parse_kbd_options(rdpSettings* settings, const COMMAND_LINE_ARGUMENT_
 			if (option_starts_with("remap:", val))
 			{
 				/* Append this new occurance to the already existing list */
-				char* now = strdup(&val[6]);
+				char* now = _strdup(&val[6]);
 				const char* old =
 				    freerdp_settings_get_string(settings, FreeRDP_KeyboardRemappingList);
 
@@ -2206,7 +2206,7 @@ static int parse_app_options(rdpSettings* settings, const COMMAND_LINE_ARGUMENT_
 			for (size_t y = 0; y < ARRAYSIZE(amap); y++)
 			{
 				const struct app_map* cur = &amap[y];
-				if (option_starts_with(val, cur->name))
+				if (option_starts_with(cur->name, val))
 				{
 					const char* xval = &val[strlen(cur->name)];
 					if (cur->fkt)
@@ -3899,11 +3899,6 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 #endif
 		}
 #endif
-		CommandLineSwitchCase(arg, "fast-path")
-		{
-			settings->FastPathInput = enable;
-			settings->FastPathOutput = enable;
-		}
 		CommandLineSwitchCase(arg, "max-fast-path-size")
 		{
 			LONGLONG val;
@@ -3912,19 +3907,6 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 
 			settings->MultifragMaxRequestSize = (UINT32)val;
-		}
-		CommandLineSwitchCase(arg, "max-loop-time")
-		{
-			LONGLONG val;
-
-			if (!value_to_int(arg->Value, &val, -1, UINT32_MAX))
-				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-
-			if (val < 0)
-				settings->MaxTimeInCheckLoop =
-				    10 * 60 * 60 * 1000; /* 10 hours can be considered as infinite */
-			else
-				settings->MaxTimeInCheckLoop = (UINT32)val;
 		}
 		CommandLineSwitchCase(arg, "auto-request-control")
 		{

@@ -95,7 +95,7 @@ static const WinPrAsn1_OID kerberos_wrong_OID = { 9,
 	                                              (BYTE*)"\x2a\x86\x48\x82\xf7\x12\x01\x02\x02" };
 static const WinPrAsn1_OID ntlm_OID = { 10, (BYTE*)"\x2b\x06\x01\x04\x01\x82\x37\x02\x02\x0a" };
 
-#ifdef WITH_GSSAPI
+#ifdef WITH_KRB5
 static const SecPkg SecPkgTable[] = {
 	{ KERBEROS_SSP_NAME, &KERBEROS_SecurityFunctionTableA, &KERBEROS_SecurityFunctionTableW },
 	{ NTLM_SSP_NAME, &NTLM_SecurityFunctionTableA, &NTLM_SecurityFunctionTableW }
@@ -296,7 +296,7 @@ static BOOL negotiate_get_config(void* pAuthData, BOOL* kerberos, BOOL* ntlm)
 	WINPR_ASSERT(kerberos);
 	WINPR_ASSERT(ntlm);
 
-#if !defined(WITH_GSS_NO_NTLM_FALLBACK)
+#if !defined(WITH_KRB5_NO_NTLM_FALLBACK)
 	*ntlm = TRUE;
 #else
 	*ntlm = FALSE;
@@ -316,7 +316,7 @@ static BOOL negotiate_get_config(void* pAuthData, BOOL* kerberos, BOOL* ntlm)
 		if (negotiate_get_dword(hKey, "kerberos", &dwValue))
 			*kerberos = (dwValue != 0) ? TRUE : FALSE;
 
-#if !defined(WITH_GSS_NO_NTLM_FALLBACK)
+#if !defined(WITH_KRB5_NO_NTLM_FALLBACK)
 		if (negotiate_get_dword(hKey, "ntlm", &dwValue))
 			*ntlm = (dwValue != 0) ? TRUE : FALSE;
 #endif
@@ -388,7 +388,7 @@ static BOOL negotiate_write_neg_token(PSecBuffer output_buffer, NegToken* token)
 	/* mechToken [2] OCTET STRING */
 	if (token->mechToken.cbBuffer)
 	{
-		if (!WinPrAsn1EncContextualOctetString(enc, 2, &mechToken))
+		if (WinPrAsn1EncContextualOctetString(enc, 2, &mechToken) == 0)
 			goto cleanup;
 		WLog_DBG(TAG, "\tmechToken [2] (%li bytes)", token->mechToken.cbBuffer);
 	}
@@ -396,7 +396,7 @@ static BOOL negotiate_write_neg_token(PSecBuffer output_buffer, NegToken* token)
 	/* mechListMIC [3] OCTET STRING */
 	if (token->mic.cbBuffer)
 	{
-		if (!WinPrAsn1EncContextualOctetString(enc, 3, &mechListMic))
+		if (WinPrAsn1EncContextualOctetString(enc, 3, &mechListMic) == 0)
 			goto cleanup;
 		WLog_DBG(TAG, "\tmechListMIC [3] (%li bytes)", token->mic.cbBuffer);
 	}
@@ -680,9 +680,6 @@ static SECURITY_STATUS SEC_ENTRY negotiate_InitializeSecurityContextW(
 				}
 
 				init_context.mech = cred->mech;
-#ifndef WITH_SPNEGO
-				break;
-#endif
 			}
 
 			if (!WinPrAsn1EncOID(enc, cred->mech->oid))
@@ -694,7 +691,6 @@ static SECURITY_STATUS SEC_ENTRY negotiate_InitializeSecurityContextW(
 		if (!init_context.mech)
 			goto cleanup;
 
-#ifdef WITH_SPNEGO
 		/* If the only available mech is NTLM use it directly otherwise use spnego */
 		if (init_context.mech->oid == &ntlm_OID)
 		{
@@ -708,10 +704,6 @@ static SECURITY_STATUS SEC_ENTRY negotiate_InitializeSecurityContextW(
 			init_context.mechTypes.BufferType = SECBUFFER_DATA;
 			init_context.mechTypes.cbBuffer = WinPrAsn1EncEndContainer(enc);
 		}
-#else
-		init_context.spnego = FALSE;
-		output_buffer->cbBuffer = output_token.mechToken.cbBuffer;
-#endif
 
 		/* Allocate memory for the new context */
 		context = negotiate_ContextNew(&init_context);
@@ -881,7 +873,8 @@ static SECURITY_STATUS SEC_ENTRY negotiate_InitializeSecurityContextA(
 
 	if (pszTargetName)
 	{
-		if (ConvertToUnicode(CP_UTF8, 0, pszTargetName, -1, &pszTargetNameW, 0) <= 0)
+		pszTargetNameW = ConvertUtf8ToWCharAlloc(pszTargetName, NULL);
+		if (!pszTargetNameW)
 			return SEC_E_INTERNAL_ERROR;
 	}
 

@@ -12,6 +12,7 @@ DEB_CMAKE_EXTRA_FLAGS :=  -GNinja \
                           -DWITH_PULSE=ON \
                           -DWITH_CHANNELS=ON \
                           -DWITH_CUPS=ON \
+                          -DWITH_KRB5=ON \
                           -DWITH_PCSC=ON \
                           -DWITH_FFMPEG=ON \
                           -DWITH_DSP_FFMPEG=ON \
@@ -43,13 +44,17 @@ override_dh_shlibdeps:
 override_dh_strip:
 	dh_strip --dbg-package=freerdp-nightly-dbg
 
+override_dh_missing:
+	dh_missing --fail-missing
+
 override_dh_install:
 	mkdir -p debian/tmp/opt/freerdp-nightly/lib/cmake/
 	rm -rf debian/tmp/opt/freerdp-nightly/lib/freerdp3/*.a
 
-	dh_install --fail-missing
+	dh_install
 
 override_dh_auto_test:
+	true
 
 override_dh_clean:
 	rm -f config.h

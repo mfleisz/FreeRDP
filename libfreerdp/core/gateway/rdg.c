@@ -43,11 +43,7 @@
 
 #define TAG FREERDP_TAG("core.gateway.rdg")
 
-#if defined(_WIN32) || defined(WITH_SPNEGO)
 #define AUTH_PKG NEGO_SSP_NAME
-#else
-#define AUTH_PKG NTLM_SSP_NAME
-#endif
 
 /* HTTP channel response fields present flags. */
 #define HTTP_CHANNEL_RESPONSE_FIELD_CHANNELID 0x1
@@ -1037,23 +1033,23 @@ static BOOL rdg_send_tunnel_request(rdpRdg* rdg)
 	UINT32 packetSize = 16;
 	UINT16 fieldsPresent = 0;
 	WCHAR* PAACookie = NULL;
-	int PAACookieLen = 0;
+	size_t PAACookieLen = 0;
 	const UINT32 capabilities = HTTP_CAPABILITY_TYPE_QUAR_SOH |
 	                            HTTP_CAPABILITY_MESSAGING_CONSENT_SIGN |
 	                            HTTP_CAPABILITY_MESSAGING_SERVICE_MSG;
 
 	if (rdg->extAuth == HTTP_EXTENDED_AUTH_PAA)
 	{
-		PAACookieLen =
-		    ConvertToUnicode(CP_UTF8, 0, rdg->settings->GatewayAccessToken, -1, &PAACookie, 0);
+		PAACookie = ConvertUtf8ToWCharAlloc(rdg->settings->GatewayAccessToken, &PAACookieLen);
 
-		if (!PAACookie || (PAACookieLen < 0) || (PAACookieLen > UINT16_MAX / 2))
+		if (!PAACookie || (PAACookieLen > UINT16_MAX / sizeof(WCHAR)))
 		{
 			free(PAACookie);
 			return FALSE;
 		}
 
-		packetSize += 2 + (UINT32)PAACookieLen * sizeof(WCHAR);
+		PAACookieLen += 1; /* include \0 */
+		packetSize += 2 + (UINT32)(PAACookieLen) * sizeof(WCHAR);
 		fieldsPresent = HTTP_TUNNEL_PACKET_FIELD_PAA_COOKIE;
 	}
 
@@ -1074,7 +1070,7 @@ static BOOL rdg_send_tunnel_request(rdpRdg* rdg)
 
 	if (PAACookie)
 	{
-		Stream_Write_UINT16(s, (UINT16)PAACookieLen * 2); /* PAA cookie string length */
+		Stream_Write_UINT16(s, (UINT16)PAACookieLen * sizeof(WCHAR)); /* PAA cookie string length */
 		Stream_Write_UTF16_String(s, PAACookie, (size_t)PAACookieLen);
 	}
 
@@ -1095,18 +1091,20 @@ static BOOL rdg_send_tunnel_authorization(rdpRdg* rdg)
 {
 	wStream* s;
 	BOOL status;
-	WCHAR* clientName = NULL;
-	UINT32 packetSize;
-	int clientNameLen =
-	    ConvertToUnicode(CP_UTF8, 0, rdg->settings->ClientHostname, -1, &clientName, 0);
+	WINPR_ASSERT(rdg);
+	size_t clientNameLen = 0;
+	WCHAR* clientName =
+	    freerdp_settings_get_string_as_utf16(rdg->settings, FreeRDP_ClientHostname, &clientNameLen);
 
-	if (!clientName || (clientNameLen < 0) || (clientNameLen > UINT16_MAX / 2))
+	if (!clientName || (clientNameLen >= UINT16_MAX / sizeof(WCHAR)))
 	{
 		free(clientName);
 		return FALSE;
 	}
 
-	packetSize = 12 + (UINT32)clientNameLen * sizeof(WCHAR);
+	clientNameLen++; // length including terminating '\0'
+
+	size_t packetSize = 12ull + clientNameLen * sizeof(WCHAR);
 	s = Stream_New(NULL, packetSize);
 
 	if (!s)
@@ -1119,7 +1117,7 @@ static BOOL rdg_send_tunnel_authorization(rdpRdg* rdg)
 	Stream_Write_UINT16(s, 0);                         /* Reserved (2 bytes) */
 	Stream_Write_UINT32(s, packetSize);                /* PacketLength (4 bytes) */
 	Stream_Write_UINT16(s, 0);                         /* FieldsPresent (2 bytes) */
-	Stream_Write_UINT16(s, (UINT16)clientNameLen * 2); /* Client name string length */
+	Stream_Write_UINT16(s, (UINT16)clientNameLen * sizeof(WCHAR)); /* Client name string length */
 	Stream_Write_UTF16_String(s, clientName, (size_t)clientNameLen);
 	Stream_SealLength(s);
 	status = rdg_write_packet(rdg, s);
@@ -1139,13 +1137,18 @@ static BOOL rdg_send_channel_create(rdpRdg* rdg)
 	wStream* s = NULL;
 	BOOL status = FALSE;
 	WCHAR* serverName = NULL;
-	int serverNameLen =
-	    ConvertToUnicode(CP_UTF8, 0, rdg->settings->ServerHostname, -1, &serverName, 0);
-	UINT32 packetSize = 16 + ((UINT32)serverNameLen) * 2;
+	size_t serverNameLen = 0;
 
-	if ((serverNameLen < 0) || (serverNameLen > UINT16_MAX / 2))
+	WINPR_ASSERT(rdg);
+	serverName =
+	    freerdp_settings_get_string_as_utf16(rdg->settings, FreeRDP_ServerHostname, &serverNameLen);
+	ConvertUtf8ToWCharAlloc(rdg->settings->ServerHostname, &serverNameLen);
+
+	if (!serverName || (serverNameLen >= UINT16_MAX / sizeof(WCHAR)))
 		goto fail;
 
+	serverNameLen++; // length including terminating '\0'
+	size_t packetSize = 16ull + serverNameLen * sizeof(WCHAR);
 	s = Stream_New(NULL, packetSize);
 
 	if (!s)
@@ -1158,7 +1161,7 @@ static BOOL rdg_send_channel_create(rdpRdg* rdg)
 	Stream_Write_UINT8(s, 0);                        /* Number of alternative resources (1 byte) */
 	Stream_Write_UINT16(s, (UINT16)rdg->settings->ServerPort); /* Resource port (2 bytes) */
 	Stream_Write_UINT16(s, 3);                                 /* Protocol number (2 bytes) */
-	Stream_Write_UINT16(s, (UINT16)serverNameLen * 2);
+	Stream_Write_UINT16(s, (UINT16)serverNameLen * sizeof(WCHAR));
 	Stream_Write_UTF16_String(s, serverName, (size_t)serverNameLen);
 	Stream_SealLength(s);
 	status = rdg_write_packet(rdg, s);
@@ -1329,7 +1332,7 @@ static BOOL rdg_process_handshake_response(rdpRdg* rdg, wStream* s)
 	         ", extendedAuth=%s",
 	         error, verMajor, verMinor, serverVersion, extended_auth_to_string(extendedAuth));
 
-	if (FAILED(errorCode))
+	if (FAILED((HRESULT)errorCode))
 	{
 		WLog_ERR(TAG, "Handshake error %s", error);
 		freerdp_set_last_error_log(rdg->context, errorCode);
@@ -1429,7 +1432,7 @@ static BOOL rdg_process_tunnel_response(rdpRdg* rdg, wStream* s)
 	WLog_DBG(TAG, "serverVersion=%" PRId16 ", errorCode=%s, fieldsPresent=%s", serverVersion, error,
 	         tunnel_response_fields_present_to_string(fieldsPresent));
 
-	if (FAILED(errorCode))
+	if (FAILED((HRESULT)errorCode))
 	{
 		WLog_ERR(TAG, "Tunnel creation error %s", error);
 		freerdp_set_last_error_log(rdg->context, errorCode);
@@ -1464,7 +1467,8 @@ static BOOL rdg_process_tunnel_authorization_response(rdpRdg* rdg, wStream* s)
 	WLog_DBG(TAG, "errorCode=%s, fieldsPresent=%s", error,
 	         tunnel_authorization_response_fields_present_to_string(fieldsPresent));
 
-	if (FAILED(errorCode))
+	/* [MS-TSGU] 3.7.5.2.7 */
+	if (errorCode != S_OK && errorCode != E_PROXY_QUARANTINE_ACCESSDENIED)
 	{
 		WLog_ERR(TAG, "Tunnel authorization error %s", error);
 		freerdp_set_last_error_log(rdg->context, errorCode);
@@ -1543,7 +1547,7 @@ static BOOL rdg_process_channel_response(rdpRdg* rdg, wStream* s)
 	WLog_DBG(TAG, "channel response errorCode=%s, fieldsPresent=%s", error,
 	         channel_response_fields_present_to_string(fieldsPresent));
 
-	if (FAILED(errorCode))
+	if (FAILED((HRESULT)errorCode))
 	{
 		WLog_ERR(TAG, "channel response errorCode=%s, fieldsPresent=%s", error,
 		         channel_response_fields_present_to_string(fieldsPresent));

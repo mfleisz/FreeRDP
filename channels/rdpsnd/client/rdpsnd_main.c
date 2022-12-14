@@ -110,6 +110,8 @@ struct rdpsnd_plugin
 	UINT16 wVersion;
 	UINT32 volume;
 	BOOL applyVolume;
+
+	size_t references;
 };
 
 static const char* rdpsnd_is_dyn_str(BOOL dynamic)
@@ -1304,13 +1306,24 @@ static UINT rdpsnd_virtual_channel_event_disconnected(rdpsndPlugin* rdpsnd)
 
 static void _queue_free(void* obj)
 {
-	wStream* s = obj;
+	wMessage* msg = obj;
+	if (!msg)
+		return;
+	if (msg->id != 0)
+		return;
+	wStream* s = msg->wParam;
 	Stream_Release(s);
 }
 
 static void free_internals(rdpsndPlugin* rdpsnd)
 {
 	if (!rdpsnd)
+		return;
+
+	if (rdpsnd->references > 0)
+		rdpsnd->references--;
+
+	if (rdpsnd->references > 0)
 		return;
 
 	freerdp_dsp_context_free(rdpsnd->dsp_context);
@@ -1336,6 +1349,7 @@ static BOOL allocate_internals(rdpsndPlugin* rdpsnd)
 		if (!rdpsnd->dsp_context)
 			return FALSE;
 	}
+	rdpsnd->references++;
 
 	return TRUE;
 }
@@ -1353,8 +1367,20 @@ static DWORD WINAPI play_thread(LPVOID arg)
 		int rc;
 		wMessage message;
 		wStream* s;
-		HANDLE handle = MessageQueue_Event(rdpsnd->queue);
-		WaitForSingleObject(handle, INFINITE);
+		DWORD status;
+		DWORD nCount = 0;
+		HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
+
+		handles[nCount++] = MessageQueue_Event(rdpsnd->queue);
+		handles[nCount++] = freerdp_abort_event(rdpsnd->rdpcontext);
+		status = WaitForMultipleObjects(nCount, handles, FALSE, INFINITE);
+		switch (status)
+		{
+			case WAIT_OBJECT_0:
+				break;
+			default:
+				return ERROR_TIMEOUT;
+		}
 
 		rc = MessageQueue_Peek(rdpsnd->queue, &message, TRUE);
 		if (rc < 1)
@@ -1649,7 +1675,7 @@ static UINT rdpsnd_on_new_channel_connection(IWTSListenerCallback* pListenerCall
 	callback->channel_mgr = listener_callback->channel_mgr;
 	callback->channel = pChannel;
 	listener_callback->channel_callback = callback;
-	*ppCallback = (IWTSVirtualChannelCallback*)callback;
+	*ppCallback = &callback->iface;
 	return CHANNEL_RC_OK;
 }
 

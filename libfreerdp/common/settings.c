@@ -1776,6 +1776,7 @@ UINT32 freerdp_settings_get_codecs_flags(const rdpSettings* settings)
 
 const char* freerdp_settings_get_server_name(const rdpSettings* settings)
 {
+	WINPR_ASSERT(settings);
 	const char* hostname = settings->ServerHostname;
 
 	if (settings->UserSpecifiedServerName)
@@ -1917,6 +1918,12 @@ BOOL freerdp_device_equal(const RDPDR_DEVICE* what, const RDPDR_DEVICE* expect)
 
 char* freerdp_rail_support_flags_to_string(UINT32 flags, char* buffer, size_t length)
 {
+	const UINT32 mask =
+	    RAIL_LEVEL_SUPPORTED | RAIL_LEVEL_DOCKED_LANGBAR_SUPPORTED |
+	    RAIL_LEVEL_SHELL_INTEGRATION_SUPPORTED | RAIL_LEVEL_LANGUAGE_IME_SYNC_SUPPORTED |
+	    RAIL_LEVEL_SERVER_TO_CLIENT_IME_SYNC_SUPPORTED | RAIL_LEVEL_HIDE_MINIMIZED_APPS_SUPPORTED |
+	    RAIL_LEVEL_WINDOW_CLOAKING_SUPPORTED | RAIL_LEVEL_HANDSHAKE_EX_SUPPORTED;
+
 	if (flags & RAIL_LEVEL_SUPPORTED)
 		winpr_str_append("RAIL_LEVEL_SUPPORTED", buffer, length, "|");
 	if (flags & RAIL_LEVEL_DOCKED_LANGBAR_SUPPORTED)
@@ -1935,11 +1942,18 @@ char* freerdp_rail_support_flags_to_string(UINT32 flags, char* buffer, size_t le
 		winpr_str_append("RAIL_LEVEL_HANDSHAKE_EX_SUPPORTED", buffer, length, "|");
 	if (flags & RAIL_LEVEL_LANGUAGE_IME_SYNC_SUPPORTED)
 		winpr_str_append("RAIL_LEVEL_LANGUAGE_IME_SYNC_SUPPORTED", buffer, length, "|");
+	if ((flags & mask) != 0)
+	{
+		char tbuffer[64] = { 0 };
+		_snprintf(tbuffer, sizeof(tbuffer), "RAIL_FLAG_UNKNOWN 0x%08" PRIx32, flags & mask);
+		winpr_str_append(tbuffer, buffer, length, "|");
+	}
 	return buffer;
 }
 
-BOOL freerdp_settings_update_from_caps(rdpSettings* settings, BYTE* capsFlags, BYTE** capsData,
-                                       UINT32* capsSizes, UINT32 capsCount, BOOL serverReceivedCaps)
+BOOL freerdp_settings_update_from_caps(rdpSettings* settings, const BYTE* capsFlags,
+                                       const BYTE** capsData, const UINT32* capsSizes,
+                                       UINT32 capsCount, BOOL serverReceivedCaps)
 {
 	UINT32 x;
 	WINPR_ASSERT(settings);
@@ -1998,4 +2012,48 @@ const char* freerdp_rdp_version_string(UINT32 version)
 		default:
 			return "RDP_VERSION_UNKNOWN";
 	}
+}
+
+BOOL freerdp_settings_set_string_from_utf16(rdpSettings* settings, size_t id, const WCHAR* param)
+{
+	WINPR_ASSERT(settings);
+
+	if (!param)
+		return freerdp_settings_set_string_(settings, id, NULL, 0, TRUE, TRUE);
+
+	size_t len = 0;
+
+	char* str = ConvertWCharToUtf8Alloc(param, &len);
+	if (!str && (len != 0))
+		return FALSE;
+
+	return freerdp_settings_set_string_(settings, id, str, len, FALSE, TRUE);
+}
+
+BOOL freerdp_settings_set_string_from_utf16N(rdpSettings* settings, size_t id, const WCHAR* param,
+                                             size_t length)
+{
+	size_t len = 0;
+
+	WINPR_ASSERT(settings);
+
+	if (!param)
+		return freerdp_settings_set_string_(settings, id, NULL, length, TRUE, TRUE);
+
+	char* str = ConvertWCharNToUtf8Alloc(param, length, &len);
+	if (!str && (length != 0))
+		return FALSE;
+
+	return freerdp_settings_set_string_(settings, id, str, len, FALSE, TRUE);
+}
+
+WCHAR* freerdp_settings_get_string_as_utf16(const rdpSettings* settings, size_t id,
+                                            size_t* pCharLen)
+{
+	const char* str = freerdp_settings_get_string(settings, id);
+	if (pCharLen)
+		*pCharLen = 0;
+	if (!str)
+		return NULL;
+	return ConvertUtf8ToWCharAlloc(str, pCharLen);
 }

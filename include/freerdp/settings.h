@@ -28,6 +28,29 @@
 #include <freerdp/api.h>
 #include <freerdp/types.h>
 
+/** \file
+ * \brief This is the FreeRDP settings module.
+ *
+ * Settings are used to store configuration data for an RDP connection.
+ * There are 3 different settings for each client and server:
+ *
+ * 1. The initial connection supplied by the user
+ * 2. The settings sent from client or server during capability exchange
+ * 3. The settings merged from the capability exchange and the initial configuration.
+ *
+ * The lifetime of the settings is as follows:
+ * 1. Initial configuration is saved and will be valid for the whole application lifecycle
+ * 2. The client or server settings from the other end are valid from capability exchange until the
+ * connection is ended (disconnect/redirect/...)
+ * 3. The merged settings are created from the initial configuration and server settings and have
+ * the same lifetime, until the connection ends
+ *
+ *
+ * So, when accessing the settings always ensure to know which one you are operating on! (this is
+ * especially important for the proxy where you have a RDP client and RDP server in the same
+ * application context)
+ */
+
 /* RAIL Support Level */
 #define RAIL_LEVEL_SUPPORTED 0x00000001
 #define RAIL_LEVEL_DOCKED_LANGBAR_SUPPORTED 0x00000002
@@ -167,6 +190,7 @@ typedef enum
 #define TRANSPORT_TYPE_UDP_FECR 0x00000001
 #define TRANSPORT_TYPE_UDP_FECL 0x00000004
 #define TRANSPORT_TYPE_UDP_PREFERRED 0x00000100
+#define SOFTSYNC_TCP_TO_UDP 0x00000200
 
 /* Static Virtual Channel Options */
 #define CHANNEL_OPTION_INITIALIZED 0x80000000
@@ -513,7 +537,6 @@ typedef struct
 #define FreeRDP_Domain (23)
 #define FreeRDP_PasswordHash (24)
 #define FreeRDP_WaitForOutputBufferFlush (25)
-#define FreeRDP_MaxTimeInCheckLoop (26)
 #define FreeRDP_AcceptedCert (27)
 #define FreeRDP_AcceptedCertLength (28)
 #define FreeRDP_UserSpecifiedServerName (29)
@@ -698,6 +721,7 @@ typedef struct
 #define FreeRDP_KerberosCache (1349)
 #define FreeRDP_KerberosArmor (1350)
 #define FreeRDP_KerberosKeytab (1351)
+#define FreeRDP_KerberosRdgIsProxy (1352)
 #define FreeRDP_IgnoreCertificate (1408)
 #define FreeRDP_CertificateName (1409)
 #define FreeRDP_CertificateFile (1410)
@@ -832,7 +856,7 @@ typedef struct
 #define FreeRDP_BitmapCacheV2NumCells (2501)
 #define FreeRDP_BitmapCacheV2CellInfo (2502)
 #define FreeRDP_BitmapCachePersistFile (2503)
-#define FreeRDP_ColorPointerFlag (2560)
+#define FreeRDP_ColorPointerCacheSize (2560)
 #define FreeRDP_PointerCacheSize (2561)
 #define FreeRDP_KeyboardRemappingList (2622)
 #define FreeRDP_KeyboardCodePage (2623)
@@ -930,7 +954,6 @@ typedef struct
 #define FreeRDP_ActionScript (5195)
 #define FreeRDP_Floatbar (5196)
 #define FreeRDP_TcpConnectTimeout (5197)
-#define FreeRDP_RelativeMouseInput (5198)
 
 /**
  * FreeRDP Settings Data Structure
@@ -961,7 +984,7 @@ struct rdp_settings
 	ALIGN64 char* Domain;                  /* 23 */
 	ALIGN64 char* PasswordHash;            /* 24 */
 	ALIGN64 BOOL WaitForOutputBufferFlush; /* 25 */
-	ALIGN64 UINT32 MaxTimeInCheckLoop;     /* 26 */
+	UINT64 padding26[27 - 26];             /* 26 */
 	ALIGN64 char* AcceptedCert;            /* 27 */
 	ALIGN64 UINT32 AcceptedCertLength;     /* 28 */
 	ALIGN64 char* UserSpecifiedServerName; /* 29 */
@@ -1001,18 +1024,18 @@ struct rdp_settings
 	UINT64 padding0192[192 - 150];        /* 150 */
 
 	/* Client/Server Security Data */
-	ALIGN64 BOOL UseRdpSecurityLayer;       /* 192 */
-	ALIGN64 UINT32 EncryptionMethods;       /* 193 */
-	ALIGN64 UINT32 ExtEncryptionMethods;    /* 194 */
-	ALIGN64 UINT32 EncryptionLevel;         /* 195 */
-	ALIGN64 BYTE* ServerRandom;             /* 196 */
-	ALIGN64 UINT32 ServerRandomLength;      /* 197 */
-	ALIGN64 BYTE* ServerCertificate;        /* 198 */
-	ALIGN64 UINT32 ServerCertificateLength; /* 199 */
-	ALIGN64 BYTE* ClientRandom;             /* 200 */
-	ALIGN64 UINT32 ClientRandomLength;      /* 201 */
-	ALIGN64 BOOL ServerLicenseRequired;     /* 202 */
-	ALIGN64 char* ServerLicenseCompanyName; /* 203 */
+	ALIGN64 BOOL UseRdpSecurityLayer;                /* 192 */
+	ALIGN64 UINT32 EncryptionMethods;                /* 193 */
+	ALIGN64 UINT32 ExtEncryptionMethods;             /* 194 */
+	ALIGN64 UINT32 EncryptionLevel;                  /* 195 */
+	ALIGN64 BYTE* ServerRandom;                      /* 196 */
+	ALIGN64 UINT32 ServerRandomLength;               /* 197 */
+	ALIGN64 BYTE* ServerCertificate;                 /* 198 */
+	ALIGN64 UINT32 ServerCertificateLength;          /* 199 */
+	ALIGN64 BYTE* ClientRandom;                      /* 200 */
+	ALIGN64 UINT32 ClientRandomLength;               /* 201 */
+	ALIGN64 BOOL ServerLicenseRequired;              /* 202 */
+	ALIGN64 char* ServerLicenseCompanyName;          /* 203 */
 	ALIGN64 UINT32 ServerLicenseProductVersion;      /* 204 */
 	ALIGN64 char* ServerLicenseProductName;          /* 205 */
 	ALIGN64 char** ServerLicenseProductIssuers;      /* 206 */
@@ -1227,7 +1250,8 @@ struct rdp_settings
 	ALIGN64 char* KerberosCache;             /* 1349 */
 	ALIGN64 char* KerberosArmor;             /* 1350 */
 	ALIGN64 char* KerberosKeytab;            /* 1351 */
-	UINT64 padding1408[1408 - 1352];         /* 1352 */
+	ALIGN64 BOOL KerberosRdgIsProxy;         /* 1352 */
+	UINT64 padding1408[1408 - 1353];         /* 1353 */
 
 	/* Server Certificate */
 	ALIGN64 BOOL IgnoreCertificate;                /* 1408 */
@@ -1380,9 +1404,9 @@ struct rdp_settings
 	 */
 
 	/* Capabilities */
-	ALIGN64 BYTE* ReceivedCapabilities;      /* 2240 */
-	ALIGN64 UINT32 ReceivedCapabilitiesSize; /* 2241 */
-	ALIGN64 BYTE** ReceivedCapabilityData;   /* 2242 */
+	ALIGN64 BYTE* ReceivedCapabilities;          /* 2240 */
+	ALIGN64 UINT32 ReceivedCapabilitiesSize;     /* 2241 */
+	ALIGN64 BYTE** ReceivedCapabilityData;       /* 2242 */
 	ALIGN64 UINT32* ReceivedCapabilityDataSizes; /* 2243 */
 	UINT64 padding2304[2304 - 2244];             /* 2244 */
 
@@ -1432,9 +1456,9 @@ struct rdp_settings
 	UINT64 padding2560[2560 - 2504];                          /* 2504 */
 
 	/* Pointer Capabilities */
-	ALIGN64 BOOL ColorPointerFlag;   /* 2560 */
-	ALIGN64 UINT32 PointerCacheSize; /* 2561 */
-	UINT64 padding2624[2622 - 2562]; /* 2562 */
+	ALIGN64 UINT32 ColorPointerCacheSize; /* 2560 */
+	ALIGN64 UINT32 PointerCacheSize;      /* 2561 */
+	UINT64 padding2624[2622 - 2562];      /* 2562 */
 
 	/* Input Capabilities */
 	ALIGN64 char* KeyboardRemappingList; /* 2622 */
@@ -1651,8 +1675,7 @@ struct rdp_settings
 	ALIGN64 char* ActionScript;           /* 5195 */
 	ALIGN64 UINT32 Floatbar;              /* 5196 */
 	ALIGN64 UINT32 TcpConnectTimeout;     /* 5197 */
-	ALIGN64 BOOL RelativeMouseInput;      /* 5198 */
-	UINT64 padding5312[5312 - 5199];      /* 5199 */
+	UINT64 padding5312[5312 - 5198];      /* 5198 */
 
 	/**
 	 * WARNING: End of ABI stable zone!
@@ -1698,12 +1721,57 @@ extern "C"
  */
 #define FREERDP_SETTINGS_SERVER_MODE 0x00000001
 
+	/** \brief creates a new setting struct
+	 *
+	 *  \param flags Flags for creation, use \b FREERDP_SETTINGS_SERVER_MODE for server settings, 0
+	 * for client.
+	 *
+	 *  \return A newly allocated settings struct or NULL
+	 */
 	FREERDP_API rdpSettings* freerdp_settings_new(DWORD flags);
+
+	/** \brief Creates a deep copy of settings
+	 *
+	 *  \param settings A pointer to a settings struct to copy. May be NULL (returns NULL)
+	 *
+	 *  \return A newly allocated copy of \b settings or NULL
+	 */
 	FREERDP_API rdpSettings* freerdp_settings_clone(const rdpSettings* settings);
+
+	/** \brief Deep copies settings from \b src to \b dst
+	 *
+	 * The function frees up all allocated data in \b dst before copying the data from \b src
+	 *
+	 * \param dst A pointer for the settings to copy data to. May be NULL (fails copy)
+	 * \param src A pointer to the settings to copy. May be NULL (fails copy)
+	 *
+	 *  \return \b TRUE for success, \b FALSE for failure.
+	 */
 	FREERDP_API BOOL freerdp_settings_copy(rdpSettings* dst, const rdpSettings* src);
+
+	/** \brief Free a settings struct with all data in it
+	 *
+	 *  \param settings A pointer to the settings to free, May be NULL
+	 */
 	FREERDP_API void freerdp_settings_free(rdpSettings* settings);
 
+	/** \brief Dumps the contents of a settings struct to a WLog logger
+	 *
+	 *  \param log The logger to write to, must not be NULL
+	 *  \param level The WLog level to use for the log entries
+	 *  \param settings A pointer to the settings to dump. May be NULL.
+	 */
 	FREERDP_API void freerdp_settings_dump(wLog* log, DWORD level, const rdpSettings* settings);
+
+	/** \brief Dumps the difference between two settings structs to a WLog
+	 *
+	 *  \param log The logger to write to, must not be NULL.
+	 *  \param  level The WLog level to use for the log entries.
+	 *  \param src A pointer to the settings to dump. May be NULL.
+	 *  \param other A pointer to the settings to dump. May be NULL.
+	 *
+	 *  \return \b TRUE if not equal, \b FALSE otherwise
+	 */
 	FREERDP_API BOOL freerdp_settings_print_diff(wLog* log, DWORD level, const rdpSettings* src,
 	                                             const rdpSettings* other);
 
@@ -1821,35 +1889,228 @@ extern "C"
 	                                                              const char* param));
 #endif
 
+	/** \brief Returns a boolean settings value
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *
+	 *  \return the value of the boolean key
+	 */
 	FREERDP_API BOOL freerdp_settings_get_bool(const rdpSettings* settings, size_t id);
+
+	/** \brief Sets a BOOL settings value.
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *  \param param The value to set.
+	 *
+	 *  \return \b TRUE for success, \b FALSE for failure
+	 */
 	FREERDP_API BOOL freerdp_settings_set_bool(rdpSettings* settings, size_t id, BOOL param);
 
+	/** \brief Returns a INT16 settings value
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *
+	 *  \return the value of the INT16 key
+	 */
 	FREERDP_API INT16 freerdp_settings_get_int16(const rdpSettings* settings, size_t id);
+
+	/** \brief Sets a INT16 settings value.
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *  \param param The value to set.
+	 *
+	 *  \return \b TRUE for success, \b FALSE for failure
+	 */
 	FREERDP_API BOOL freerdp_settings_set_int16(rdpSettings* settings, size_t id, INT16 param);
 
+	/** \brief Returns a UINT16 settings value
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *
+	 *  \return the value of the UINT16 key
+	 */
 	FREERDP_API UINT16 freerdp_settings_get_uint16(const rdpSettings* settings, size_t id);
+
+	/** \brief Sets a UINT16 settings value.
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *  \param param The value to set.
+	 *
+	 *  \return \b TRUE for success, \b FALSE for failure
+	 */
 	FREERDP_API BOOL freerdp_settings_set_uint16(rdpSettings* settings, size_t id, UINT16 param);
 
+	/** \brief Returns a INT32 settings value
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *
+	 *  \return the value of the INT32 key
+	 */
 	FREERDP_API INT32 freerdp_settings_get_int32(const rdpSettings* settings, size_t id);
+
+	/** \brief Sets a INT32 settings value.
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *  \param param The value to set.
+	 *
+	 *  \return \b TRUE for success, \b FALSE for failure
+	 */
 	FREERDP_API BOOL freerdp_settings_set_int32(rdpSettings* settings, size_t id, INT32 param);
 
+	/** \brief Returns a UINT32 settings value
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *
+	 *  \return the value of the UINT32 key
+	 */
 	FREERDP_API UINT32 freerdp_settings_get_uint32(const rdpSettings* settings, size_t id);
+
+	/** \brief Sets a UINT32 settings value.
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *  \param param The value to set.
+	 *
+	 *  \return \b TRUE for success, \b FALSE for failure
+	 */
 	FREERDP_API BOOL freerdp_settings_set_uint32(rdpSettings* settings, size_t id, UINT32 param);
 
+	/** \brief Returns a INT64 settings value
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *
+	 *  \return the value of the INT64 key
+	 */
 	FREERDP_API INT64 freerdp_settings_get_int64(const rdpSettings* settings, size_t id);
+
+	/** \brief Sets a INT64 settings value.
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *  \param param The value to set.
+	 *
+	 *  \return \b TRUE for success, \b FALSE for failure
+	 */
 	FREERDP_API BOOL freerdp_settings_set_int64(rdpSettings* settings, size_t id, INT64 param);
 
+	/** \brief Returns a UINT64 settings value
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *
+	 *  \return the value of the UINT64 key
+	 */
 	FREERDP_API UINT64 freerdp_settings_get_uint64(const rdpSettings* settings, size_t id);
+
+	/** \brief Sets a UINT64 settings value.
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *  \param param The value to set.
+	 *
+	 *  \return \b TRUE for success, \b FALSE for failure
+	 */
 	FREERDP_API BOOL freerdp_settings_set_uint64(rdpSettings* settings, size_t id, UINT64 param);
 
+	/** \brief Returns a immutable string settings value
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *
+	 *  \return the immutable string pointer
+	 */
 	FREERDP_API const char* freerdp_settings_get_string(const rdpSettings* settings, size_t id);
+
+	/** \brief Returns a string settings value
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *
+	 *  \return the string pointer
+	 */
 	FREERDP_API char* freerdp_settings_get_string_writable(rdpSettings* settings, size_t id);
+
+	/** \brief Sets a string settings value. The \b param is copied.
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *  \param param The value to set. If NULL allocates an empty string buffer of \b len size,
+	 * otherwise a copy is created. \param len The length of \b param, 0 to remove the old entry.
+	 *
+	 *  \return \b TRUE for success, \b FALSE for failure
+	 */
 	FREERDP_API BOOL freerdp_settings_set_string_len(rdpSettings* settings, size_t id,
 	                                                 const char* param, size_t len);
+
+	/** \brief Sets a string settings value. The \b param is copied.
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *  \param param The value to set. If NULL removes the old entry, otherwise a copy is created.
+	 *
+	 *  \return \b TRUE for success, \b FALSE for failure
+	 */
 	FREERDP_API BOOL freerdp_settings_set_string(rdpSettings* settings, size_t id,
 	                                             const char* param);
 
+	/** \brief Sets a string settings value. The \b param is converted to UTF-8 and the copy stored.
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *  \param param The value to set. If NULL removes the old entry, otherwise a copy is created.
+	 *
+	 *  \return \b TRUE for success, \b FALSE for failure
+	 */
+	FREERDP_API BOOL freerdp_settings_set_string_from_utf16(rdpSettings* settings, size_t id,
+	                                                        const WCHAR* param);
+
+	/** \brief Sets a string settings value. The \b param is converted to UTF-8 and the copy stored.
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *  \param param The value to set. If NULL removes the old entry, otherwise a copy is created.
+	 *  \param length The length of the WCHAR string in number of WCHAR characters
+	 *
+	 *  \return \b TRUE for success, \b FALSE for failure
+	 */
+	FREERDP_API BOOL freerdp_settings_set_string_from_utf16N(rdpSettings* settings, size_t id,
+	                                                         const WCHAR* param, size_t length);
+	/** \brief Return an allocated UTF16 string
+	 *
+	 * \param settings A pointer to the settings struct to use
+	 * \param id The settings identifier
+	 *
+	 * \return An allocated, '\0' terminated WCHAR string or NULL
+	 */
+	FREERDP_API WCHAR* freerdp_settings_get_string_as_utf16(const rdpSettings* settings, size_t id,
+	                                                        size_t* pCharLen);
+
+	/** \brief Returns a immutable pointer settings value
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *
+	 *  \return the immutable pointer value
+	 */
 	FREERDP_API const void* freerdp_settings_get_pointer(const rdpSettings* settings, size_t id);
+
+	/** \brief Returns a mutable pointer settings value
+	 *
+	 *  \param settings A pointer to the settings to query, must not be NULL.
+	 *  \param id The key to query
+	 *
+	 *  \return the mutable pointer value
+	 */
 	FREERDP_API void* freerdp_settings_get_pointer_writable(rdpSettings* settings, size_t id);
 	FREERDP_API BOOL freerdp_settings_set_pointer(rdpSettings* settings, size_t id,
 	                                              const void* data);
@@ -1866,9 +2127,30 @@ extern "C"
 	FREERDP_API BOOL freerdp_settings_set_value_for_name(rdpSettings* settings, const char* name,
 	                                                     const char* value);
 
+	/** \brief Get a key index for the name string of that key
+	 *
+	 *  \param value A key name string like FreeRDP_ServerMode
+	 *
+	 *  \return The key index or -1 in case of an error (e.g. name does not exist)
+	 */
 	FREERDP_API SSIZE_T freerdp_settings_get_key_for_name(const char* value);
+
+	/** \brief Get a key type for the name string of that key
+	 *
+	 *  \param value A key name string like FreeRDP_ServerMode
+	 *
+	 *  \return The key type (e.g. FREERDP_SETTINGS_TYPE_BOOL) or -1 in case of an error (e.g. name
+	 * does not exist)
+	 */
 	FREERDP_API SSIZE_T freerdp_settings_get_type_for_name(const char* value);
 
+	/** \brief Get a key type for the key index
+	 *
+	 *  \param key The key index like FreeRDP_ServerMode
+	 *
+	 *  \return The key type (e.g. FREERDP_SETTINGS_TYPE_BOOL) or -1 in case of an error (e.g. name
+	 * does not exist)
+	 */
 	FREERDP_API SSIZE_T freerdp_settings_get_type_for_key(size_t key);
 	FREERDP_API const char* freerdp_settings_get_type_name_for_key(size_t key);
 	FREERDP_API const char* freerdp_settings_get_type_name_for_type(SSIZE_T type);
@@ -1876,15 +2158,55 @@ extern "C"
 	FREERDP_API const char* freerdp_settings_get_name_for_key(size_t key);
 	FREERDP_API UINT32 freerdp_settings_get_codecs_flags(const rdpSettings* settings);
 
-	FREERDP_API BOOL freerdp_settings_update_from_caps(rdpSettings* settings, BYTE* capsFlags,
-	                                                   BYTE** capsData, UINT32* capsSizes,
-	                                                   UINT32 capsCount, BOOL serverReceivedCaps);
+	/** \brief Parse capability data and apply to settings
+	 *
+	 *  The capability message is stored in raw form in the settings, the data parsed and applied to
+	 * the settings.
+	 *
+	 *  \param settings A pointer to the settings to use
+	 *  \param capsFlags A pointer to the capablity flags, must have capsCount fields
+	 *  \param capsData A pointer array to the RAW capability data, must have capsCount fields
+	 *  \param capsSizes A pointer to an array of RAW capability sizes, must have capsCount fields
+	 *  \param capsCount The number of capabilities contained in the RAW data
+	 *  \param serverReceivedCaps Indicates if the parser should assume to be a server or client
+	 * instance
+	 *
+	 *  \return \b TRUE for success, \b FALSE in case of an error
+	 */
+	FREERDP_API BOOL freerdp_settings_update_from_caps(rdpSettings* settings, const BYTE* capsFlags,
+	                                                   const BYTE** capsData,
+	                                                   const UINT32* capsSizes, UINT32 capsCount,
+	                                                   BOOL serverReceivedCaps);
 
+	/** \brief A helper function to return the correct server name.
+	 *
+	 * The server name might be in key FreeRDP_ServerHostname or if used in
+	 * FreeRDP_UserSpecifiedServerName. This function returns the correct name to use.
+	 *
+	 *  \param settings The settings to query, must not be NULL.
+	 *
+	 *  \return A string pointer or NULL in case of failure.
+	 */
 	FREERDP_API const char* freerdp_settings_get_server_name(const rdpSettings* settings);
 
+	/** \brief Returns a stringified representation of RAIL support flags
+	 *
+	 *  \param flags The flags to stringify
+	 *  \param buffer A pointer to the string buffer to write to
+	 *  \param length The size of the string buffer
+	 *
+	 *  \return A pointer to \b buffer for success, NULL otherwise
+	 */
 	FREERDP_API char* freerdp_rail_support_flags_to_string(UINT32 flags, char* buffer,
 	                                                       size_t length);
 
+	/** \brief Returns a stringified representation of the RDP protocol version.
+	 *
+	 *  \param version The RDP protocol version number.
+	 *
+	 *  \return A string representation of the protocol version as "RDP_VERSION_10_11" or
+	 * "RDP_VERSION_UNKNOWN" for invalid/unknown versions
+	 */
 	FREERDP_API const char* freerdp_rdp_version_string(UINT32 version);
 
 #ifdef __cplusplus

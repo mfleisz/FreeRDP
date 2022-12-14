@@ -465,7 +465,9 @@ static const char* get_shm_id(void)
 
 Window xf_CreateDummyWindow(xfContext* xfc)
 {
-	return XCreateSimpleWindow(xfc->display, DefaultRootWindow(xfc->display), 0, 0, 1, 1, 0, 0, 0);
+	return XCreateWindow(xfc->display, RootWindowOfScreen(xfc->screen), xfc->workArea.x,
+	                     xfc->workArea.y, 1, 1, 0, xfc->depth, InputOutput, xfc->visual,
+	                     xfc->attribs_mask, &xfc->attribs);
 }
 
 void xf_DestroyDummyWindow(xfContext* xfc, Window window)
@@ -496,12 +498,12 @@ xfWindow* xf_CreateDesktopWindow(xfContext* xfc, char* name, int width, int heig
 	window->decorations = xfc->decorations;
 	window->is_mapped = FALSE;
 	window->is_transient = FALSE;
-	window->handle = XCreateWindow(xfc->display, RootWindowOfScreen(xfc->screen), xfc->workArea.x,
-	                               xfc->workArea.y, xfc->workArea.width, xfc->workArea.height, 0,
-	                               xfc->depth, InputOutput, xfc->visual,
-	                               CWBackPixel | CWBackingStore | CWOverrideRedirect | CWColormap |
-	                                   CWBorderPixel | CWWinGravity | CWBitGravity,
-	                               &xfc->attribs);
+
+	WINPR_ASSERT(xfc->depth != 0);
+	window->handle =
+	    XCreateWindow(xfc->display, RootWindowOfScreen(xfc->screen), xfc->workArea.x,
+	                  xfc->workArea.y, xfc->workArea.width, xfc->workArea.height, 0, xfc->depth,
+	                  InputOutput, xfc->visual, xfc->attribs_mask, &xfc->attribs);
 	window->shmid = shm_open(get_shm_id(), (O_CREAT | O_RDWR), (S_IREAD | S_IWRITE));
 
 	if (window->shmid < 0)
@@ -811,9 +813,12 @@ BOOL xf_AppWindowCreate(xfContext* xfc, xfAppWindow* appWindow)
 	appWindow->maxHorz = FALSE;
 	appWindow->minimized = FALSE;
 	appWindow->rail_ignore_configure = FALSE;
-	appWindow->handle = XCreateWindow(xfc->display, RootWindowOfScreen(xfc->screen), appWindow->x,
-	                                  appWindow->y, appWindow->width, appWindow->height, 0,
-	                                  xfc->depth, InputOutput, xfc->visual, 0, &xfc->attribs);
+
+	WINPR_ASSERT(xfc->depth != 0);
+	appWindow->handle =
+	    XCreateWindow(xfc->display, RootWindowOfScreen(xfc->screen), appWindow->x, appWindow->y,
+	                  appWindow->width, appWindow->height, 0, xfc->depth, InputOutput, xfc->visual,
+	                  xfc->attribs_mask, &xfc->attribs);
 
 	if (!appWindow->handle)
 		return FALSE;
@@ -1242,9 +1247,10 @@ UINT xf_AppUpdateWindowFromSurface(xfContext* xfc, gdiGfxSurface* surface)
 
 		if (!appWindow->image)
 		{
-			appWindow->image =
-			    XCreateImage(xfc->display, xfc->visual, xfc->depth, ZPixmap, 0, surface->data,
-			                 surface->width, surface->height, xfc->scanline_pad, surface->scanline);
+			WINPR_ASSERT(xfc->depth != 0);
+			appWindow->image = XCreateImage(xfc->display, xfc->visual, xfc->depth, ZPixmap, 0,
+			                                (char*)surface->data, surface->width, surface->height,
+			                                xfc->scanline_pad, surface->scanline);
 			if (!appWindow->image)
 			{
 				WLog_WARN(TAG,
@@ -1293,6 +1299,8 @@ BOOL xf_AppWindowResize(xfContext* xfc, xfAppWindow* appWindow)
 
 	if (appWindow->pixmap != 0)
 		XFreePixmap(xfc->display, appWindow->pixmap);
+
+	WINPR_ASSERT(xfc->depth != 0);
 	appWindow->pixmap =
 	    XCreatePixmap(xfc->display, xfc->drawable, appWindow->width, appWindow->height, xfc->depth);
 	xf_AppWindowDestroyImage(appWindow);

@@ -151,8 +151,6 @@ static BOOL rdp_capability_set_finish(wStream* s, UINT16 header, UINT16 type)
 
 static BOOL rdp_apply_general_capability_set(rdpSettings* settings, const rdpSettings* src)
 {
-	UINT16 extraFlags;
-
 	WINPR_ASSERT(settings);
 	WINPR_ASSERT(src);
 
@@ -173,7 +171,7 @@ static BOOL rdp_apply_general_capability_set(rdpSettings* settings, const rdpSet
 
 	if (!settings->ServerMode)
 	{
-		/**
+		/*
 		 * Note: refreshRectSupport and suppressOutputSupport are
 		 * server-only flags indicating to the client weather the
 		 * respective PDUs are supported. See MS-RDPBCGR 2.2.7.1.1
@@ -187,12 +185,9 @@ static BOOL rdp_apply_general_capability_set(rdpSettings* settings, const rdpSet
 	return TRUE;
 }
 
-/**
- * Read general capability set.\n
- * @msdn{cc240549}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read general capability set.
+ * msdn{cc240549}
  */
 
 static BOOL rdp_read_general_capability_set(wStream* s, rdpSettings* settings)
@@ -231,11 +226,9 @@ static BOOL rdp_read_general_capability_set(wStream* s, rdpSettings* settings)
 	return TRUE;
 }
 
-/**
- * Write general capability set.\n
- * @msdn{cc240549}
- * @param s stream
- * @param settings settings
+/*
+ * Write general capability set.
+ * msdn{cc240549}
  */
 
 static BOOL rdp_write_general_capability_set(wStream* s, const rdpSettings* settings)
@@ -367,12 +360,9 @@ static BOOL rdp_apply_bitmap_capability_set(rdpSettings* settings, const rdpSett
 	return TRUE;
 }
 
-/**
- * Read bitmap capability set.\n
- * @msdn{cc240554}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read bitmap capability set.
+ * msdn{cc240554}
  */
 
 static BOOL rdp_read_bitmap_capability_set(wStream* s, rdpSettings* settings)
@@ -414,11 +404,9 @@ static BOOL rdp_read_bitmap_capability_set(wStream* s, rdpSettings* settings)
 	return TRUE;
 }
 
-/**
- * Write bitmap capability set.\n
- * @msdn{cc240554}
- * @param s stream
- * @param settings settings
+/*
+ * Write bitmap capability set.
+ * msdn{cc240554}
  */
 
 static BOOL rdp_write_bitmap_capability_set(wStream* s, const rdpSettings* settings)
@@ -566,12 +554,9 @@ static BOOL rdp_apply_order_capability_set(rdpSettings* settings, const rdpSetti
 	return TRUE;
 }
 
-/**
- * Read order capability set.\n
- * @msdn{cc240556}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read order capability set.
+ * msdn{cc240556}
  */
 
 static BOOL rdp_read_order_capability_set(wStream* s, rdpSettings* settings)
@@ -625,11 +610,9 @@ static BOOL rdp_read_order_capability_set(wStream* s, rdpSettings* settings)
 	return TRUE;
 }
 
-/**
- * Write order capability set.\n
- * @msdn{cc240556}
- * @param s stream
- * @param settings settings
+/*
+ * Write order capability set.
+ * msdn{cc240556}
  */
 
 static BOOL rdp_write_order_capability_set(wStream* s, const rdpSettings* settings)
@@ -791,12 +774,9 @@ static BOOL rdp_apply_bitmap_cache_capability_set(rdpSettings* settings, const r
 	return TRUE;
 }
 
-/**
- * Read bitmap cache capability set.\n
- * @msdn{cc240559}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read bitmap cache capability set.
+ * msdn{cc240559}
  */
 
 static BOOL rdp_read_bitmap_cache_capability_set(wStream* s, rdpSettings* settings)
@@ -822,11 +802,9 @@ static BOOL rdp_read_bitmap_cache_capability_set(wStream* s, rdpSettings* settin
 	return TRUE;
 }
 
-/**
- * Write bitmap cache capability set.\n
- * @msdn{cc240559}
- * @param s stream
- * @param settings settings
+/*
+ * Write bitmap cache capability set.
+ * msdn{cc240559}
  */
 
 static BOOL rdp_write_bitmap_cache_capability_set(wStream* s, const rdpSettings* settings)
@@ -920,12 +898,9 @@ static BOOL rdp_apply_control_capability_set(rdpSettings* settings, const rdpSet
 	return TRUE;
 }
 
-/**
- * Read control capability set.\n
- * @msdn{cc240568}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read control capability set.
+ * msdn{cc240568}
  */
 
 static BOOL rdp_read_control_capability_set(wStream* s, rdpSettings* settings)
@@ -941,11 +916,9 @@ static BOOL rdp_read_control_capability_set(wStream* s, rdpSettings* settings)
 	return TRUE;
 }
 
-/**
- * Write control capability set.\n
- * @msdn{cc240568}
- * @param s stream
- * @param settings settings
+/*
+ * Write control capability set.
+ * msdn{cc240568}
  */
 
 static BOOL rdp_write_control_capability_set(wStream* s, const rdpSettings* settings)
@@ -999,12 +972,9 @@ static BOOL rdp_apply_window_activation_capability_set(rdpSettings* settings,
 	return TRUE;
 }
 
-/**
- * Read window activation capability set.\n
- * @msdn{cc240569}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read window activation capability set.
+ * msdn{cc240569}
  */
 
 static BOOL rdp_read_window_activation_capability_set(wStream* s, rdpSettings* settings)
@@ -1021,11 +991,9 @@ static BOOL rdp_read_window_activation_capability_set(wStream* s, rdpSettings* s
 	return TRUE;
 }
 
-/**
- * Write window activation capability set.\n
- * @msdn{cc240569}
- * @param s stream
- * @param settings settings
+/*
+ * Write window activation capability set.
+ * msdn{cc240569}
  */
 
 static BOOL rdp_write_window_activation_capability_set(wStream* s, const rdpSettings* settings)
@@ -1077,26 +1045,35 @@ static BOOL rdp_apply_pointer_capability_set(rdpSettings* settings, const rdpSet
 	WINPR_ASSERT(settings);
 	WINPR_ASSERT(src);
 
-	if (!src->ColorPointerFlag)
-		settings->ColorPointerFlag = FALSE;
+	const UINT32 pointerCacheSize = freerdp_settings_get_uint32(src, FreeRDP_PointerCacheSize);
+	const UINT32 colorPointerCacheSize =
+	    freerdp_settings_get_uint32(src, FreeRDP_ColorPointerCacheSize);
+	const UINT32 dstPointerCacheSize =
+	    freerdp_settings_get_uint32(settings, FreeRDP_PointerCacheSize);
+	const UINT32 dstColorPointerCacheSize =
+	    freerdp_settings_get_uint32(settings, FreeRDP_ColorPointerCacheSize);
 
-	settings->PointerCacheSize = src->PointerCacheSize;
+	/* We want the minimum of our setting and the remote announced value. */
+	const UINT32 actualPointerCacheSize = MIN(pointerCacheSize, dstPointerCacheSize);
+	const UINT32 actualColorPointerCacheSize = MIN(colorPointerCacheSize, dstColorPointerCacheSize);
+
+	if (!freerdp_settings_set_uint32(settings, FreeRDP_PointerCacheSize, actualPointerCacheSize) ||
+	    !freerdp_settings_set_uint32(settings, FreeRDP_ColorPointerCacheSize,
+	                                 actualColorPointerCacheSize))
+		return FALSE;
 
 	return TRUE;
 }
 
-/**
- * Read pointer capability set.\n
- * @msdn{cc240562}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read pointer capability set.
+ * msdn{cc240562}
  */
 
 static BOOL rdp_read_pointer_capability_set(wStream* s, rdpSettings* settings)
 {
-	UINT16 colorPointerFlag;
-	UINT16 colorPointerCacheSize;
+	UINT16 colorPointerFlag = 0;
+	UINT16 colorPointerCacheSize = 0;
 	UINT16 pointerCacheSize = 0;
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
@@ -1105,28 +1082,32 @@ static BOOL rdp_read_pointer_capability_set(wStream* s, rdpSettings* settings)
 	Stream_Read_UINT16(s, colorPointerFlag);      /* colorPointerFlag (2 bytes) */
 	Stream_Read_UINT16(s, colorPointerCacheSize); /* colorPointerCacheSize (2 bytes) */
 
+	if (colorPointerFlag == 0)
+	{
+		WLog_WARN(TAG, "[MS-RDPBCGR] 2.2.7.1.5 Pointer Capability Set "
+		               "(TS_POINTER_CAPABILITYSET)::colorPointerFlag received is %" PRIu16
+		               ". Vaue is ignored and always assumed to be TRUE");
+	}
+
 	/* pointerCacheSize is optional */
 	if (Stream_GetRemainingLength(s) >= 2)
 		Stream_Read_UINT16(s, pointerCacheSize); /* pointerCacheSize (2 bytes) */
 
 	WINPR_ASSERT(settings);
-	settings->ColorPointerFlag = colorPointerFlag;
-	settings->PointerCacheSize = MAX(pointerCacheSize, colorPointerCacheSize);
+	settings->PointerCacheSize = pointerCacheSize;
+	settings->ColorPointerCacheSize = colorPointerCacheSize;
 
 	return TRUE;
 }
 
-/**
- * Write pointer capability set.\n
- * @msdn{cc240562}
- * @param s stream
- * @param settings settings
+/*
+ * Write pointer capability set.
+ * msdn{cc240562}
  */
 
 static BOOL rdp_write_pointer_capability_set(wStream* s, const rdpSettings* settings)
 {
 	size_t header;
-	UINT16 colorPointerFlag;
 
 	if (!Stream_EnsureRemainingCapacity(s, 32))
 		return FALSE;
@@ -1136,17 +1117,17 @@ static BOOL rdp_write_pointer_capability_set(wStream* s, const rdpSettings* sett
 		return FALSE;
 	if (settings->PointerCacheSize > UINT16_MAX)
 		return FALSE;
+	if (settings->ColorPointerCacheSize > UINT16_MAX)
+		return FALSE;
 
 	WINPR_ASSERT(settings);
-	colorPointerFlag = (settings->ColorPointerFlag) ? 1 : 0;
+	const UINT32 colorPointerFlag =
+	    1; /* [MS-RDPBCGR] 2.2.7.1.5 Pointer Capability Set (TS_POINTER_CAPABILITYSET)
+	        * colorPointerFlag is ignored and always assumed to be TRUE */
 	Stream_Write_UINT16(s, colorPointerFlag); /* colorPointerFlag (2 bytes) */
-	Stream_Write_UINT16(s,
-	                    (UINT16)settings->PointerCacheSize); /* colorPointerCacheSize (2 bytes) */
-
-	if (settings->LargePointerFlag)
-	{
-		Stream_Write_UINT16(s, (UINT16)settings->PointerCacheSize); /* pointerCacheSize (2 bytes) */
-	}
+	Stream_Write_UINT16(
+	    s, (UINT16)settings->ColorPointerCacheSize); /* colorPointerCacheSize (2 bytes) */
+	Stream_Write_UINT16(s, (UINT16)settings->PointerCacheSize); /* pointerCacheSize (2 bytes) */
 
 	return rdp_capability_set_finish(s, (UINT16)header, CAPSET_TYPE_POINTER);
 }
@@ -1180,12 +1161,9 @@ static BOOL rdp_apply_share_capability_set(rdpSettings* settings, const rdpSetti
 	return TRUE;
 }
 
-/**
- * Read share capability set.\n
- * @msdn{cc240570}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read share capability set.
+ * msdn{cc240570}
  */
 
 static BOOL rdp_read_share_capability_set(wStream* s, rdpSettings* settings)
@@ -1201,11 +1179,9 @@ static BOOL rdp_read_share_capability_set(wStream* s, rdpSettings* settings)
 	return TRUE;
 }
 
-/**
- * Write share capability set.\n
- * @msdn{cc240570}
- * @param s stream
- * @param settings settings
+/*
+ * Write share capability set.
+ * msdn{cc240570}
  */
 
 static BOOL rdp_write_share_capability_set(wStream* s, const rdpSettings* settings)
@@ -1252,12 +1228,9 @@ static BOOL rdp_apply_color_cache_capability_set(rdpSettings* settings, const rd
 	return TRUE;
 }
 
-/**
- * Read color cache capability set.\n
- * @msdn{cc241564}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read color cache capability set.
+ * msdn{cc241564}
  */
 
 static BOOL rdp_read_color_cache_capability_set(wStream* s, rdpSettings* settings)
@@ -1271,11 +1244,9 @@ static BOOL rdp_read_color_cache_capability_set(wStream* s, rdpSettings* setting
 	return TRUE;
 }
 
-/**
- * Write color cache capability set.\n
- * @msdn{cc241564}
- * @param s stream
- * @param settings settings
+/*
+ * Write color cache capability set.
+ * msdn{cc241564}
  */
 
 static BOOL rdp_write_color_cache_capability_set(wStream* s, const rdpSettings* settings)
@@ -1322,12 +1293,9 @@ static BOOL rdp_apply_sound_capability_set(rdpSettings* settings, const rdpSetti
 	return TRUE;
 }
 
-/**
- * Read sound capability set.\n
- * @msdn{cc240552}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read sound capability set.
+ * msdn{cc240552}
  */
 
 static BOOL rdp_read_sound_capability_set(wStream* s, rdpSettings* settings)
@@ -1344,11 +1312,9 @@ static BOOL rdp_read_sound_capability_set(wStream* s, rdpSettings* settings)
 	return TRUE;
 }
 
-/**
- * Write sound capability set.\n
- * @msdn{cc240552}
- * @param s stream
- * @param settings settings
+/*
+ * Write sound capability set.
+ * msdn{cc240552}
  */
 
 static BOOL rdp_write_sound_capability_set(wStream* s, const rdpSettings* settings)
@@ -1421,12 +1387,9 @@ static BOOL rdp_apply_input_capability_set(rdpSettings* settings, const rdpSetti
 	return TRUE;
 }
 
-/**
- * Read input capability set.\n
- * @msdn{cc240563}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read input capability set.
+ * msdn{cc240563}
  */
 
 static BOOL rdp_read_input_capability_set(wStream* s, rdpSettings* settings)
@@ -1446,17 +1409,11 @@ static BOOL rdp_read_input_capability_set(wStream* s, rdpSettings* settings)
 	Stream_Read_UINT32(s, settings->KeyboardFunctionKey); /* keyboardFunctionKeys (4 bytes) */
 
 	{
-		BOOL res;
-		char* str = NULL;
-		int rc = ConvertFromUnicode(CP_UTF8, 0, (LPCWSTR)Stream_Pointer(s), 64 / sizeof(WCHAR),
-		                            &str, -1, NULL, NULL);
-		if (rc < 0)
+		char str[65] = { 0 };
+		if (Stream_Read_UTF16_String_As_UTF8_Buffer(s, 64 / sizeof(WCHAR), str, ARRAYSIZE(str)) < 0)
 			return FALSE;
-		res = freerdp_settings_set_string(settings, FreeRDP_ImeFileName, str);
-		free(str);
-		if (!res)
+		if (!freerdp_settings_set_string(settings, FreeRDP_ImeFileName, str))
 			return FALSE;
-		Stream_Seek(s, 64); /* imeFileName (64 bytes) */
 	}
 
 	settings->FastPathInput = inputFlags & (INPUT_FLAG_FASTPATH_INPUT | INPUT_FLAG_FASTPATH_INPUT2);
@@ -1464,16 +1421,14 @@ static BOOL rdp_read_input_capability_set(wStream* s, rdpSettings* settings)
 	settings->UnicodeInput = (inputFlags & INPUT_FLAG_UNICODE) ? TRUE : FALSE;
 	settings->HasExtendedMouseEvent = (inputFlags & INPUT_FLAG_MOUSEX) ? TRUE : FALSE;
 	/* Thincast extension - relative mouse support */
-	settings->RelativeMouseInput = (inputFlags & 0x0040) ? TRUE : FALSE;
+	settings->MouseUseRelativeMove = (inputFlags & 0x0040) ? TRUE : FALSE;
 
 	return TRUE;
 }
 
-/**
- * Write input capability set.\n
- * @msdn{cc240563}
- * @param s stream
- * @param settings settings
+/*
+ * Write input capability set.
+ * msdn{cc240563}
  */
 
 static BOOL rdp_write_input_capability_set(wStream* s, const rdpSettings* settings)
@@ -1506,7 +1461,7 @@ static BOOL rdp_write_input_capability_set(wStream* s, const rdpSettings* settin
 		inputFlags |= INPUT_FLAG_MOUSEX;
 
 	/* Thincast extension - relative mouse support */
-	if (settings->RelativeMouseInput)
+	if (settings->MouseUseRelativeMove)
 		inputFlags |= 0x0040;
 
 	Stream_Write_UINT16(s, inputFlags);                    /* inputFlags (2 bytes) */
@@ -1557,12 +1512,9 @@ static BOOL rdp_apply_font_capability_set(rdpSettings* settings, const rdpSettin
 	return TRUE;
 }
 
-/**
- * Read font capability set.\n
- * @msdn{cc240571}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read font capability set.
+ * msdn{cc240571}
  */
 
 static BOOL rdp_read_font_capability_set(wStream* s, rdpSettings* settings)
@@ -1577,11 +1529,9 @@ static BOOL rdp_read_font_capability_set(wStream* s, rdpSettings* settings)
 	return TRUE;
 }
 
-/**
- * Write font capability set.\n
- * @msdn{cc240571}
- * @param s stream
- * @param settings settings
+/*
+ * Write font capability set.
+ * msdn{cc240571}
  */
 
 static BOOL rdp_write_font_capability_set(wStream* s, const rdpSettings* settings)
@@ -1629,12 +1579,9 @@ static BOOL rdp_apply_brush_capability_set(rdpSettings* settings, const rdpSetti
 	return TRUE;
 }
 
-/**
+/*
  * Read brush capability set.
- * @msdn{cc240564}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+ * msdn{cc240564}
  */
 
 static BOOL rdp_read_brush_capability_set(wStream* s, rdpSettings* settings)
@@ -1648,11 +1595,9 @@ static BOOL rdp_read_brush_capability_set(wStream* s, rdpSettings* settings)
 	return TRUE;
 }
 
-/**
- * Write brush capability set.\n
- * @msdn{cc240564}
- * @param s stream
- * @param settings settings
+/*
+ * Write brush capability set.
+ * msdn{cc240564}
  */
 
 static BOOL rdp_write_brush_capability_set(wStream* s, const rdpSettings* settings)
@@ -1685,10 +1630,9 @@ static BOOL rdp_print_brush_capability_set(wStream* s)
 }
 #endif
 
-/**
- * Read cache definition (glyph).\n
- * @msdn{cc240566}
- * @param s stream
+/*
+ * Read cache definition (glyph).
+ * msdn{cc240566}
  */
 static void rdp_read_cache_definition(wStream* s, GLYPH_CACHE_DEFINITION* cache_definition)
 {
@@ -1698,10 +1642,9 @@ static void rdp_read_cache_definition(wStream* s, GLYPH_CACHE_DEFINITION* cache_
 	                   cache_definition->cacheMaximumCellSize); /* cacheMaximumCellSize (2 bytes) */
 }
 
-/**
- * Write cache definition (glyph).\n
- * @msdn{cc240566}
- * @param s stream
+/*
+ * Write cache definition (glyph).
+ * msdn{cc240566}
  */
 static void rdp_write_cache_definition(wStream* s, GLYPH_CACHE_DEFINITION* cache_definition)
 {
@@ -1730,12 +1673,9 @@ static BOOL rdp_apply_glyph_cache_capability_set(rdpSettings* settings, const rd
 	return TRUE;
 }
 
-/**
- * Read glyph cache capability set.\n
- * @msdn{cc240565}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read glyph cache capability set.
+ * msdn{cc240565}
  */
 
 static BOOL rdp_read_glyph_cache_capability_set(wStream* s, rdpSettings* settings)
@@ -1755,11 +1695,9 @@ static BOOL rdp_read_glyph_cache_capability_set(wStream* s, rdpSettings* setting
 	return TRUE;
 }
 
-/**
- * Write glyph cache capability set.\n
- * @msdn{cc240565}
- * @param s stream
- * @param settings settings
+/*
+ * Write glyph cache capability set.
+ * msdn{cc240565}
  */
 
 static BOOL rdp_write_glyph_cache_capability_set(wStream* s, const rdpSettings* settings)
@@ -1851,12 +1789,9 @@ static BOOL rdp_apply_offscreen_bitmap_cache_capability_set(rdpSettings* setting
 	return TRUE;
 }
 
-/**
- * Read offscreen bitmap cache capability set.\n
- * @msdn{cc240550}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read offscreen bitmap cache capability set.
+ * msdn{cc240550}
  */
 
 static BOOL rdp_read_offscreen_bitmap_cache_capability_set(wStream* s, rdpSettings* settings)
@@ -1876,11 +1811,9 @@ static BOOL rdp_read_offscreen_bitmap_cache_capability_set(wStream* s, rdpSettin
 	return TRUE;
 }
 
-/**
- * Write offscreen bitmap cache capability set.\n
- * @msdn{cc240550}
- * @param s stream
- * @param settings settings
+/*
+ * Write offscreen bitmap cache capability set.
+ * msdn{cc240550}
  */
 
 static BOOL rdp_write_offscreen_bitmap_cache_capability_set(wStream* s, const rdpSettings* settings)
@@ -1939,12 +1872,9 @@ static BOOL rdp_apply_bitmap_cache_host_support_capability_set(rdpSettings* sett
 	return TRUE;
 }
 
-/**
- * Read bitmap cache host support capability set.\n
- * @msdn{cc240557}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read bitmap cache host support capability set.
+ * msdn{cc240557}
  */
 
 static BOOL rdp_read_bitmap_cache_host_support_capability_set(wStream* s, rdpSettings* settings)
@@ -1962,11 +1892,9 @@ static BOOL rdp_read_bitmap_cache_host_support_capability_set(wStream* s, rdpSet
 	                                 cacheVersion & BITMAP_CACHE_V2);
 }
 
-/**
- * Write bitmap cache host support capability set.\n
- * @msdn{cc240557}
- * @param s stream
- * @param settings settings
+/*
+ * Write bitmap cache host support capability set.
+ * msdn{cc240557}
  */
 
 static BOOL rdp_write_bitmap_cache_host_support_capability_set(wStream* s,
@@ -2020,7 +1948,7 @@ static BOOL rdp_read_bitmap_cache_cell_info(wStream* s, BITMAP_CACHE_V2_CELL_INF
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 		return FALSE;
 
-	/**
+	/*
 	 * numEntries is in the first 31 bits, while the last bit (k)
 	 * is used to indicate a persistent bitmap cache.
 	 */
@@ -2033,7 +1961,7 @@ static BOOL rdp_read_bitmap_cache_cell_info(wStream* s, BITMAP_CACHE_V2_CELL_INF
 static void rdp_write_bitmap_cache_cell_info(wStream* s, BITMAP_CACHE_V2_CELL_INFO* cellInfo)
 {
 	UINT32 info;
-	/**
+	/*
 	 * numEntries is in the first 31 bits, while the last bit (k)
 	 * is used to indicate a persistent bitmap cache.
 	 */
@@ -2075,12 +2003,9 @@ static BOOL rdp_apply_bitmap_cache_v2_capability_set(rdpSettings* settings, cons
 	return TRUE;
 }
 
-/**
- * Read bitmap cache v2 capability set.\n
- * @msdn{cc240560}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read bitmap cache v2 capability set.
+ * msdn{cc240560}
  */
 
 static BOOL rdp_read_bitmap_cache_v2_capability_set(wStream* s, rdpSettings* settings)
@@ -2114,11 +2039,9 @@ static BOOL rdp_read_bitmap_cache_v2_capability_set(wStream* s, rdpSettings* set
 	return TRUE;
 }
 
-/**
- * Write bitmap cache v2 capability set.\n
- * @msdn{cc240560}
- * @param s stream
- * @param settings settings
+/*
+ * Write bitmap cache v2 capability set.
+ * msdn{cc240560}
  */
 
 static BOOL rdp_write_bitmap_cache_v2_capability_set(wStream* s, const rdpSettings* settings)
@@ -2218,12 +2141,9 @@ static BOOL rdp_apply_virtual_channel_capability_set(rdpSettings* settings, cons
 	return TRUE;
 }
 
-/**
- * Read virtual channel capability set.\n
- * @msdn{cc240551}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read virtual channel capability set.
+ * msdn{cc240551}
  */
 
 static BOOL rdp_read_virtual_channel_capability_set(wStream* s, rdpSettings* settings)
@@ -2248,11 +2168,9 @@ static BOOL rdp_read_virtual_channel_capability_set(wStream* s, rdpSettings* set
 	return TRUE;
 }
 
-/**
- * Write virtual channel capability set.\n
- * @msdn{cc240551}
- * @param s stream
- * @param settings settings
+/*
+ * Write virtual channel capability set.
+ * msdn{cc240551}
  */
 
 static BOOL rdp_write_virtual_channel_capability_set(wStream* s, const rdpSettings* settings)
@@ -2308,12 +2226,9 @@ static BOOL rdp_apply_draw_nine_grid_cache_capability_set(rdpSettings* settings,
 	return TRUE;
 }
 
-/**
- * Read drawn nine grid cache capability set.\n
- * @msdn{cc241565}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read drawn nine grid cache capability set.
+ * msdn{cc241565}
  */
 
 static BOOL rdp_read_draw_nine_grid_cache_capability_set(wStream* s, rdpSettings* settings)
@@ -2335,11 +2250,9 @@ static BOOL rdp_read_draw_nine_grid_cache_capability_set(wStream* s, rdpSettings
 	return TRUE;
 }
 
-/**
- * Write drawn nine grid cache capability set.\n
- * @msdn{cc241565}
- * @param s stream
- * @param settings settings
+/*
+ * Write drawn nine grid cache capability set.
+ * msdn{cc241565}
  */
 
 static BOOL rdp_write_draw_nine_grid_cache_capability_set(wStream* s, const rdpSettings* settings)
@@ -2424,12 +2337,9 @@ static BOOL rdp_apply_draw_gdiplus_cache_capability_set(rdpSettings* settings,
 	return TRUE;
 }
 
-/**
- * Read GDI+ cache capability set.\n
- * @msdn{cc241566}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read GDI+ cache capability set.
+ * msdn{cc241566}
  */
 
 static BOOL rdp_read_draw_gdiplus_cache_capability_set(wStream* s, rdpSettings* settings)
@@ -2454,11 +2364,9 @@ static BOOL rdp_read_draw_gdiplus_cache_capability_set(wStream* s, rdpSettings* 
 	return TRUE;
 }
 
-/**
- * Write GDI+ cache capability set.\n
- * @msdn{cc241566}
- * @param s stream
- * @param settings settings
+/*
+ * Write GDI+ cache capability set.
+ * msdn{cc241566}
  */
 
 static BOOL rdp_write_draw_gdiplus_cache_capability_set(wStream* s, const rdpSettings* settings)
@@ -2531,12 +2439,9 @@ static BOOL rdp_apply_remote_programs_capability_set(rdpSettings* settings, cons
 	return TRUE;
 }
 
-/**
- * Read remote programs capability set.\n
- * @msdn{cc242518}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read remote programs capability set.
+ * msdn{cc242518}
  */
 
 static BOOL rdp_read_remote_programs_capability_set(wStream* s, rdpSettings* settings)
@@ -2554,11 +2459,9 @@ static BOOL rdp_read_remote_programs_capability_set(wStream* s, rdpSettings* set
 	return TRUE;
 }
 
-/**
- * Write remote programs capability set.\n
- * @msdn{cc242518}
- * @param s stream
- * @param settings settings
+/*
+ * Write remote programs capability set.
+ * msdn{cc242518}
  */
 
 static BOOL rdp_write_remote_programs_capability_set(wStream* s, const rdpSettings* settings)
@@ -2620,12 +2523,9 @@ static BOOL rdp_apply_window_list_capability_set(rdpSettings* settings, const rd
 	return TRUE;
 }
 
-/**
- * Read window list capability set.\n
- * @msdn{cc242564}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read window list capability set.
+ * msdn{cc242564}
  */
 
 static BOOL rdp_read_window_list_capability_set(wStream* s, rdpSettings* settings)
@@ -2641,11 +2541,9 @@ static BOOL rdp_read_window_list_capability_set(wStream* s, rdpSettings* setting
 	return TRUE;
 }
 
-/**
- * Write window list capability set.\n
- * @msdn{cc242564}
- * @param s stream
- * @param settings settings
+/*
+ * Write window list capability set.
+ * msdn{cc242564}
  */
 
 static BOOL rdp_write_window_list_capability_set(wStream* s, const rdpSettings* settings)
@@ -2697,12 +2595,9 @@ static BOOL rdp_apply_desktop_composition_capability_set(rdpSettings* settings,
 	return TRUE;
 }
 
-/**
- * Read desktop composition capability set.\n
- * @msdn{cc240855}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read desktop composition capability set.
+ * msdn{cc240855}
  */
 
 static BOOL rdp_read_desktop_composition_capability_set(wStream* s, rdpSettings* settings)
@@ -2717,11 +2612,9 @@ static BOOL rdp_read_desktop_composition_capability_set(wStream* s, rdpSettings*
 	return TRUE;
 }
 
-/**
- * Write desktop composition capability set.\n
- * @msdn{cc240855}
- * @param s stream
- * @param settings settings
+/*
+ * Write desktop composition capability set.
+ * msdn{cc240855}
  */
 
 static BOOL rdp_write_desktop_composition_capability_set(wStream* s, const rdpSettings* settings)
@@ -2784,14 +2677,14 @@ static BOOL rdp_apply_multifragment_update_capability_set(rdpSettings* settings,
 
 		if (settings->RemoteFxCodec)
 		{
-			/**
+			/*
 			 * If we are using RemoteFX the client MUST use a value greater
 			 * than or equal to the value we've previously sent in the server to
 			 * client multi-fragment update capability set (MS-RDPRFX 1.5)
 			 */
 			if (multifragMaxRequestSize < settings->MultifragMaxRequestSize)
 			{
-				/**
+				/*
 				 * If it happens to be smaller we honor the client's value but
 				 * have to disable RemoteFX
 				 */
@@ -2810,7 +2703,7 @@ static BOOL rdp_apply_multifragment_update_capability_set(rdpSettings* settings,
 	}
 	else
 	{
-		/**
+		/*
 		 * In client mode we keep up with the server's capabilites.
 		 * In RemoteFX mode we MUST do this but it might also be useful to
 		 * receive larger related bitmap updates.
@@ -2821,12 +2714,9 @@ static BOOL rdp_apply_multifragment_update_capability_set(rdpSettings* settings,
 	return TRUE;
 }
 
-/**
- * Read multifragment update capability set.\n
- * @msdn{cc240649}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read multifragment update capability set.
+ * msdn{cc240649}
  */
 
 static BOOL rdp_read_multifragment_update_capability_set(wStream* s, rdpSettings* settings)
@@ -2843,11 +2733,9 @@ static BOOL rdp_read_multifragment_update_capability_set(wStream* s, rdpSettings
 	return TRUE;
 }
 
-/**
- * Write multifragment update capability set.\n
- * @msdn{cc240649}
- * @param s stream
- * @param settings settings
+/*
+ * Write multifragment update capability set.
+ * msdn{cc240649}
  */
 
 static BOOL rdp_write_multifragment_update_capability_set(wStream* s, rdpSettings* settings)
@@ -2857,7 +2745,7 @@ static BOOL rdp_write_multifragment_update_capability_set(wStream* s, rdpSetting
 	WINPR_ASSERT(settings);
 	if (settings->ServerMode && settings->MultifragMaxRequestSize == 0)
 	{
-		/**
+		/*
 		 * In server mode we prefer to use the highest useful request size that
 		 * will allow us to pack a complete screen update into a single fast
 		 * path PDU using any of the supported codecs.
@@ -2909,12 +2797,9 @@ static BOOL rdp_apply_large_pointer_capability_set(rdpSettings* settings, const 
 	return TRUE;
 }
 
-/**
- * Read large pointer capability set.\n
- * @msdn{cc240650}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read large pointer capability set.
+ * msdn{cc240650}
  */
 
 static BOOL rdp_read_large_pointer_capability_set(wStream* s, rdpSettings* settings)
@@ -2938,11 +2823,9 @@ static BOOL rdp_read_large_pointer_capability_set(wStream* s, rdpSettings* setti
 	return TRUE;
 }
 
-/**
- * Write large pointer capability set.\n
- * @msdn{cc240650}
- * @param s stream
- * @param settings settings
+/*
+ * Write large pointer capability set.
+ * msdn{cc240650}
  */
 
 static BOOL rdp_write_large_pointer_capability_set(wStream* s, const rdpSettings* settings)
@@ -2989,12 +2872,9 @@ static BOOL rdp_apply_surface_commands_capability_set(rdpSettings* settings, con
 	return TRUE;
 }
 
-/**
- * Read surface commands capability set.\n
- * @msdn{dd871563}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read surface commands capability set.
+ * msdn{dd871563}
  */
 
 static BOOL rdp_read_surface_commands_capability_set(wStream* s, rdpSettings* settings)
@@ -3012,11 +2892,9 @@ static BOOL rdp_read_surface_commands_capability_set(wStream* s, rdpSettings* se
 	return TRUE;
 }
 
-/**
- * Write surface commands capability set.\n
- * @msdn{dd871563}
- * @param s stream
- * @param settings settings
+/*
+ * Write surface commands capability set.
+ * msdn{dd871563}
  */
 
 static BOOL rdp_write_surface_commands_capability_set(wStream* s, const rdpSettings* settings)
@@ -3161,12 +3039,9 @@ static BOOL rdp_apply_bitmap_codecs_capability_set(rdpSettings* settings, const 
 	return TRUE;
 }
 
-/**
- * Read bitmap codecs capability set.\n
- * @msdn{dd891377}
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read bitmap codecs capability set.
+ * msdn{dd891377}
  */
 
 static BOOL rdp_read_bitmap_codecs_capability_set(wStream* s, rdpSettings* settings, BOOL isServer)
@@ -3371,10 +3246,8 @@ static BOOL rdp_read_bitmap_codecs_capability_set(wStream* s, rdpSettings* setti
 	return TRUE;
 }
 
-/**
- * Write RemoteFX Client Capability Container.\n
- * @param s stream
- * @param settings settings
+/*
+ * Write RemoteFX Client Capability Container.
  */
 static BOOL rdp_write_rfx_client_capability_container(wStream* s, const rdpSettings* settings)
 {
@@ -3420,10 +3293,8 @@ static BOOL rdp_write_rfx_client_capability_container(wStream* s, const rdpSetti
 	return TRUE;
 }
 
-/**
- * Write NSCODEC Client Capability Container.\n
- * @param s stream
- * @param settings settings
+/*
+ * Write NSCODEC Client Capability Container.
  */
 static BOOL rdp_write_nsc_client_capability_container(wStream* s, const rdpSettings* settings)
 {
@@ -3467,10 +3338,8 @@ static BOOL rdp_write_jpeg_client_capability_container(wStream* s, const rdpSett
 }
 #endif
 
-/**
- * Write RemoteFX Server Capability Container.\n
- * @param s stream
- * @param settings settings
+/*
+ * Write RemoteFX Server Capability Container.
  */
 static BOOL rdp_write_rfx_server_capability_container(wStream* s, const rdpSettings* settings)
 {
@@ -3498,10 +3367,8 @@ static BOOL rdp_write_jpeg_server_capability_container(wStream* s, const rdpSett
 	return TRUE;
 }
 
-/**
- * Write NSCODEC Server Capability Container.\n
- * @param s stream
- * @param settings settings
+/*
+ * Write NSCODEC Server Capability Container.
  */
 static BOOL rdp_write_nsc_server_capability_container(wStream* s, const rdpSettings* settings)
 {
@@ -3516,11 +3383,9 @@ static BOOL rdp_write_nsc_server_capability_container(wStream* s, const rdpSetti
 	return TRUE;
 }
 
-/**
- * Write bitmap codecs capability set.\n
- * @msdn{dd891377}
- * @param s stream
- * @param settings settings
+/*
+ * Write bitmap codecs capability set.
+ * msdn{dd891377}
  */
 
 static BOOL rdp_write_bitmap_codecs_capability_set(wStream* s, const rdpSettings* settings)
@@ -3693,11 +3558,8 @@ static BOOL rdp_apply_frame_acknowledge_capability_set(rdpSettings* settings,
 	return TRUE;
 }
 
-/**
- * Read frame acknowledge capability set.\n
- * @param s stream
- * @param settings settings
- * @return if the operation completed successfully
+/*
+ * Read frame acknowledge capability set.
  */
 
 static BOOL rdp_read_frame_acknowledge_capability_set(wStream* s, rdpSettings* settings)
@@ -3711,10 +3573,8 @@ static BOOL rdp_read_frame_acknowledge_capability_set(wStream* s, rdpSettings* s
 	return TRUE;
 }
 
-/**
- * Write frame acknowledge capability set.\n
- * @param s stream
- * @param settings settings
+/*
+ * Write frame acknowledge capability set.
  */
 
 static BOOL rdp_write_frame_acknowledge_capability_set(wStream* s, const rdpSettings* settings)
@@ -4504,7 +4364,7 @@ BOOL rdp_recv_demand_active(rdpRdp* rdp, wStream* s)
 	pduName = pdu_type_to_str(pduType);
 	if (pduType == PDU_TYPE_DATA)
 	{
-		/**
+		/*
 		 * We can receive a Save Session Info Data PDU containing a LogonErrorInfo
 		 * structure at this point from the server to indicate a connection error.
 		 */

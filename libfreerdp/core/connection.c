@@ -185,7 +185,6 @@
  *channel messages (exchanged between client-side plug-ins and server-side applications).
  */
 
-static state_run_t rdp_client_connect_finalize(rdpRdp* rdp);
 static BOOL rdp_set_state(rdpRdp* rdp, CONNECTION_STATE state);
 
 static BOOL rdp_client_reset_codecs(rdpContext* context)
@@ -226,9 +225,63 @@ static BOOL rdp_client_reset_codecs(rdpContext* context)
 	return TRUE;
 }
 
+static BOOL rdp_client_wait_for_activation(rdpRdp* rdp)
+{
+	BOOL timedout = FALSE;
+	WINPR_ASSERT(rdp);
+
+	const rdpSettings* settings = rdp->settings;
+	WINPR_ASSERT(settings);
+
+	UINT64 now = GetTickCount64();
+	UINT64 dueDate = now + freerdp_settings_get_uint32(settings, FreeRDP_TcpAckTimeout);
+
+	for (; (now < dueDate) && !timedout; now = GetTickCount64())
+	{
+		HANDLE events[MAXIMUM_WAIT_OBJECTS] = { 0 };
+		DWORD wstatus = 0;
+		DWORD nevents = freerdp_get_event_handles(rdp->context, events, ARRAYSIZE(events));
+		if (!nevents)
+		{
+			WLog_ERR(TAG, "error retrieving connection events");
+			return FALSE;
+		}
+
+		wstatus = WaitForMultipleObjectsEx(nevents, events, FALSE, (dueDate - now), TRUE);
+		switch (wstatus)
+		{
+			case WAIT_TIMEOUT:
+				/* will make us quit with a timeout */
+				timedout = TRUE;
+				break;
+			case WAIT_ABANDONED:
+			case WAIT_FAILED:
+				return FALSE;
+			case WAIT_IO_COMPLETION:
+				break;
+			case WAIT_OBJECT_0:
+			default:
+				/* handles all WAIT_OBJECT_0 + [0 .. MAXIMUM_WAIT_OBJECTS-1] cases */
+				if (rdp_check_fds(rdp) < 0)
+				{
+					freerdp_set_last_error_if_not(rdp->context,
+					                              FREERDP_ERROR_CONNECT_TRANSPORT_FAILED);
+					return FALSE;
+				}
+				break;
+		}
+
+		if (rdp_is_active_state(rdp))
+			return TRUE;
+	}
+
+	WLog_ERR(TAG, "Timeout waiting for activation");
+	freerdp_set_last_error_if_not(rdp->context, FREERDP_ERROR_CONNECT_ACTIVATION_TIMEOUT);
+	return FALSE;
+}
 /**
  * Establish RDP Connection based on the settings given in the 'rdp' parameter.
- * @msdn{cc240452}
+ * msdn{cc240452}
  * @param rdp RDP module
  * @return true if the connection succeeded. FALSE otherwise.
  */
@@ -241,7 +294,6 @@ BOOL rdp_client_connect(rdpRdp* rdp)
 	/* make sure SSL is initialize for earlier enough for crypto, by taking advantage of winpr SSL
 	 * FIPS flag for openssl initialization */
 	DWORD flags = WINPR_SSL_INIT_DEFAULT;
-	UINT64 dueDate, now;
 
 	WINPR_ASSERT(rdp);
 
@@ -388,51 +440,7 @@ BOOL rdp_client_connect(rdpRdp* rdp)
 	if (!transport_set_recv_callbacks(rdp->transport, rdp_recv_callback, rdp))
 		return FALSE;
 
-	now = GetTickCount64();
-	dueDate = now + freerdp_settings_get_uint32(settings, FreeRDP_TcpAckTimeout);
-
-	for (; now < dueDate; now = GetTickCount64())
-	{
-		HANDLE events[MAXIMUM_WAIT_OBJECTS] = { 0 };
-		DWORD wstatus = 0;
-		DWORD nevents = freerdp_get_event_handles(rdp->context, events, ARRAYSIZE(events));
-		if (!nevents)
-		{
-			WLog_ERR(TAG, "error retrieving connection events");
-			return FALSE;
-		}
-
-		wstatus = WaitForMultipleObjectsEx(nevents, events, FALSE, (dueDate - now), TRUE);
-		switch (wstatus)
-		{
-			case WAIT_TIMEOUT:
-				/* will make us quit with a timeout */
-				now = dueDate + 1;
-				continue;
-			case WAIT_ABANDONED:
-			case WAIT_FAILED:
-				return FALSE;
-			case WAIT_IO_COMPLETION:
-				continue;
-			case WAIT_OBJECT_0:
-			default:
-				/* handles all WAIT_OBJECT_0 + [0 .. MAXIMUM_WAIT_OBJECTS-1] cases */
-				if (rdp_check_fds(rdp) < 0)
-				{
-					freerdp_set_last_error_if_not(rdp->context,
-					                              FREERDP_ERROR_CONNECT_TRANSPORT_FAILED);
-					return FALSE;
-				}
-				break;
-		}
-
-		if (rdp_get_state(rdp) == CONNECTION_STATE_ACTIVE)
-			return TRUE;
-	}
-
-	WLog_ERR(TAG, "Timeout waiting for activation");
-	freerdp_set_last_error_if_not(rdp->context, FREERDP_ERROR_CONNECT_ACTIVATION_TIMEOUT);
-	return FALSE;
+	return rdp_client_wait_for_activation(rdp);
 }
 
 BOOL rdp_client_disconnect(rdpRdp* rdp)
@@ -790,10 +798,9 @@ static BOOL rdp_client_establish_keys(rdpRdp* rdp)
 		goto end;
 	}
 
-	rdp->rc4_decrypt_key = winpr_RC4_New(rdp->decrypt_key, rdp->rc4_key_len);
-	rdp->rc4_encrypt_key = winpr_RC4_New(rdp->encrypt_key, rdp->rc4_key_len);
-
-	if (!rdp->rc4_decrypt_key || !rdp->rc4_encrypt_key)
+	if (!rdp_reset_rc4_encrypt_keys(rdp))
+		goto end;
+	if (!rdp_reset_rc4_decrypt_keys(rdp))
 		goto end;
 
 	ret = TRUE;
@@ -804,12 +811,11 @@ end:
 	{
 		winpr_Cipher_Free(rdp->fips_decrypt);
 		winpr_Cipher_Free(rdp->fips_encrypt);
-		winpr_RC4_Free(rdp->rc4_decrypt_key);
-		winpr_RC4_Free(rdp->rc4_encrypt_key);
 		rdp->fips_decrypt = NULL;
 		rdp->fips_encrypt = NULL;
-		rdp->rc4_decrypt_key = NULL;
-		rdp->rc4_encrypt_key = NULL;
+
+		rdp_free_rc4_decrypt_keys(rdp);
+		rdp_free_rc4_encrypt_keys(rdp);
 	}
 
 	return ret;
@@ -922,10 +928,10 @@ BOOL rdp_server_establish_keys(rdpRdp* rdp, wStream* s)
 		goto end;
 	}
 
-	rdp->rc4_decrypt_key = winpr_RC4_New(rdp->decrypt_key, rdp->rc4_key_len);
-	rdp->rc4_encrypt_key = winpr_RC4_New(rdp->encrypt_key, rdp->rc4_key_len);
+	if (!rdp_reset_rc4_encrypt_keys(rdp))
+		goto end;
 
-	if (!rdp->rc4_decrypt_key || !rdp->rc4_encrypt_key)
+	if (!rdp_reset_rc4_decrypt_keys(rdp))
 		goto end;
 
 	ret = tpkt_ensure_stream_consumed(s, length);
@@ -936,12 +942,11 @@ end:
 	{
 		winpr_Cipher_Free(rdp->fips_encrypt);
 		winpr_Cipher_Free(rdp->fips_decrypt);
-		winpr_RC4_Free(rdp->rc4_encrypt_key);
-		winpr_RC4_Free(rdp->rc4_decrypt_key);
 		rdp->fips_encrypt = NULL;
 		rdp->fips_decrypt = NULL;
-		rdp->rc4_encrypt_key = NULL;
-		rdp->rc4_decrypt_key = NULL;
+
+		rdp_free_rc4_encrypt_keys(rdp);
+		rdp_free_rc4_decrypt_keys(rdp);
 	}
 
 	return ret;
@@ -1134,7 +1139,14 @@ state_run_t rdp_client_connect_license(rdpRdp* rdp, wStream* s)
 	}
 
 	if ((securityFlags & SEC_LICENSE_PKT) == 0)
+	{
+		char buffer[512] = { 0 };
+		char lbuffer[32] = { 0 };
+		WLog_ERR(TAG, "[%s] securityFlags=%s, missing required flag %s", __FUNCTION__,
+		         rdp_security_flag_string(securityFlags, buffer, sizeof(buffer)),
+		         rdp_security_flag_string(SEC_LICENSE_PKT, lbuffer, sizeof(lbuffer)));
 		return STATE_RUN_FAILED;
+	}
 
 	status = license_recv(rdp->license, s);
 
@@ -1202,6 +1214,7 @@ state_run_t rdp_client_connect_demand_active(rdpRdp* rdp, wStream* s)
 
 state_run_t rdp_client_connect_finalize(rdpRdp* rdp)
 {
+	WINPR_ASSERT(rdp);
 	/**
 	 * [MS-RDPBCGR] 1.3.1.1 - 8.
 	 * The client-to-server PDUs sent during this phase have no dependencies on any of the
@@ -1270,7 +1283,7 @@ BOOL rdp_client_transition_to_state(rdpRdp* rdp, CONNECTION_STATE state)
 				return FALSE;
 			break;
 
-		case CONNECTION_STATE_ACTIVE:
+		case CONNECTION_STATE_CAPABILITIES_EXCHANGE_CONFIRM_ACTIVE:
 		{
 			ActivatedEventArgs activatedEvent = { 0 };
 			rdpContext* context = rdp->context;
@@ -1291,7 +1304,7 @@ BOOL rdp_client_transition_to_state(rdpRdp* rdp, CONNECTION_STATE state)
 		rdpContext* context = rdp->context;
 		EventArgsInit(&stateEvent, "libfreerdp");
 		stateEvent.state = rdp_get_state(rdp);
-		stateEvent.active = rdp_get_state(rdp) == CONNECTION_STATE_ACTIVE;
+		stateEvent.active = rdp_is_active_state(rdp);
 		PubSub_OnConnectionStateChange(rdp->pubSub, context, &stateEvent);
 	}
 
@@ -1466,9 +1479,6 @@ BOOL rdp_server_accept_mcs_erect_domain_request(rdpRdp* rdp, wStream* s)
 
 BOOL rdp_server_accept_mcs_attach_user_request(rdpRdp* rdp, wStream* s)
 {
-	if (!rdp_server_transition_to_state(rdp, CONNECTION_STATE_MCS_ATTACH_USER))
-		return FALSE;
-
 	if (!mcs_recv_attach_user_request(rdp->mcs, s))
 		return FALSE;
 
@@ -1589,6 +1599,61 @@ BOOL rdp_server_reactivate(rdpRdp* rdp)
 	return state_run_success(rc);
 }
 
+static BOOL rdp_is_active_peer_state(CONNECTION_STATE state)
+{
+	/* [MS-RDPBCGR] 1.3.1.1 Connection Sequence states:
+	 * 'upon receipt of the Font List PDU the server can start sending graphics
+	 *  output to the client'
+	 */
+	switch (state)
+	{
+		case CONNECTION_STATE_FINALIZATION_CLIENT_SYNC:
+		case CONNECTION_STATE_FINALIZATION_CLIENT_COOPERATE:
+		case CONNECTION_STATE_FINALIZATION_CLIENT_GRANTED_CONTROL:
+		case CONNECTION_STATE_FINALIZATION_CLIENT_FONT_MAP:
+		case CONNECTION_STATE_ACTIVE:
+			return TRUE;
+		default:
+			return FALSE;
+	}
+}
+
+static BOOL rdp_is_active_client_state(CONNECTION_STATE state)
+{
+	/* [MS-RDPBCGR] 1.3.1.1 Connection Sequence states:
+	 * 'Once the client has sent the Confirm Active PDU, it can start sending
+	 *  mouse and keyboard input to the server'
+	 */
+	switch (state)
+	{
+		case CONNECTION_STATE_FINALIZATION_SYNC:
+		case CONNECTION_STATE_FINALIZATION_COOPERATE:
+		case CONNECTION_STATE_FINALIZATION_REQUEST_CONTROL:
+		case CONNECTION_STATE_FINALIZATION_PERSISTENT_KEY_LIST:
+		case CONNECTION_STATE_FINALIZATION_FONT_LIST:
+		case CONNECTION_STATE_FINALIZATION_CLIENT_SYNC:
+		case CONNECTION_STATE_FINALIZATION_CLIENT_COOPERATE:
+		case CONNECTION_STATE_FINALIZATION_CLIENT_GRANTED_CONTROL:
+		case CONNECTION_STATE_FINALIZATION_CLIENT_FONT_MAP:
+		case CONNECTION_STATE_ACTIVE:
+			return TRUE;
+		default:
+			return FALSE;
+	}
+}
+
+BOOL rdp_is_active_state(const rdpRdp* rdp)
+{
+	WINPR_ASSERT(rdp);
+	WINPR_ASSERT(rdp->context);
+
+	const CONNECTION_STATE state = rdp_get_state(rdp);
+	if (freerdp_settings_get_bool(rdp->context->settings, FreeRDP_ServerMode))
+		return rdp_is_active_peer_state(state);
+	else
+		return rdp_is_active_client_state(state);
+}
+
 BOOL rdp_server_transition_to_state(rdpRdp* rdp, CONNECTION_STATE state)
 {
 	BOOL status = FALSE;
@@ -1598,7 +1663,7 @@ BOOL rdp_server_transition_to_state(rdpRdp* rdp, CONNECTION_STATE state)
 	if (cstate >= CONNECTION_STATE_RDP_SECURITY_COMMENCEMENT)
 		client = rdp->context->peer;
 
-	if (cstate < CONNECTION_STATE_ACTIVE)
+	if (!rdp_is_active_peer_state(cstate))
 	{
 		if (client)
 			client->activated = FALSE;
@@ -1744,6 +1809,12 @@ BOOL rdp_channels_from_mcs(rdpSettings* settings, const rdpRdp* rdp)
 	return TRUE;
 }
 
+/* Here we are in client state CONFIRM_ACTIVE.
+ *
+ * This means:
+ * 1. send the CONFIRM_ACTIVE PDU to the server
+ * 2. register callbacks, the server can now start sending stuff
+ */
 state_run_t rdp_client_connect_confirm_active(rdpRdp* rdp, wStream* s)
 {
 	WINPR_ASSERT(rdp);
@@ -1787,5 +1858,14 @@ state_run_t rdp_client_connect_confirm_active(rdpRdp* rdp, wStream* s)
 	if (freerdp_shall_disconnect_context(rdp->context))
 		return STATE_RUN_SUCCESS;
 
-	return rdp_client_connect_finalize(rdp);
+	state_run_t status = STATE_RUN_SUCCESS;
+	if (!rdp->settings->SupportMonitorLayoutPdu)
+		status = rdp_client_connect_finalize(rdp);
+	else
+	{
+		if (!rdp_client_transition_to_state(rdp,
+		                                    CONNECTION_STATE_CAPABILITIES_EXCHANGE_MONITOR_LAYOUT))
+			status = STATE_RUN_FAILED;
+	}
+	return status;
 }

@@ -120,10 +120,13 @@ static BOOL rdp_write_share_control_header(wStream* s, UINT16 length, UINT16 typ
 static BOOL rdp_write_share_data_header(wStream* s, UINT16 length, BYTE type, UINT32 share_id);
 
 /**
- * Read RDP Security Header.\n
- * @msdn{cc240579}
+ * @brief Read RDP Security Header.
+ * msdn{cc240579}
+ *
  * @param s stream
  * @param flags security flags
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL rdp_read_security_header(wStream* s, UINT16* flags, UINT16* length)
@@ -150,10 +153,12 @@ BOOL rdp_read_security_header(wStream* s, UINT16* flags, UINT16* length)
 }
 
 /**
- * Write RDP Security Header.\n
- * @msdn{cc240579}
+ * Write RDP Security Header.
+ * msdn{cc240579}
  * @param s stream
  * @param flags security flags
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL rdp_write_security_header(wStream* s, UINT16 flags)
@@ -433,11 +438,13 @@ fail:
 }
 
 /**
- * Read an RDP packet header.\n
+ * Read an RDP packet header.
  * @param rdp rdp module
  * @param s stream
  * @param length RDP packet length
- * @param channel_id channel id
+ * @param channelId channel id
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL rdp_read_header(rdpRdp* rdp, wStream* s, UINT16* length, UINT16* channelId)
@@ -558,11 +565,13 @@ BOOL rdp_read_header(rdpRdp* rdp, wStream* s, UINT16* length, UINT16* channelId)
 }
 
 /**
- * Write an RDP packet header.\n
+ * Write an RDP packet header.
  * @param rdp rdp module
  * @param s stream
  * @param length RDP packet length
- * @param channel_id channel id
+ * @param channelId channel id
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL rdp_write_header(rdpRdp* rdp, wStream* s, UINT16 length, UINT16 channelId)
@@ -1196,23 +1205,12 @@ state_run_t rdp_recv_message_channel_pdu(rdpRdp* rdp, wStream* s, UINT16 securit
 
 	if (securityFlags & SEC_TRANSPORT_REQ)
 	{
-		HRESULT hr = E_ABORT;
-		/* Initiate Multitransport Request PDU */
-		// TODO: This message is server -> client only
-		state_run_t rc = multitransport_client_recv_request(rdp->multitransport, s);
-		if (state_run_failed(rc))
-			return rc;
-		if (!multitransport_client_send_response(rdp->multitransport, hr))
-			return STATE_RUN_FAILED;
-		return STATE_RUN_SUCCESS;
+		return multitransport_recv_request(rdp->multitransport, s);
 	}
 
 	if (securityFlags & SEC_TRANSPORT_RSP)
 	{
-		/* Initiate Multitransport Request PDU */
-		HRESULT hr; // TODO: Do something with this result
-		// TODO: This message is client -> server only
-		return multitransport_server_recv_response(rdp->multitransport, s, &hr) ? 0 : -1;
+		return multitransport_recv_response(rdp->multitransport, s);
 	}
 
 	if (securityFlags & SEC_LICENSE_PKT)
@@ -1288,10 +1286,14 @@ BOOL rdp_read_flow_control_pdu(wStream* s, UINT16* type, UINT16* channel_id)
 }
 
 /**
- * Decrypt an RDP packet.\n
+ * Decrypt an RDP packet.
+ *
  * @param rdp RDP module
  * @param s stream
- * @param length int
+ * @param pLength A pointer to the result variable, must not be NULL
+ * @param securityFlags the security flags to apply
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL rdp_decrypt(rdpRdp* rdp, wStream* s, UINT16* pLength, UINT16 securityFlags)
@@ -1416,7 +1418,7 @@ const char* pdu_type_to_str(UINT16 pduType)
 }
 
 /**
- * Process an RDP packet.\n
+ * Process an RDP packet.
  * @param rdp RDP module
  * @param s stream
  */
@@ -1618,10 +1620,55 @@ static state_run_t rdp_recv_pdu(rdpRdp* rdp, wStream* s)
 		return STATE_RUN_FAILED;
 }
 
-static state_run_t rdp_recv_callback_int(rdpTransport* transport, wStream* s, void* extra)
+static state_run_t rdp_handle_sc_flags(rdpRdp* rdp, wStream* s, UINT32 flag,
+                                       CONNECTION_STATE nextState)
 {
 	const UINT32 mask = FINALIZE_SC_SYNCHRONIZE_PDU | FINALIZE_SC_CONTROL_COOPERATE_PDU |
 	                    FINALIZE_SC_CONTROL_GRANTED_PDU | FINALIZE_SC_FONT_MAP_PDU;
+	state_run_t status = rdp_recv_pdu(rdp, s);
+	if (state_run_success(status))
+	{
+		const UINT32 flags = rdp->finalize_sc_pdus & mask;
+		if ((flags & flag) == flag)
+		{
+			if (!rdp_client_transition_to_state(rdp, nextState))
+				status = STATE_RUN_FAILED;
+			else
+				status = STATE_RUN_SUCCESS;
+		}
+		else
+		{
+			char flag_buffer[256] = { 0 };
+			char mask_buffer[256] = { 0 };
+			WLog_WARN(TAG, "[%s] unexpected server message, expected flag %s [have %s]",
+			          rdp_get_state_string(rdp),
+			          rdp_finalize_flags_to_str(flag, flag_buffer, sizeof(flag_buffer)),
+			          rdp_finalize_flags_to_str(flags, mask_buffer, sizeof(mask_buffer)));
+		}
+	}
+	return status;
+}
+
+static state_run_t rdp_client_exchange_monitor_layout(rdpRdp* rdp, wStream* s)
+{
+	WINPR_ASSERT(rdp);
+
+	const UINT32 old = rdp->finalize_sc_pdus;
+	state_run_t status = rdp_recv_pdu(rdp, s);
+
+	/* This PDU is optional, so if we received a finalize PDU continue there */
+	if (state_run_success(status))
+	{
+		const BOOL changed = old != rdp->finalize_sc_pdus;
+		status = rdp_client_connect_finalize(rdp);
+		if (changed && state_run_success(status))
+			status = STATE_RUN_TRY_AGAIN;
+	}
+	return status;
+}
+
+static state_run_t rdp_recv_callback_int(rdpTransport* transport, wStream* s, void* extra)
+{
 	state_run_t status = STATE_RUN_SUCCESS;
 	rdpRdp* rdp = (rdpRdp*)extra;
 
@@ -1817,32 +1864,16 @@ static state_run_t rdp_recv_callback_int(rdpTransport* transport, wStream* s, vo
 			}
 			else if (status != STATE_RUN_REDIRECT)
 			{
-				if (!rdp->settings->SupportMonitorLayoutPdu)
-				{
-					if (!rdp_client_transition_to_state(
-					        rdp, CONNECTION_STATE_CAPABILITIES_EXCHANGE_CONFIRM_ACTIVE))
-						status = STATE_RUN_FAILED;
-					else
-						status = STATE_RUN_CONTINUE;
-				}
+				if (!rdp_client_transition_to_state(
+				        rdp, CONNECTION_STATE_CAPABILITIES_EXCHANGE_CONFIRM_ACTIVE))
+					status = STATE_RUN_FAILED;
 				else
-				{
-					if (!rdp_client_transition_to_state(
-					        rdp, CONNECTION_STATE_CAPABILITIES_EXCHANGE_MONITOR_LAYOUT))
-						status = STATE_RUN_FAILED;
-				}
+					status = STATE_RUN_CONTINUE;
 			}
 			break;
 
 		case CONNECTION_STATE_CAPABILITIES_EXCHANGE_MONITOR_LAYOUT:
-			status = rdp_recv_pdu(rdp, s);
-			if (state_run_success(status))
-			{
-				status = STATE_RUN_TRY_AGAIN;
-				if (!rdp_client_transition_to_state(
-				        rdp, CONNECTION_STATE_CAPABILITIES_EXCHANGE_CONFIRM_ACTIVE))
-					status = STATE_RUN_FAILED;
-			}
+			status = rdp_client_exchange_monitor_layout(rdp, s);
 			break;
 
 		case CONNECTION_STATE_CAPABILITIES_EXCHANGE_CONFIRM_ACTIVE:
@@ -1850,86 +1881,20 @@ static state_run_t rdp_recv_callback_int(rdpTransport* transport, wStream* s, vo
 			break;
 
 		case CONNECTION_STATE_FINALIZATION_CLIENT_SYNC:
-		{
-			const UINT32 flags = rdp->finalize_sc_pdus & mask;
-			status = rdp_recv_pdu(rdp, s);
-			if (state_run_success(status))
-			{
-				const UINT32 uflags = rdp->finalize_sc_pdus & mask;
-				if (flags != uflags)
-				{
-					if (!rdp_client_transition_to_state(
-					        rdp, CONNECTION_STATE_FINALIZATION_CLIENT_COOPERATE))
-						status = STATE_RUN_FAILED;
-				}
-				else
-					status = STATE_RUN_FAILED;
-			}
-		}
-		break;
+			status = rdp_handle_sc_flags(rdp, s, FINALIZE_SC_SYNCHRONIZE_PDU,
+			                             CONNECTION_STATE_FINALIZATION_CLIENT_COOPERATE);
+			break;
 		case CONNECTION_STATE_FINALIZATION_CLIENT_COOPERATE:
-		{
-			const UINT32 flags = rdp->finalize_sc_pdus & mask;
-			status = rdp_recv_pdu(rdp, s);
-			if (state_run_success(status))
-			{
-				const UINT32 uflags = rdp->finalize_sc_pdus & mask;
-				if (flags != uflags)
-				{
-					if (!rdp_client_transition_to_state(
-					        rdp, CONNECTION_STATE_FINALIZATION_CLIENT_GRANTED_CONTROL))
-						status = STATE_RUN_FAILED;
-				}
-				else
-					status = STATE_RUN_FAILED;
-			}
-		}
-		break;
+			status = rdp_handle_sc_flags(rdp, s, FINALIZE_SC_CONTROL_COOPERATE_PDU,
+			                             CONNECTION_STATE_FINALIZATION_CLIENT_GRANTED_CONTROL);
+			break;
 		case CONNECTION_STATE_FINALIZATION_CLIENT_GRANTED_CONTROL:
-		{
-			const UINT32 flags = rdp->finalize_sc_pdus & mask;
-			status = rdp_recv_pdu(rdp, s);
-			if (state_run_success(status))
-			{
-				const UINT32 uflags = rdp->finalize_sc_pdus & mask;
-				if (flags != uflags)
-				{
-					if (!rdp_client_transition_to_state(
-					        rdp, CONNECTION_STATE_FINALIZATION_CLIENT_FONT_MAP))
-						status = STATE_RUN_FAILED;
-				}
-				else
-					status = STATE_RUN_FAILED;
-			}
-		}
-		break;
+			status = rdp_handle_sc_flags(rdp, s, FINALIZE_SC_CONTROL_GRANTED_PDU,
+			                             CONNECTION_STATE_FINALIZATION_CLIENT_FONT_MAP);
+			break;
 		case CONNECTION_STATE_FINALIZATION_CLIENT_FONT_MAP:
-		{
-			const UINT32 flags = rdp->finalize_sc_pdus & mask;
-			status = rdp_recv_pdu(rdp, s);
-			if (state_run_success(status))
-			{
-				const UINT32 uflags = rdp->finalize_sc_pdus & mask;
-				if (flags == uflags)
-					WLog_WARN(TAG, "Did not receive a FINALIZE_SC_FONT_MAP_PDU");
-
-				{
-					if (!rdp_client_transition_to_state(rdp, CONNECTION_STATE_ACTIVE))
-						status = STATE_RUN_FAILED;
-					else
-						status = STATE_RUN_ACTIVE;
-				}
-			}
-
-			if (state_run_failed(status))
-			{
-				char buffer[64] = { 0 };
-				WLog_DBG(TAG, "%s: %s - rdp_recv_pdu() - %s", __FUNCTION__,
-				         rdp_get_state_string(rdp),
-				         state_run_result_string(status, buffer, ARRAYSIZE(buffer)));
-			}
-		}
-		break;
+			status = rdp_handle_sc_flags(rdp, s, FINALIZE_SC_FONT_MAP_PDU, CONNECTION_STATE_ACTIVE);
+			break;
 
 		case CONNECTION_STATE_ACTIVE:
 			status = rdp_recv_pdu(rdp, s);
@@ -2211,13 +2176,12 @@ fail:
 static void rdp_reset_free(rdpRdp* rdp)
 {
 	WINPR_ASSERT(rdp);
-	winpr_RC4_Free(rdp->rc4_decrypt_key);
-	winpr_RC4_Free(rdp->rc4_encrypt_key);
+
+	rdp_free_rc4_decrypt_keys(rdp);
+	rdp_free_rc4_encrypt_keys(rdp);
+
 	winpr_Cipher_Free(rdp->fips_encrypt);
 	winpr_Cipher_Free(rdp->fips_decrypt);
-
-	rdp->rc4_decrypt_key = NULL;
-	rdp->rc4_encrypt_key = NULL;
 	rdp->fips_encrypt = NULL;
 	rdp->fips_decrypt = NULL;
 
@@ -2410,7 +2374,7 @@ const char* rdp_finalize_flags_to_str(UINT32 flags, char* buffer, size_t size)
 	if (flags == 0)
 		winpr_str_append("NO_FLAG_SET", buffer, size, "|");
 	_snprintf(number, sizeof(number), " [0x%04" PRIx16 "]", flags);
-	winpr_str_append(number, buffer, size, "|");
+	winpr_str_append(number, buffer, size, "");
 	return buffer;
 }
 
@@ -2441,4 +2405,76 @@ BOOL rdp_finalize_is_flag_set(rdpRdp* rdp, UINT32 flag)
 {
 	WINPR_ASSERT(rdp);
 	return (rdp->finalize_sc_pdus & flag) == flag;
+}
+
+BOOL rdp_reset_rc4_encrypt_keys(rdpRdp* rdp)
+{
+	WINPR_ASSERT(rdp);
+	rdp_free_rc4_encrypt_keys(rdp);
+	rdp->rc4_encrypt_key = winpr_RC4_New(rdp->encrypt_key, rdp->rc4_key_len);
+
+	rdp->encrypt_use_count = 0;
+	return rdp->rc4_encrypt_key != NULL;
+}
+
+void rdp_free_rc4_encrypt_keys(rdpRdp* rdp)
+{
+	WINPR_ASSERT(rdp);
+	winpr_RC4_Free(rdp->rc4_encrypt_key);
+	rdp->rc4_encrypt_key = NULL;
+}
+
+void rdp_free_rc4_decrypt_keys(rdpRdp* rdp)
+{
+	WINPR_ASSERT(rdp);
+	winpr_RC4_Free(rdp->rc4_decrypt_key);
+	rdp->rc4_decrypt_key = NULL;
+}
+
+BOOL rdp_reset_rc4_decrypt_keys(rdpRdp* rdp)
+{
+	WINPR_ASSERT(rdp);
+	rdp_free_rc4_decrypt_keys(rdp);
+	rdp->rc4_decrypt_key = winpr_RC4_New(rdp->decrypt_key, rdp->rc4_key_len);
+
+	rdp->decrypt_use_count = 0;
+	return rdp->rc4_decrypt_key != NULL;
+}
+
+const char* rdp_security_flag_string(UINT32 securityFlags, char* buffer, size_t size)
+{
+	if (securityFlags & SEC_EXCHANGE_PKT)
+		winpr_str_append("SEC_EXCHANGE_PKT", buffer, size, "|");
+	if (securityFlags & SEC_TRANSPORT_REQ)
+		winpr_str_append("SEC_TRANSPORT_REQ", buffer, size, "|");
+	if (securityFlags & SEC_TRANSPORT_RSP)
+		winpr_str_append("SEC_TRANSPORT_RSP", buffer, size, "|");
+	if (securityFlags & SEC_ENCRYPT)
+		winpr_str_append("SEC_ENCRYPT", buffer, size, "|");
+	if (securityFlags & SEC_RESET_SEQNO)
+		winpr_str_append("SEC_RESET_SEQNO", buffer, size, "|");
+	if (securityFlags & SEC_IGNORE_SEQNO)
+		winpr_str_append("SEC_IGNORE_SEQNO", buffer, size, "|");
+	if (securityFlags & SEC_INFO_PKT)
+		winpr_str_append("SEC_INFO_PKT", buffer, size, "|");
+	if (securityFlags & SEC_LICENSE_PKT)
+		winpr_str_append("SEC_LICENSE_PKT", buffer, size, "|");
+	if (securityFlags & SEC_LICENSE_ENCRYPT_CS)
+		winpr_str_append("SEC_LICENSE_ENCRYPT_CS", buffer, size, "|");
+	if (securityFlags & SEC_LICENSE_ENCRYPT_SC)
+		winpr_str_append("SEC_LICENSE_ENCRYPT_SC", buffer, size, "|");
+	if (securityFlags & SEC_REDIRECTION_PKT)
+		winpr_str_append("SEC_REDIRECTION_PKT", buffer, size, "|");
+	if (securityFlags & SEC_SECURE_CHECKSUM)
+		winpr_str_append("SEC_SECURE_CHECKSUM", buffer, size, "|");
+	if (securityFlags & SEC_AUTODETECT_REQ)
+		winpr_str_append("SEC_AUTODETECT_REQ", buffer, size, "|");
+	if (securityFlags & SEC_AUTODETECT_RSP)
+		winpr_str_append("SEC_AUTODETECT_RSP", buffer, size, "|");
+	if (securityFlags & SEC_HEARTBEAT)
+		winpr_str_append("SEC_HEARTBEAT", buffer, size, "|");
+	if (securityFlags & SEC_FLAGSHI_VALID)
+		winpr_str_append("SEC_FLAGSHI_VALID", buffer, size, "|");
+
+	return buffer;
 }

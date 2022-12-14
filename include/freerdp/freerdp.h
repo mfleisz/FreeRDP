@@ -65,6 +65,9 @@ extern "C"
 {
 #endif
 
+#define MCS_BASE_CHANNEL_ID 1001
+#define MCS_GLOBAL_CHANNEL_ID 1003
+
 /* Flags used by certificate callbacks */
 #define VERIFY_CERT_FLAG_NONE 0x00
 #define VERIFY_CERT_FLAG_LEGACY 0x02
@@ -457,7 +460,11 @@ owned by rdpRdp */
 		ALIGN64 pPostDisconnect
 		    PostDisconnect; /**< (offset 55)
 		                                                                Callback for cleaning up
-		                       resources allocated by connect callbacks. */
+		                       resources allocated by post connect callback.
+
+		                       This will be called before disconnecting and cleaning up the
+		                       channels.
+ */
 
 		ALIGN64 pAuthenticate GatewayAuthenticate; /**< (offset 56)
 		                                 Callback for gateway authentication.
@@ -479,7 +486,14 @@ owned by rdpRdp */
 		                   * callback for loading channel configuration. Might be called multiple
 		                   * times when redirection occurs. */
 
-		UINT64 paddingD[64 - 60]; /* 60 */
+		ALIGN64 pPostDisconnect
+		    PostFinalDisconnect;  /** < (offset 60)
+		                           * callback for cleaning up resources allocated in PreConnect
+		                           *
+		                           * This will be called after all instance related channels and
+		                           * threads have been stopped
+		                           */
+		UINT64 paddingD[64 - 61]; /* 61 */
 
 		ALIGN64 pSendChannelData
 		    SendChannelData; /* (offset 64)
@@ -625,8 +639,32 @@ owned by rdpRdp */
 
 	FREERDP_API const char* freerdp_nego_get_routing_token(rdpContext* context, DWORD* length);
 
+	/** \brief returns the current \b CONNECTION_STATE of the context.
+	 *
+	 *  \param context A pointer to the context to query state
+	 *
+	 *  \return A \b CONNECTION_STATE the context is currently in
+	 */
 	FREERDP_API CONNECTION_STATE freerdp_get_state(const rdpContext* context);
+
+	/** \brief returns a string representation of a \b CONNECTION_STATE
+	 *
+	 *  \param state the \b CONNECTION_STATE to stringify
+	 *
+	 *  \return The string representation of the \b CONNECTION_STATE
+	 */
 	FREERDP_API const char* freerdp_state_string(CONNECTION_STATE state);
+
+	/** \brief Queries if the current \b CONNECTION_STATE of the context is an active connection.
+	 *
+	 * A connection is active, if the connection sequence has been passed, no disconnection requests
+	 * have been received and no network or other errors have forced a disconnect.
+	 *
+	 *  \param context A pointer to the context to query state
+	 *
+	 *  \return \b TRUE if the connection state indicates an active connection, \b FALSE otherwise
+	 */
+	FREERDP_API BOOL freerdp_is_active_state(const rdpContext* context);
 
 	FREERDP_API BOOL freerdp_channels_from_mcs(rdpSettings* settings, const rdpContext* context);
 

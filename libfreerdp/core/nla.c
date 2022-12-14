@@ -208,13 +208,13 @@ static BOOL nla_adjust_settings_from_smartcard(rdpNla* nla)
 
 	if (!settings->CspName)
 	{
-		if (nla->smartcardCert->csp && ConvertFromUnicode(CP_UTF8, 0, nla->smartcardCert->csp, -1,
-		                                                  &settings->CspName, 0, NULL, FALSE) <= 0)
+		if (nla->smartcardCert->csp && !freerdp_settings_set_string_from_utf16(
+		                                   settings, FreeRDP_CspName, nla->smartcardCert->csp))
 		{
 			WLog_ERR(TAG, "unable to set CSP name");
 			goto out;
 		}
-		else if (!(settings->CspName = _strdup(MS_SCARD_PROV_A)))
+		else if (!freerdp_settings_set_string(settings, FreeRDP_CspName, MS_SCARD_PROV_A))
 		{
 			WLog_ERR(TAG, "unable to set CSP name");
 			goto out;
@@ -223,8 +223,8 @@ static BOOL nla_adjust_settings_from_smartcard(rdpNla* nla)
 
 	if (!settings->ReaderName && nla->smartcardCert->reader)
 	{
-		if (ConvertFromUnicode(CP_UTF8, 0, nla->smartcardCert->reader, -1, &settings->ReaderName, 0,
-		                       NULL, NULL) < 0)
+		if (!freerdp_settings_set_string_from_utf16(settings, FreeRDP_ReaderName,
+		                                            nla->smartcardCert->reader))
 		{
 			WLog_ERR(TAG, "unable to copy reader name");
 			goto out;
@@ -233,8 +233,8 @@ static BOOL nla_adjust_settings_from_smartcard(rdpNla* nla)
 
 	if (!settings->ContainerName && nla->smartcardCert->containerName)
 	{
-		if (ConvertFromUnicode(CP_UTF8, 0, nla->smartcardCert->containerName, -1,
-		                       &settings->ContainerName, 0, NULL, NULL) < 0)
+		if (!freerdp_settings_set_string_from_utf16(settings, FreeRDP_ContainerName,
+		                                            nla->smartcardCert->containerName))
 		{
 			WLog_ERR(TAG, "unable to copy container name");
 			goto out;
@@ -403,11 +403,6 @@ static BOOL nla_client_setup_identity(rdpNla* nla)
 
 	return TRUE;
 }
-
-/**
- * Initialize NTLM/Kerberos SSP authentication module (client).
- * @param credssp
- */
 
 static int nla_client_init(rdpNla* nla)
 {
@@ -626,7 +621,6 @@ fail:
 
 /**
  * Initialize NTLMSSP authentication module (server).
- * @param credssp
  */
 
 static int nla_server_init(rdpNla* nla)
@@ -698,7 +692,8 @@ static BOOL nla_server_recv_credentials(rdpNla* nla)
 
 /**
  * Authenticate with client using CredSSP (server).
- * @param credssp
+ * @param nla The NLA instance to use
+ *
  * @return 1 if authentication is successful
  */
 
@@ -839,7 +834,8 @@ static int nla_server_authenticate(rdpNla* nla)
 
 /**
  * Authenticate using CredSSP.
- * @param credssp
+ * @param nla The NLA instance to use
+ *
  * @return 1 if authentication is successful
  */
 
@@ -1116,7 +1112,9 @@ static BOOL nla_read_ts_credentials(rdpNla* nla, SecBuffer* data)
 
 /**
  * Encode TSCredentials structure.
- * @param credssp
+ * @param nla A pointer to the NLA to use
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 static BOOL nla_encode_ts_credentials(rdpNla* nla)
@@ -1162,18 +1160,17 @@ static BOOL nla_encode_ts_credentials(rdpNla* nla)
 			                   { 3, FreeRDP_ContainerName },
 			                   { 4, FreeRDP_CspName } };
 		WinPrAsn1_OctetString octet_string = { 0 };
-		char* str;
-		BOOL res;
 
 		/* TSSmartCardCreds */
 		if (!WinPrAsn1EncSeqContainer(enc))
 			goto out;
 
 		/* pin [0] OCTET STRING */
-		str = freerdp_settings_get_string_writable(settings, FreeRDP_Password);
-		octet_string.len =
-		    ConvertToUnicode(CP_UTF8, 0, str, -1, (LPWSTR*)&octet_string.data, 0) * sizeof(WCHAR);
-		res = WinPrAsn1EncContextualOctetString(enc, 0, &octet_string);
+		size_t ss;
+		octet_string.data =
+		    (BYTE*)freerdp_settings_get_string_as_utf16(settings, FreeRDP_Password, &ss);
+		octet_string.len = ss * sizeof(WCHAR);
+		const BOOL res = WinPrAsn1EncContextualOctetString(enc, 0, &octet_string) > 0;
 		free(octet_string.data);
 		if (!res)
 			goto out;
@@ -1187,17 +1184,19 @@ static BOOL nla_encode_ts_credentials(rdpNla* nla)
 		                                   freerdp_settings_get_uint32(settings, FreeRDP_KeySpec)))
 			goto out;
 
-		for (int i = 0; i < ARRAYSIZE(cspData_fields); i++)
+		for (size_t i = 0; i < ARRAYSIZE(cspData_fields); i++)
 		{
-			str = freerdp_settings_get_string_writable(settings, cspData_fields[i].setting_id);
-			octet_string.len =
-			    ConvertToUnicode(CP_UTF8, 0, str, -1, (LPWSTR*)&octet_string.data, 0) *
-			    sizeof(WCHAR);
+			size_t len;
+
+			octet_string.data = (BYTE*)freerdp_settings_get_string_as_utf16(
+			    settings, cspData_fields[i].setting_id, &len);
+			octet_string.len = len * sizeof(WCHAR);
 			if (octet_string.len)
 			{
-				ret = WinPrAsn1EncContextualOctetString(enc, cspData_fields[i].tag, &octet_string);
+				const BOOL res2 = WinPrAsn1EncContextualOctetString(enc, cspData_fields[i].tag,
+				                                                    &octet_string) > 0;
 				free(octet_string.data);
-				if (!ret)
+				if (!res2)
 					goto out;
 			}
 		}
@@ -1232,11 +1231,11 @@ static BOOL nla_encode_ts_credentials(rdpNla* nla)
 			password.data = (BYTE*)nla->identity->Password;
 		}
 
-		if (!WinPrAsn1EncContextualOctetString(enc, 0, &domain))
+		if (WinPrAsn1EncContextualOctetString(enc, 0, &domain) == 0)
 			goto out;
-		if (!WinPrAsn1EncContextualOctetString(enc, 1, &username))
+		if (WinPrAsn1EncContextualOctetString(enc, 1, &username) == 0)
 			goto out;
-		if (!WinPrAsn1EncContextualOctetString(enc, 2, &password))
+		if (WinPrAsn1EncContextualOctetString(enc, 2, &password) == 0)
 			goto out;
 
 		/* End TSPasswordCreds */
@@ -1301,7 +1300,10 @@ static BOOL nla_decrypt_ts_credentials(rdpNla* nla)
 
 /**
  * Send CredSSP message.
- * @param credssp
+ *
+ * @param nla A pointer to the NLA to use
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL nla_send(rdpNla* nla)
@@ -1340,7 +1342,7 @@ BOOL nla_send(rdpNla* nla)
 		/* negoToken [0] OCTET STRING */
 		octet_string.data = buffer->pvBuffer;
 		octet_string.len = buffer->cbBuffer;
-		if (!WinPrAsn1EncContextualOctetString(enc, 0, &octet_string))
+		if (WinPrAsn1EncContextualOctetString(enc, 0, &octet_string) == 0)
 			goto fail;
 
 		/* End negoTokens (SEQUENCE OF SEQUENCE) */
@@ -1354,7 +1356,7 @@ BOOL nla_send(rdpNla* nla)
 		WLog_DBG(TAG, "   ----->> auth info");
 		octet_string.data = nla->authInfo.pvBuffer;
 		octet_string.len = nla->authInfo.cbBuffer;
-		if (!WinPrAsn1EncContextualOctetString(enc, 2, &octet_string))
+		if (WinPrAsn1EncContextualOctetString(enc, 2, &octet_string) == 0)
 			goto fail;
 		sspi_SecBufferFree(&nla->authInfo);
 	}
@@ -1365,7 +1367,7 @@ BOOL nla_send(rdpNla* nla)
 		WLog_DBG(TAG, "   ----->> public key auth");
 		octet_string.data = nla->pubKeyAuth.pvBuffer;
 		octet_string.len = nla->pubKeyAuth.cbBuffer;
-		if (!WinPrAsn1EncContextualOctetString(enc, 3, &octet_string))
+		if (WinPrAsn1EncContextualOctetString(enc, 3, &octet_string) == 0)
 			goto fail;
 		sspi_SecBufferFree(&nla->pubKeyAuth);
 	}
@@ -1385,7 +1387,7 @@ BOOL nla_send(rdpNla* nla)
 		WLog_DBG(TAG, "   ----->> client nonce");
 		octet_string.data = nla->ClientNonce.pvBuffer;
 		octet_string.len = nla->ClientNonce.cbBuffer;
-		if (!WinPrAsn1EncContextualOctetString(enc, 5, &octet_string))
+		if (WinPrAsn1EncContextualOctetString(enc, 5, &octet_string) == 0)
 			goto fail;
 	}
 
@@ -1607,7 +1609,10 @@ fail:
 
 /**
  * Create new CredSSP state machine.
- * @param transport
+ *
+ * @param context A pointer to the rdp context to use
+ * @param transport A pointer to the transport to use
+ *
  * @return new CredSSP state machine.
  */
 
@@ -1658,7 +1663,7 @@ cleanup:
 
 /**
  * Free CredSSP state machine.
- * @param credssp
+ * @param nla The NLA instance to free
  */
 
 void nla_free(rdpNla* nla)

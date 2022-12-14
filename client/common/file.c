@@ -694,15 +694,11 @@ BOOL freerdp_client_parse_rdp_file_buffer_ex(rdpFile* file, const BYTE* buffer, 
 
 	if ((buffer[0] == BOM_UTF16_LE[0]) && (buffer[1] == BOM_UTF16_LE[1]))
 	{
-		int clength;
 		LPCWSTR uc = (LPCWSTR)(&buffer[2]);
-		size = size / 2 - 1;
+		size = size / sizeof(WCHAR) - 1;
 
-		if (size > INT_MAX)
-			return FALSE;
-
-		clength = (int)size;
-		if (ConvertFromUnicode(CP_UTF8, 0, uc, clength, &copy, 0, NULL, NULL) < 0)
+		copy = ConvertWCharNToUtf8Alloc(uc, size, NULL);
+		if (!copy)
 		{
 			WLog_ERR(TAG, "Failed to convert RDP file from UCS2 to UTF8");
 			return FALSE;
@@ -1062,13 +1058,16 @@ BOOL freerdp_client_populate_rdp_file_from_settings(rdpFile* file, const rdpSett
 		file->UsbDevicesToRedirect = redirectUsb;
 
 #endif
-	file->RedirectClipboard = freerdp_settings_get_bool(settings, FreeRDP_RedirectClipboard);
-	file->RedirectPrinters = freerdp_settings_get_bool(settings, FreeRDP_RedirectPrinters);
-	file->RedirectDrives = freerdp_settings_get_bool(settings, FreeRDP_RedirectDrives);
+	file->RedirectClipboard =
+	    freerdp_settings_get_bool(settings, FreeRDP_RedirectClipboard) ? 1 : 0;
+	file->RedirectPrinters = freerdp_settings_get_bool(settings, FreeRDP_RedirectPrinters) ? 1 : 0;
+	file->RedirectDrives = freerdp_settings_get_bool(settings, FreeRDP_RedirectDrives) ? 1 : 0;
+	file->RdgIsKdcProxy = freerdp_settings_get_bool(settings, FreeRDP_KerberosRdgIsProxy) ? 1 : 0;
 	file->RedirectComPorts = (freerdp_settings_get_bool(settings, FreeRDP_RedirectSerialPorts) ||
 	                          freerdp_settings_get_bool(settings, FreeRDP_RedirectParallelPorts));
 	if (!FILE_POPULATE_STRING(&file->DrivesToRedirect, settings, FreeRDP_DrivesToRedirect) ||
-	    !FILE_POPULATE_STRING(&file->PreconnectionBlob, settings, FreeRDP_PreconnectionBlob))
+	    !FILE_POPULATE_STRING(&file->PreconnectionBlob, settings, FreeRDP_PreconnectionBlob) ||
+	    !FILE_POPULATE_STRING(&file->KdcProxyName, settings, FreeRDP_KerberosKdcUrl))
 		return FALSE;
 
 	{
@@ -1125,22 +1124,19 @@ BOOL freerdp_client_write_rdp_file(const rdpFile* file, const char* name, BOOL u
 	{
 		if (unicode)
 		{
-			int length;
+			size_t len = 0;
+			unicodestr = ConvertUtf8NToWCharAlloc(buffer, size, &len);
 
-			if (size > INT_MAX)
+			if (!unicodestr)
 			{
 				free(buffer);
-				free(unicodestr);
 				fclose(fp);
 				return FALSE;
 			}
 
-			length = (int)size;
-			ConvertToUnicode(CP_UTF8, 0, buffer, length, &unicodestr, 0);
-
 			/* Write multi-byte header */
-			if ((length < 0) || (fwrite(BOM_UTF16_LE, sizeof(BYTE), 2, fp) != 2) ||
-			    (fwrite(unicodestr, 2, (size_t)length, fp) != (size_t)length))
+			if ((fwrite(BOM_UTF16_LE, sizeof(BYTE), 2, fp) != 2) ||
+			    (fwrite(unicodestr, sizeof(WCHAR), len, fp) != len))
 			{
 				free(buffer);
 				free(unicodestr);
@@ -2129,6 +2125,19 @@ BOOL freerdp_client_populate_settings_from_rdp_file(rdpFile* file, rdpSettings* 
 		if (!freerdp_settings_set_string(settings, FreeRDP_PreconnectionBlob,
 		                                 file->PreconnectionBlob) ||
 		    !freerdp_settings_set_bool(settings, FreeRDP_SendPreconnectionPdu, TRUE))
+			return FALSE;
+	}
+
+	if (~((size_t)file->KdcProxyName))
+	{
+		if (!freerdp_settings_set_string(settings, FreeRDP_KerberosKdcUrl, file->KdcProxyName))
+			return FALSE;
+	}
+
+	if (~((size_t)file->RdgIsKdcProxy))
+	{
+		if (!freerdp_settings_set_bool(settings, FreeRDP_KerberosRdgIsProxy,
+		                               file->RdgIsKdcProxy != 0))
 			return FALSE;
 	}
 

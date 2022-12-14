@@ -105,14 +105,6 @@ typedef enum
 	FINALIZE_DEACTIVATE_REACTIVATE = 0x200
 } rdpFinalizePduType;
 
-#define FINALIZE_SC_COMPLETE                                           \
-	(FINALIZE_SC_SYNCHRONIZE_PDU | FINALIZE_SC_CONTROL_COOPERATE_PDU | \
-	 FINALIZE_SC_CONTROL_GRANTED_PDU | FINALIZE_SC_FONT_MAP_PDU)
-#define FINALIZE_CS_COMPLETE                                                 \
-	(FINALIZE_CS_SYNCHRONIZE_PDU | FINALIZE_CS_CONTROL_COOPERATE_PDU |       \
-	 FINALIZE_CS_CONTROL_REQUEST_PDU | FINALIZE_CS_PERSISTENT_KEY_LIST_PDU | \
-	 FINALIZE_CS_FONT_LIST_PDU)
-
 /* Data PDU Types */
 typedef enum
 {
@@ -284,5 +276,13 @@ BOOL rdp_decrypt(rdpRdp* rdp, wStream* s, UINT16* pLength, UINT16 securityFlags)
 
 BOOL rdp_set_error_info(rdpRdp* rdp, UINT32 errorInfo);
 BOOL rdp_send_error_info(rdpRdp* rdp);
+
+void rdp_free_rc4_encrypt_keys(rdpRdp* rdp);
+BOOL rdp_reset_rc4_encrypt_keys(rdpRdp* rdp);
+
+void rdp_free_rc4_decrypt_keys(rdpRdp* rdp);
+BOOL rdp_reset_rc4_decrypt_keys(rdpRdp* rdp);
+
+const char* rdp_security_flag_string(UINT32 securityFlags, char* buffer, size_t size);
 
 #endif /* FREERDP_LIB_CORE_RDP_H */

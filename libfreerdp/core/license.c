@@ -1,4 +1,4 @@
-/**
+/*
  * FreeRDP: A Remote Desktop Protocol Implementation
  * RDP Licensing
  *
@@ -107,7 +107,8 @@ enum
 
 #define KEY_EXCHANGE_ALG_RSA 0x00000001
 
-/** @brief license Error Codes */
+/** @brief license Error Codes
+ */
 enum
 {
 	ERR_INVALID_SERVER_CERTIFICATE = 0x00000001,
@@ -121,7 +122,8 @@ enum
 	ERR_INVALID_MESSAGE_LENGTH = 0x0000000C
 };
 
-/** @brief state Transition Codes */
+/** @brief state Transition Codes
+ */
 enum
 {
 	ST_TOTAL_ABORT = 0x00000001,
@@ -130,7 +132,8 @@ enum
 	ST_RESEND_LAST_MESSAGE = 0x00000004
 };
 
-/** @brief Platform Challenge Types */
+/** @brief Platform Challenge Types
+ */
 enum
 {
 	WIN32_PLATFORM_CHALLENGE_TYPE = 0x0100,
@@ -139,7 +142,8 @@ enum
 	OTHER_PLATFORM_CHALLENGE_TYPE = 0xFF00
 };
 
-/** @brief License Detail Levels */
+/** @brief License Detail Levels
+ */
 enum
 {
 	LICENSE_DETAIL_SIMPLE = 0x0001,
@@ -367,11 +371,13 @@ static void license_print_product_info(const LICENSE_PRODUCT_INFO* productInfo)
 	char* ProductId = NULL;
 
 	WINPR_ASSERT(productInfo);
+	WINPR_ASSERT(productInfo->pbCompanyName);
+	WINPR_ASSERT(productInfo->pbProductId);
 
-	ConvertFromUnicode(CP_UTF8, 0, (WCHAR*)productInfo->pbCompanyName,
-	                   productInfo->cbCompanyName / 2, &CompanyName, 0, NULL, NULL);
-	ConvertFromUnicode(CP_UTF8, 0, (WCHAR*)productInfo->pbProductId, productInfo->cbProductId / 2,
-	                   &ProductId, 0, NULL, NULL);
+	CompanyName = ConvertWCharToUtf8Alloc(productInfo->pbCompanyName,
+	                                      productInfo->cbCompanyName / sizeof(WCHAR));
+	ProductId =
+	    ConvertWCharToUtf8Alloc(productInfo->pbProductId, productInfo->cbProductId / sizeof(WCHAR));
 	WLog_INFO(TAG, "ProductInfo:");
 	WLog_INFO(TAG, "\tdwVersion: 0x%08" PRIX32 "", productInfo->dwVersion);
 	WLog_INFO(TAG, "\tCompanyName: %s", CompanyName);
@@ -445,7 +451,7 @@ static BOOL license_check_stream_length(wStream* s, SSIZE_T expect, const char* 
 		WLog_WARN(TAG, "invalid %s, expected value %" PRIdz " invalid", where, expect);
 		return FALSE;
 	}
-	if (remain < expect)
+	if (remain < (size_t)expect)
 	{
 		WLog_WARN(TAG, "short %s, expected %" PRIdz " bytes, got %" PRIuz, where, expect, remain);
 		return FALSE;
@@ -633,8 +639,8 @@ error_path:
 }
 
 /**
- * Read a licensing preamble.\n
- * @msdn{cc240480}
+ * Read a licensing preamble.
+ * msdn{cc240480}
  * @param s stream
  * @param bMsgType license message type
  * @param flags message flags
@@ -659,12 +665,13 @@ static BOOL license_read_preamble(wStream* s, BYTE* bMsgType, BYTE* flags, UINT1
 }
 
 /**
- * Write a licensing preamble.\n
- * @msdn{cc240480}
+ * Write a licensing preamble.
+ * msdn{cc240480}
  * @param s stream
  * @param bMsgType license message type
  * @param flags message flags
  * @param wMsgSize message size
+ * @return if the operation completed successfully
  */
 
 static BOOL license_write_preamble(wStream* s, BYTE bMsgType, BYTE flags, UINT16 wMsgSize)
@@ -680,9 +687,11 @@ static BOOL license_write_preamble(wStream* s, BYTE bMsgType, BYTE flags, UINT16
 }
 
 /**
- * Initialize a license packet stream.\n
+ * @brief Initialize a license packet stream.
+ *
  * @param license license module
- * @return stream
+ *
+ * @return stream or NULL
  */
 
 wStream* license_send_stream_init(rdpLicense* license)
@@ -697,7 +706,7 @@ wStream* license_send_stream_init(rdpLicense* license)
 
 	license->rdp->sec_flags = SEC_LICENSE_PKT;
 
-	/**
+	/*
 	 * Encryption of licensing packets is optional even if the rdp security
 	 * layer is used. If the peer has not indicated that it is capable of
 	 * processing encrypted licensing packets (rdp->do_crypt_license) we turn
@@ -727,8 +736,8 @@ fail:
 }
 
 /**
- * Send an RDP licensing packet.\n
- * @msdn{cc240479}
+ * Send an RDP licensing packet.
+ * msdn{cc240479}
  * @param license license module
  * @param s stream
  */
@@ -820,8 +829,8 @@ fail:
 }
 
 /**
- * Receive an RDP licensing packet.\n
- * @msdn{cc240479}
+ * Receive an RDP licensing packet.
+ * msdn{cc240479}
  * @param license license module
  * @param s stream
  * @return if the operation completed successfully
@@ -1058,7 +1067,7 @@ static BOOL license_generate_keys(rdpLicense* license)
 }
 
 /**
- * Generate Unique Hardware Identifier (CLIENT_HARDWARE_ID).\n
+ * Generate Unique Hardware Identifier (CLIENT_HARDWARE_ID).
  * @param license license module
  */
 
@@ -1232,7 +1241,8 @@ static BOOL license_encrypt_and_MAC(rdpLicense* license, const BYTE* input, size
  * @param input the input data to decrypt and MAC
  * @param len size of input
  * @param target a target LICENSE_BLOB where the decrypted input will be stored
- * @param mac the signature buffer (16 bytes)
+ * @param packetMac the signature buffer (16 bytes)
+ *
  * @return if the operation completed successfully
  */
 static BOOL license_decrypt_and_check_MAC(rdpLicense* license, const BYTE* input, size_t len,
@@ -1252,8 +1262,8 @@ static BOOL license_decrypt_and_check_MAC(rdpLicense* license, const BYTE* input
 }
 
 /**
- * Read Product Information (PRODUCT_INFO).\n
- * @msdn{cc241915}
+ * Read Product Information (PRODUCT_INFO).
+ * msdn{cc241915}
  * @param s stream
  * @param productInfo product information
  */
@@ -1363,8 +1373,8 @@ static BOOL license_write_product_info(wStream* s, const LICENSE_PRODUCT_INFO* p
 }
 
 /**
- * Allocate New Product Information (LICENSE_PRODUCT_INFO).\n
- * @msdn{cc241915}
+ * Allocate New Product Information (LICENSE_PRODUCT_INFO).
+ * msdn{cc241915}
  * @return new product information
  */
 
@@ -1378,8 +1388,8 @@ LICENSE_PRODUCT_INFO* license_new_product_info(void)
 }
 
 /**
- * Free Product Information (LICENSE_PRODUCT_INFO).\n
- * @msdn{cc241915}
+ * Free Product Information (LICENSE_PRODUCT_INFO).
+ * msdn{cc241915}
  * @param productInfo product information
  */
 
@@ -1430,8 +1440,8 @@ BOOL license_read_binary_blob_data(LICENSE_BLOB* blob, UINT32 wBlobType, const v
 }
 
 /**
- * Read License Binary Blob (LICENSE_BINARY_BLOB).\n
- * @msdn{cc240481}
+ * Read License Binary Blob (LICENSE_BINARY_BLOB).
+ * msdn{cc240481}
  * @param s stream
  * @param blob license binary blob
  */
@@ -1459,8 +1469,8 @@ BOOL license_read_binary_blob(wStream* s, LICENSE_BLOB* blob)
 }
 
 /**
- * Write License Binary Blob (LICENSE_BINARY_BLOB).\n
- * @msdn{cc240481}
+ * Write License Binary Blob (LICENSE_BINARY_BLOB).
+ * msdn{cc240481}
  * @param s stream
  * @param blob license binary blob
  */
@@ -1515,8 +1525,8 @@ static BOOL license_read_encrypted_premaster_secret_blob(wStream* s, LICENSE_BLO
 }
 
 /**
- * Allocate New License Binary Blob (LICENSE_BINARY_BLOB).\n
- * @msdn{cc240481}
+ * Allocate New License Binary Blob (LICENSE_BINARY_BLOB).
+ * msdn{cc240481}
  * @return new license binary blob
  */
 
@@ -1529,8 +1539,8 @@ LICENSE_BLOB* license_new_binary_blob(UINT16 type)
 }
 
 /**
- * Free License Binary Blob (LICENSE_BINARY_BLOB).\n
- * @msdn{cc240481}
+ * Free License Binary Blob (LICENSE_BINARY_BLOB).
+ * msdn{cc240481}
  * @param blob license binary blob
  */
 
@@ -1544,8 +1554,8 @@ void license_free_binary_blob(LICENSE_BLOB* blob)
 }
 
 /**
- * Read License Scope List (SCOPE_LIST).\n
- * @msdn{cc241916}
+ * Read License Scope List (SCOPE_LIST).
+ * msdn{cc241916}
  * @param s stream
  * @param scopeList scope list
  */
@@ -1605,8 +1615,8 @@ BOOL license_write_scope_list(wStream* s, const SCOPE_LIST* scopeList)
 }
 
 /**
- * Allocate New License Scope List (SCOPE_LIST).\n
- * @msdn{cc241916}
+ * Allocate New License Scope List (SCOPE_LIST).
+ * msdn{cc241916}
  * @return new scope list
  */
 
@@ -1658,8 +1668,8 @@ BOOL license_scope_list_resize(SCOPE_LIST* scopeList, UINT32 count)
 }
 
 /**
- * Free License Scope List (SCOPE_LIST).\n
- * @msdn{cc241916}
+ * Free License Scope List (SCOPE_LIST).
+ * msdn{cc241916}
  * @param scopeList scope list
  */
 
@@ -1777,8 +1787,8 @@ error:
 }
 
 /**
- * Read a LICENSE_REQUEST packet.\n
- * @msdn{cc241914}
+ * Read a LICENSE_REQUEST packet.
+ * msdn{cc241914}
  * @param license license module
  * @param s stream
  */
@@ -1872,8 +1882,8 @@ fail:
 }
 
 /*
- * Read a PLATFORM_CHALLENGE packet.\n
- * @msdn{cc241921}
+ * Read a PLATFORM_CHALLENGE packet.
+ * msdn{cc241921}
  * @param license license module
  * @param s stream
  */
@@ -2010,8 +2020,8 @@ static BOOL license_read_encrypted_blob(const rdpLicense* license, wStream* s, L
 }
 
 /**
- * Read a NEW_LICENSE packet.\n
- * @msdn{cc241926}
+ * Read a NEW_LICENSE packet.
+ * msdn{cc241926}
  * @param license license module
  * @param s stream
  */
@@ -2130,8 +2140,8 @@ fail:
 }
 
 /**
- * Read an ERROR_ALERT packet.\n
- * @msdn{cc240482}
+ * Read an ERROR_ALERT packet.
+ * msdn{cc240482}
  * @param license license module
  * @param s stream
  */
@@ -2185,8 +2195,8 @@ BOOL license_read_error_alert_packet(rdpLicense* license, wStream* s)
 }
 
 /**
- * Write a NEW_LICENSE_REQUEST packet.\n
- * @msdn{cc241918}
+ * Write a NEW_LICENSE_REQUEST packet.
+ * msdn{cc241918}
  * @param license license module
  * @param s stream
  */
@@ -2261,8 +2271,8 @@ BOOL license_read_new_license_request_packet(rdpLicense* license, wStream* s)
 }
 
 /**
- * Send a NEW_LICENSE_REQUEST packet.\n
- * @msdn{cc241918}
+ * Send a NEW_LICENSE_REQUEST packet.
+ * msdn{cc241918}
  * @param license license module
  */
 
@@ -2351,8 +2361,8 @@ BOOL license_answer_license_request(rdpLicense* license)
 }
 
 /**
- * Send Client Challenge Response Packet.\n
- * @msdn{cc241922}
+ * Send Client Challenge Response Packet.
+ * msdn{cc241922}
  * @param license license module
  */
 
@@ -2508,9 +2518,12 @@ BOOL license_read_client_platform_challenge_response(rdpLicense* license, wStrea
 }
 
 /**
- * Send Server License Error - Valid Client Packet.\n
- * @msdn{cc241922}
- * @param license license module
+ * Send Server License Error - Valid Client Packet.
+ * msdn{cc241922}
+ *
+ * @param rdp A pointer to the context to use
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL license_send_valid_client_error_packet(rdpRdp* rdp)
@@ -2683,7 +2696,7 @@ BOOL license_server_send_request(rdpLicense* license)
 BOOL license_server_configure(rdpLicense* license)
 {
 
-	int len;
+	size_t len;
 	wStream* s;
 	UINT32 algs[] = { KEY_EXCHANGE_ALG_RSA };
 	UINT32 x;
@@ -2691,7 +2704,7 @@ BOOL license_server_configure(rdpLicense* license)
 	UINT32 ProductVersion, issuerCount;
 	const char* CompanyName;
 	const char* ProductName;
-	const char** issuers;
+	const char* const* issuers;
 
 	WINPR_ASSERT(license);
 	WINPR_ASSERT(license->rdp);
@@ -2703,8 +2716,8 @@ BOOL license_server_configure(rdpLicense* license)
 	ProductName = freerdp_settings_get_string(settings, FreeRDP_ServerLicenseProductName);
 	ProductVersion = freerdp_settings_get_uint32(settings, FreeRDP_ServerLicenseProductVersion);
 	issuerCount = freerdp_settings_get_uint32(settings, FreeRDP_ServerLicenseProductIssuersCount);
-	issuers =
-	    (const char**)freerdp_settings_get_pointer(settings, FreeRDP_ServerLicenseProductIssuers);
+	issuers = (const char* const*)freerdp_settings_get_pointer(settings,
+	                                                           FreeRDP_ServerLicenseProductIssuers);
 
 	WINPR_ASSERT(CompanyName);
 	WINPR_ASSERT(ProductName);
@@ -2715,17 +2728,15 @@ BOOL license_server_configure(rdpLicense* license)
 		return FALSE;
 
 	license->ProductInfo->dwVersion = ProductVersion;
-	len = ConvertToUnicode(CP_UTF8, 0, CompanyName, -1,
-	                       (WCHAR**)&license->ProductInfo->pbCompanyName, 0);
-	if (!license->ProductInfo->pbCompanyName)
+	license->ProductInfo->pbCompanyName = (BYTE*)ConvertUtf8ToWCharAlloc(CompanyName, &len);
+	if (!license->ProductInfo->pbCompanyName || (len > UINT32_MAX / sizeof(WCHAR)))
 		return FALSE;
-	license->ProductInfo->cbCompanyName = len * sizeof(WCHAR);
+	license->ProductInfo->cbCompanyName = (UINT32)len * sizeof(WCHAR);
 
-	len = ConvertToUnicode(CP_UTF8, 0, ProductName, -1, (WCHAR**)&license->ProductInfo->pbProductId,
-	                       0);
-	if (!license->ProductInfo->pbProductId)
+	license->ProductInfo->pbProductId = (BYTE*)ConvertUtf8ToWCharAlloc(ProductName, &len);
+	if (!license->ProductInfo->pbProductId || (len > UINT32_MAX / sizeof(WCHAR)))
 		return FALSE;
-	license->ProductInfo->cbProductId = len * sizeof(WCHAR);
+	license->ProductInfo->cbProductId = (UINT32)len * sizeof(WCHAR);
 
 	if (!license_read_binary_blob_data(license->KeyExchangeList, BB_KEY_EXCHG_ALG_BLOB, algs,
 	                                   sizeof(algs)))

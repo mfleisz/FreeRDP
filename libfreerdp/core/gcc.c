@@ -42,11 +42,11 @@ static BOOL gcc_write_user_data_header(wStream* s, UINT16 type, UINT16 length);
 
 static BOOL gcc_write_client_core_data(wStream* s, const rdpMcs* mcs);
 static BOOL gcc_read_server_core_data(wStream* s, rdpMcs* mcs);
-static BOOL gcc_write_server_core_data(wStream* s, const rdpMcs* mcs);
+static BOOL gcc_write_server_core_data(wStream* s, rdpMcs* mcs);
 static BOOL gcc_read_client_security_data(wStream* s, rdpMcs* mcs, UINT16 blockLength);
 static BOOL gcc_write_client_security_data(wStream* s, const rdpMcs* mcs);
 static BOOL gcc_read_server_security_data(wStream* s, rdpMcs* mcs);
-static BOOL gcc_write_server_security_data(wStream* s, const rdpMcs* mcs);
+static BOOL gcc_write_server_security_data(wStream* s, rdpMcs* mcs);
 static BOOL gcc_read_client_network_data(wStream* s, rdpMcs* mcs, UINT16 blockLength);
 static BOOL gcc_write_client_network_data(wStream* s, const rdpMcs* mcs);
 static BOOL gcc_read_server_network_data(wStream* s, rdpMcs* mcs);
@@ -65,6 +65,26 @@ static BOOL gcc_read_client_multitransport_channel_data(wStream* s, rdpMcs* mcs,
 static BOOL gcc_write_client_multitransport_channel_data(wStream* s, const rdpMcs* mcs);
 static BOOL gcc_read_server_multitransport_channel_data(wStream* s, rdpMcs* mcs);
 static BOOL gcc_write_server_multitransport_channel_data(wStream* s, const rdpMcs* mcs);
+
+static rdpSettings* mcs_get_settings(rdpMcs* mcs)
+{
+	WINPR_ASSERT(mcs);
+
+	rdpContext* context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	return context->settings;
+}
+
+static const rdpSettings* mcs_get_const_settings(const rdpMcs* mcs)
+{
+	WINPR_ASSERT(mcs);
+
+	const rdpContext* context = transport_get_context(mcs->transport);
+	WINPR_ASSERT(context);
+
+	return context->settings;
+}
 
 static void append(char* buffer, size_t size, const char* what)
 {
@@ -246,10 +266,13 @@ static const BYTE h221_cs_key[4] = "Duca";
 static const BYTE h221_sc_key[4] = "McDn";
 
 /**
- * Read a GCC Conference Create Request.\n
- * @msdn{cc240836}
+ * Read a GCC Conference Create Request.
+ * msdn{cc240836}
+ *
  * @param s stream
- * @param settings rdp settings
+ * @param mcs The MCS instance
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_read_conference_create_request(wStream* s, rdpMcs* mcs)
@@ -259,6 +282,8 @@ BOOL gcc_read_conference_create_request(wStream* s, rdpMcs* mcs)
 	BYTE number;
 	BYTE selection;
 
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
 	/* ConnectData */
 	if (!per_read_choice(s, &choice))
 		return FALSE;
@@ -311,14 +336,19 @@ BOOL gcc_read_conference_create_request(wStream* s, rdpMcs* mcs)
 }
 
 /**
- * Write a GCC Conference Create Request.\n
- * @msdn{cc240836}
+ * Write a GCC Conference Create Request.
+ * msdn{cc240836}
+ *
  * @param s stream
- * @param user_data client data blocks
+ * @param userData client data blocks
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_write_conference_create_request(wStream* s, wStream* userData)
 {
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(userData);
 	/* ConnectData */
 	if (!per_write_choice(s, 0)) /* From Key select object (0) of type OBJECT_IDENTIFIER */
 		return FALSE;
@@ -360,7 +390,8 @@ BOOL gcc_read_conference_create_response(wStream* s, rdpMcs* mcs)
 	BYTE result;
 	BYTE choice;
 	BYTE number;
-
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
 	/* ConnectData */
 	if (!per_read_choice(s, &choice) || !per_read_object_identifier(s, t124_02_98_oid))
 		return FALSE;
@@ -413,6 +444,8 @@ BOOL gcc_read_conference_create_response(wStream* s, rdpMcs* mcs)
 
 BOOL gcc_write_conference_create_response(wStream* s, wStream* userData)
 {
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(userData);
 	/* ConnectData */
 	if (!per_write_choice(s, 0))
 		return FALSE;
@@ -451,6 +484,8 @@ BOOL gcc_write_conference_create_response(wStream* s, wStream* userData)
 
 BOOL gcc_read_client_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length)
 {
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
 	while (length > 0)
 	{
 		UINT16 type;
@@ -540,16 +575,9 @@ BOOL gcc_read_client_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length)
 
 BOOL gcc_write_client_data_blocks(wStream* s, const rdpMcs* mcs)
 {
-	rdpContext* context;
-	rdpSettings* settings;
+	const rdpSettings* settings = mcs_get_const_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
 
 	if (!gcc_write_client_core_data(s, mcs) || !gcc_write_client_cluster_data(s, mcs) ||
@@ -650,6 +678,9 @@ BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length)
 	UINT16 blockLength;
 	BYTE* holdp;
 
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
 	while (offset < length)
 	{
 		char buffer[64] = { 0 };
@@ -740,19 +771,30 @@ BOOL gcc_read_server_data_blocks(wStream* s, rdpMcs* mcs, UINT16 length)
 	return TRUE;
 }
 
-BOOL gcc_write_server_data_blocks(wStream* s, const rdpMcs* mcs)
+BOOL gcc_write_server_data_blocks(wStream* s, rdpMcs* mcs)
 {
-	return gcc_write_server_core_data(s, mcs) &&          /* serverCoreData */
-	       gcc_write_server_network_data(s, mcs) &&       /* serverNetworkData */
-	       gcc_write_server_security_data(s, mcs) &&      /* serverSecurityData */
-	       gcc_write_server_message_channel_data(s, mcs); /* serverMessageChannelData */
-	/* TODO: Send these GCC data blocks only when the client sent them */
-	// gcc_write_server_multitransport_channel_data(s, settings); /* serverMultitransportChannelData
-	// */
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
+
+	if (!gcc_write_server_core_data(s, mcs) ||          /* serverCoreData */
+	    !gcc_write_server_network_data(s, mcs) ||       /* serverNetworkData */
+	    !gcc_write_server_security_data(s, mcs) ||      /* serverSecurityData */
+	    !gcc_write_server_message_channel_data(s, mcs)) /* serverMessageChannelData */
+		return FALSE;
+
+	const rdpSettings* settings = mcs_get_const_settings(mcs);
+	WINPR_ASSERT(settings);
+
+	if (settings->SupportMultitransport && (settings->MultitransportFlags != 0))
+		/* serverMultitransportChannelData */
+		return gcc_write_server_multitransport_channel_data(s, mcs);
+
+	return TRUE;
 }
 
 BOOL gcc_read_user_data_header(wStream* s, UINT16* type, UINT16* length)
 {
+	WINPR_ASSERT(s);
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 		return FALSE;
 
@@ -766,15 +808,20 @@ BOOL gcc_read_user_data_header(wStream* s, UINT16* type, UINT16* length)
 }
 
 /**
- * Write a user data header (TS_UD_HEADER).\n
- * @msdn{cc240509}
+ * Write a user data header (TS_UD_HEADER).
+ * msdn{cc240509}
+ *
  * @param s stream
  * @param type data block type
  * @param length data block length
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_write_user_data_header(wStream* s, UINT16 type, UINT16 length)
 {
+
+	WINPR_ASSERT(s);
 	if (!Stream_EnsureRemainingCapacity(s, 4 + length))
 		return FALSE;
 	Stream_Write_UINT16(s, type);   /* type */
@@ -867,17 +914,19 @@ static BOOL updateEarlyServerCaps(rdpSettings* settings, UINT32 earlyCapabilityF
 }
 
 /**
- * Read a client core data block (TS_UD_CS_CORE).\n
- * @msdn{cc240510}
+ * Read a client core data block (TS_UD_CS_CORE).
+ * msdn{cc240510}
  * @param s stream
- * @param settings rdp settings
+ * @param mcs The MCS instance
+ * @param blockLength the length of the block
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 {
 	char buffer[2048] = { 0 };
-	char strbuffer[65] = { 0 };
-	char* strptr = strbuffer;
+	char strbuffer[130] = { 0 };
 	UINT32 version;
 	BYTE connectionType = 0;
 	UINT32 clientColorDepth;
@@ -887,16 +936,9 @@ BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 	UINT16 supportedColorDepths = 0;
 	UINT32 serverSelectedProtocol = 0;
 	UINT16 earlyCapabilityFlags = 0;
-	rdpContext* context;
-	rdpSettings* settings;
+	rdpSettings* settings = mcs_get_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
 
 	/* Length of all required fields, until imeFileName */
@@ -913,15 +955,16 @@ BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 	Stream_Read_UINT32(s, settings->ClientBuild);    /* ClientBuild (4 bytes) */
 
 	/* clientName (32 bytes, null-terminated unicode, truncated to 15 characters) */
-	if (ConvertFromUnicode(CP_UTF8, 0, (WCHAR*)Stream_Pointer(s), 32 / 2, &strptr,
-	                       ARRAYSIZE(strbuffer), NULL, NULL) < 1)
+	if (Stream_Read_UTF16_String_As_UTF8_Buffer(s, 32 / sizeof(WCHAR), strbuffer,
+	                                            ARRAYSIZE(strbuffer)) < 0)
 	{
 		WLog_ERR(TAG, "failed to convert client host name");
 		return FALSE;
 	}
 
-	Stream_Seek(s, 32);
-	freerdp_settings_set_string(settings, FreeRDP_ClientHostname, strbuffer);
+	if (!freerdp_settings_set_string(settings, FreeRDP_ClientHostname, strbuffer))
+		return FALSE;
+
 	Stream_Read_UINT32(s, settings->KeyboardType);        /* KeyboardType (4 bytes) */
 	Stream_Read_UINT32(s, settings->KeyboardSubType);     /* KeyboardSubType (4 bytes) */
 	Stream_Read_UINT32(s, settings->KeyboardFunctionKey); /* KeyboardFunctionKey (4 bytes) */
@@ -980,15 +1023,15 @@ BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 		if (blockLength < 64)
 			break;
 
-		if (ConvertFromUnicode(CP_UTF8, 0, (WCHAR*)Stream_Pointer(s), 64 / 2, &strptr,
-		                       ARRAYSIZE(strbuffer), NULL, NULL) < 1)
+		if (Stream_Read_UTF16_String_As_UTF8_Buffer(s, 64 / sizeof(WCHAR), strbuffer,
+		                                            ARRAYSIZE(strbuffer)) < 0)
 		{
 			WLog_ERR(TAG, "failed to convert the client product identifier");
 			return FALSE;
 		}
 
-		Stream_Seek(s, 64); /* clientDigProductId (64 bytes) */
-		freerdp_settings_set_string(settings, FreeRDP_ClientProductId, strbuffer);
+		if (!freerdp_settings_set_string(settings, FreeRDP_ClientProductId, strbuffer))
+			return FALSE;
 		blockLength -= 64;
 
 		if (blockLength < 1)
@@ -1112,40 +1155,36 @@ BOOL gcc_read_client_core_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 }
 
 /**
- * Write a client core data block (TS_UD_CS_CORE).\n
- * @msdn{cc240510}
- * @param s stream
- * @param settings rdp settings
+ * Write a client core data block (TS_UD_CS_CORE).
+ * msdn{cc240510}
+ * @param s The stream to write to
+ * @param mcs The MSC instance to get the data from
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_write_client_core_data(wStream* s, const rdpMcs* mcs)
 {
 	char buffer[2048] = { 0 };
 	WCHAR* clientName = NULL;
-	int clientNameLength;
+	size_t clientNameLength;
 	BYTE connectionType;
 	UINT16 highColorDepth;
 	UINT16 supportedColorDepths;
 	UINT16 earlyCapabilityFlags;
 	WCHAR* clientDigProductId = NULL;
-	int clientDigProductIdLength;
-	rdpContext* context;
-	rdpSettings* settings;
+	size_t clientDigProductIdLength;
+	const rdpSettings* settings = mcs_get_const_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
 
 	if (!gcc_write_user_data_header(s, CS_CORE, 234))
 		return FALSE;
-	clientNameLength = ConvertToUnicode(CP_UTF8, 0, settings->ClientHostname, -1, &clientName, 0);
-	clientDigProductIdLength =
-	    ConvertToUnicode(CP_UTF8, 0, settings->ClientProductId, -1, &clientDigProductId, 0);
+	clientName = ConvertUtf8ToWCharAlloc(settings->ClientHostname, &clientNameLength);
+	clientDigProductId =
+	    ConvertUtf8ToWCharAlloc(settings->ClientProductId, &clientDigProductIdLength);
+
 	Stream_Write_UINT32(s, settings->RdpVersion);    /* Version */
 	Stream_Write_UINT16(s, settings->DesktopWidth);  /* DesktopWidth */
 	Stream_Write_UINT16(s, settings->DesktopHeight); /* DesktopHeight */
@@ -1222,16 +1261,9 @@ BOOL gcc_write_client_core_data(wStream* s, const rdpMcs* mcs)
 BOOL gcc_read_server_core_data(wStream* s, rdpMcs* mcs)
 {
 	UINT32 serverVersion;
-	rdpContext* context;
-	rdpSettings* settings;
+	rdpSettings* settings = mcs_get_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
@@ -1258,19 +1290,15 @@ BOOL gcc_read_server_core_data(wStream* s, rdpMcs* mcs)
 	                             settings->ConnectionType);
 }
 
-BOOL gcc_write_server_core_data(wStream* s, const rdpMcs* mcs)
+/* TODO: This function modifies rdpMcs
+ * TODO:  Split this out of this function
+ */
+BOOL gcc_write_server_core_data(wStream* s, rdpMcs* mcs)
 {
 	UINT32 earlyCapabilityFlags;
-	rdpContext* context;
-	rdpSettings* settings;
+	rdpSettings* settings = mcs_get_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
 
 	if (!gcc_write_user_data_header(s, SC_CORE, 16))
@@ -1286,24 +1314,20 @@ BOOL gcc_write_server_core_data(wStream* s, const rdpMcs* mcs)
 }
 
 /**
- * Read a client security data block (TS_UD_CS_SEC).\n
- * @msdn{cc240511}
+ * Read a client security data block (TS_UD_CS_SEC).
+ * msdn{cc240511}
  * @param s stream
- * @param settings rdp settings
+ * @param mcs MCS instance
+ * @param blockLength the length of the block
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_read_client_security_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 {
-	rdpContext* context;
-	rdpSettings* settings;
+	rdpSettings* settings = mcs_get_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
 
 	if (blockLength < 8)
@@ -1327,24 +1351,19 @@ BOOL gcc_read_client_security_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 }
 
 /**
- * Write a client security data block (TS_UD_CS_SEC).\n
- * @msdn{cc240511}
+ * Write a client security data block (TS_UD_CS_SEC).
+ * msdn{cc240511}
  * @param s stream
- * @param settings rdp settings
+ * @param mcs The MCS instance
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_write_client_security_data(wStream* s, const rdpMcs* mcs)
 {
-	rdpContext* context;
-	rdpSettings* settings;
+	const rdpSettings* settings = mcs_get_const_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
 
 	if (!gcc_write_user_data_header(s, CS_SECURITY, 12))
@@ -1370,16 +1389,9 @@ BOOL gcc_read_server_security_data(wStream* s, rdpMcs* mcs)
 	UINT32 length;
 	BOOL validCryptoConfig = FALSE;
 	UINT32 serverEncryptionMethod;
-	rdpContext* context;
-	rdpSettings* settings;
+	rdpSettings* settings = mcs_get_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 8))
@@ -1551,23 +1563,19 @@ const BYTE tssk_privateExponent[] = {
 
 const BYTE tssk_exponent[] = { 0x5b, 0x7b, 0x88, 0xc0 };
 
-BOOL gcc_write_server_security_data(wStream* s, const rdpMcs* mcs)
+/* TODO: This function does manipulate data in rdpMcs
+ * TODO: Split this out of this function
+ */
+BOOL gcc_write_server_security_data(wStream* s, rdpMcs* mcs)
 {
 	BYTE* sigData;
 	size_t expLen = 0, keyLen, sigDataLen;
-	BYTE encryptedSignature[TSSK_KEY_LENGTH];
-	BYTE signature[sizeof(initial_signature)];
+	BYTE encryptedSignature[TSSK_KEY_LENGTH] = { 0 };
+	BYTE signature[sizeof(initial_signature)] = { 0 };
 	UINT32 headerLen, serverRandomLen, serverCertLen, wPublicKeyBlobLen;
-	rdpContext* context;
-	rdpSettings* settings;
+	rdpSettings* settings = mcs_get_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
 
 	/**
@@ -1788,16 +1796,22 @@ BOOL gcc_write_server_security_data(wStream* s, const rdpMcs* mcs)
 }
 
 /**
- * Read a client network data block (TS_UD_CS_NET).\n
- * @msdn{cc240512}
+ * Read a client network data block (TS_UD_CS_NET).
+ * msdn{cc240512}
+ *
  * @param s stream
- * @param settings rdp settings
+ * @param mcs The MCS instance
+ * @param blockLength the length of the block
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_read_client_network_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 {
 	UINT32 i;
 
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
 	if (blockLength < 4)
 		return FALSE;
 
@@ -1837,17 +1851,20 @@ BOOL gcc_read_client_network_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 }
 
 /**
- * Write a client network data block (TS_UD_CS_NET).\n
- * @msdn{cc240512}
+ * Write a client network data block (TS_UD_CS_NET).
+ * msdn{cc240512}
  * @param s stream
- * @param settings rdp settings
+ * @param mcs The MCS to use
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_write_client_network_data(wStream* s, const rdpMcs* mcs)
 {
 	UINT32 i;
 	UINT16 length;
-
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
 	if (mcs->channelCount > 0)
 	{
 		length = mcs->channelCount * 12 + 8;
@@ -1874,7 +1891,8 @@ BOOL gcc_read_server_network_data(wStream* s, rdpMcs* mcs)
 	UINT16 MCSChannelId;
 	UINT16 channelCount;
 	UINT32 parsedChannelCount;
-
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 		return FALSE;
 
@@ -1911,6 +1929,8 @@ BOOL gcc_read_server_network_data(wStream* s, rdpMcs* mcs)
 BOOL gcc_write_server_network_data(wStream* s, const rdpMcs* mcs)
 {
 	UINT32 i;
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
 	const size_t payloadLen = 8 + mcs->channelCount * 2 + (mcs->channelCount % 2 == 1 ? 2 : 0);
 
 	if (!gcc_write_user_data_header(s, SC_NET, payloadLen))
@@ -1932,25 +1952,21 @@ BOOL gcc_write_server_network_data(wStream* s, const rdpMcs* mcs)
 }
 
 /**
- * Read a client cluster data block (TS_UD_CS_CLUSTER).\n
- * @msdn{cc240514}
+ * Read a client cluster data block (TS_UD_CS_CLUSTER).
+ * msdn{cc240514}
  * @param s stream
- * @param settings rdp settings
+ * @param mcs The MCS instance
+ * @param blockLength the length of the block
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_read_client_cluster_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 {
 	UINT32 redirectedSessionId;
-	rdpContext* context;
-	rdpSettings* settings;
+	rdpSettings* settings = mcs_get_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
 
 	if (blockLength < 8)
@@ -1978,25 +1994,20 @@ BOOL gcc_read_client_cluster_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 }
 
 /**
- * Write a client cluster data block (TS_UD_CS_CLUSTER).\n
- * @msdn{cc240514}
+ * Write a client cluster data block (TS_UD_CS_CLUSTER).
+ * msdn{cc240514}
  * @param s stream
- * @param settings rdp settings
+ * @param mcs The MCS instance
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_write_client_cluster_data(wStream* s, const rdpMcs* mcs)
 {
 	UINT32 flags;
-	rdpContext* context;
-	rdpSettings* settings;
+	const rdpSettings* settings = mcs_get_const_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
 
 	if (!gcc_write_user_data_header(s, CS_CLUSTER, 12))
@@ -2015,26 +2026,22 @@ BOOL gcc_write_client_cluster_data(wStream* s, const rdpMcs* mcs)
 }
 
 /**
- * Read a client monitor data block (TS_UD_CS_MONITOR).\n
- * @msdn{dd305336}
+ * Read a client monitor data block (TS_UD_CS_MONITOR).
+ * msdn{dd305336}
  * @param s stream
- * @param settings rdp settings
+ * @param mcs The MCS instance
+ * @param blockLength the lenght of the block
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_read_client_monitor_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 {
 	UINT32 index;
 	UINT32 monitorCount;
-	rdpContext* context;
-	rdpSettings* settings;
+	rdpSettings* settings = mcs_get_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
 
 	if (blockLength < 8)
@@ -2086,10 +2093,12 @@ BOOL gcc_read_client_monitor_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 }
 
 /**
- * Write a client monitor data block (TS_UD_CS_MONITOR).\n
- * @msdn{dd305336}
+ * Write a client monitor data block (TS_UD_CS_MONITOR).
+ * msdn{dd305336}
  * @param s stream
- * @param settings rdp settings
+ * @param mcs The MCS to use
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_write_client_monitor_data(wStream* s, const rdpMcs* mcs)
@@ -2097,16 +2106,9 @@ BOOL gcc_write_client_monitor_data(wStream* s, const rdpMcs* mcs)
 	UINT32 i;
 	UINT16 length;
 	INT32 baseX = 0, baseY = 0;
-	rdpContext* context;
-	rdpSettings* settings;
+	const rdpSettings* settings = mcs_get_const_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
 
 	WLog_DBG(TAG, "[%s] MonitorCount=%" PRIu32, __FUNCTION__, settings->MonitorCount);
@@ -2159,16 +2161,9 @@ BOOL gcc_read_client_monitor_extended_data(wStream* s, rdpMcs* mcs, UINT16 block
 	UINT32 index;
 	UINT32 monitorCount;
 	UINT32 monitorAttributeSize;
-	rdpContext* context;
-	rdpSettings* settings;
+	rdpSettings* settings = mcs_get_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
 
 	if (blockLength < 12)
@@ -2206,16 +2201,9 @@ BOOL gcc_write_client_monitor_extended_data(wStream* s, const rdpMcs* mcs)
 {
 	UINT32 i;
 	UINT16 length;
-	rdpContext* context;
-	rdpSettings* settings;
+	const rdpSettings* settings = mcs_get_const_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
 
 	if (settings->HasMonitorAttributes)
@@ -2241,14 +2229,18 @@ BOOL gcc_write_client_monitor_extended_data(wStream* s, const rdpMcs* mcs)
 }
 
 /**
- * Read a client message channel data block (TS_UD_CS_MCS_MSGCHANNEL).\n
- * @msdn{jj217627}
+ * Read a client message channel data block (TS_UD_CS_MCS_MSGCHANNEL).
+ * msdn{jj217627}
  * @param s stream
- * @param settings rdp settings
+ * @param mcs The MCS instance
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_read_client_message_channel_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 {
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
 	if (blockLength < 4)
 		return FALSE;
 
@@ -2258,26 +2250,21 @@ BOOL gcc_read_client_message_channel_data(wStream* s, rdpMcs* mcs, UINT16 blockL
 }
 
 /**
- * Write a client message channel data block (TS_UD_CS_MCS_MSGCHANNEL).\n
- * @msdn{jj217627}
+ * Write a client message channel data block (TS_UD_CS_MCS_MSGCHANNEL).
+ * msdn{jj217627}
  * @param s stream
- * @param settings rdp settings
+ * @param mcs The MCS instance
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_write_client_message_channel_data(wStream* s, const rdpMcs* mcs)
 {
-	rdpContext* context;
-	rdpSettings* settings;
+	const rdpSettings* settings = mcs_get_const_settings(mcs);
 
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
-
 	if (freerdp_settings_get_bool(settings, FreeRDP_NetworkAutoDetect) ||
 	    settings->SupportHeartbeatPdu || settings->SupportMultitransport)
 	{
@@ -2291,7 +2278,8 @@ BOOL gcc_write_client_message_channel_data(wStream* s, const rdpMcs* mcs)
 BOOL gcc_read_server_message_channel_data(wStream* s, rdpMcs* mcs)
 {
 	UINT16 MCSChannelId;
-
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 		return FALSE;
 
@@ -2303,6 +2291,8 @@ BOOL gcc_read_server_message_channel_data(wStream* s, rdpMcs* mcs)
 
 BOOL gcc_write_server_message_channel_data(wStream* s, const rdpMcs* mcs)
 {
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(mcs);
 	if (mcs->messageChannelId == 0)
 		return TRUE;
 
@@ -2314,54 +2304,46 @@ BOOL gcc_write_server_message_channel_data(wStream* s, const rdpMcs* mcs)
 }
 
 /**
- * Read a client multitransport channel data block (TS_UD_CS_MULTITRANSPORT).\n
- * @msdn{jj217498}
+ * Read a client multitransport channel data block (TS_UD_CS_MULTITRANSPORT).
+ * msdn{jj217498}
  * @param s stream
- * @param settings rdp settings
+ * @param mcs The MCS instance
+ * @param blockLength the length of the block
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_read_client_multitransport_channel_data(wStream* s, rdpMcs* mcs, UINT16 blockLength)
 {
-	rdpContext* context;
-	rdpSettings* settings;
+	rdpSettings* settings = mcs_get_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
-
 	if (blockLength < 4)
 		return FALSE;
 
-	Stream_Read_UINT32(s, settings->MultitransportFlags);
+	UINT32 remoteFlags;
+	Stream_Read_UINT32(s, remoteFlags);
+	settings->MultitransportFlags &= remoteFlags; /* merge local and remote flags */
 	return TRUE;
 }
 
 /**
- * Write a client multitransport channel data block (TS_UD_CS_MULTITRANSPORT).\n
- * @msdn{jj217498}
+ * Write a client multitransport channel data block (TS_UD_CS_MULTITRANSPORT).
+ * msdn{jj217498}
+ *
  * @param s stream
- * @param settings rdp settings
+ * @param mcs The MCS instance
+ *
+ * @return \b TRUE for success, \b FALSE otherwise
  */
 
 BOOL gcc_write_client_multitransport_channel_data(wStream* s, const rdpMcs* mcs)
 {
-	rdpContext* context;
-	rdpSettings* settings;
+	const rdpSettings* settings = mcs_get_const_settings(mcs);
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
-
 	if (!gcc_write_user_data_header(s, CS_MULTITRANSPORT, 8))
 		return FALSE;
 	Stream_Write_UINT32(s, settings->MultitransportFlags); /* flags */
@@ -2370,31 +2352,29 @@ BOOL gcc_write_client_multitransport_channel_data(wStream* s, const rdpMcs* mcs)
 
 BOOL gcc_read_server_multitransport_channel_data(wStream* s, rdpMcs* mcs)
 {
-
-	rdpContext* context;
-	rdpSettings* settings;
+	rdpSettings* settings = mcs_get_settings(mcs);
+	UINT32 remoteFlags;
 
 	WINPR_ASSERT(s);
-	WINPR_ASSERT(mcs);
-
-	context = transport_get_context(mcs->transport);
-	WINPR_ASSERT(context);
-
-	settings = context->settings;
 	WINPR_ASSERT(settings);
-
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 		return FALSE;
 
-	Stream_Read_UINT32(s, settings->MultitransportFlags); /* flags, merge with client setting */
+	Stream_Read_UINT32(s, remoteFlags);
+	settings->MultitransportFlags &= remoteFlags; /* merge with client setting */
 	return TRUE;
 }
 
 BOOL gcc_write_server_multitransport_channel_data(wStream* s, const rdpMcs* mcs)
 {
-	UINT32 flags = 0;
+	const rdpSettings* settings = mcs_get_const_settings(mcs);
+
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(settings);
+
 	if (!gcc_write_user_data_header(s, SC_MULTITRANSPORT, 8))
 		return FALSE;
-	Stream_Write_UINT32(s, flags); /* flags (4 bytes) */
+
+	Stream_Write_UINT32(s, settings->MultitransportFlags); /* flags (4 bytes) */
 	return TRUE;
 }

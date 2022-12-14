@@ -2,8 +2,7 @@
 #define TEST_SETTINGS_PROPERTY_LISTS
 
 #define have_bool_list_indices
-static const size_t bool_list_indices[] =
-{
+static const size_t bool_list_indices[] = {
 	FreeRDP_AllowCacheWaitingList,
 	FreeRDP_AllowDesktopComposition,
 	FreeRDP_AllowFontSmoothing,
@@ -25,7 +24,6 @@ static const size_t bool_list_indices[] =
 	FreeRDP_BitmapCompressionDisabled,
 	FreeRDP_CertificateCallbackPreferPEM,
 	FreeRDP_CertificateUseKnownHosts,
-	FreeRDP_ColorPointerFlag,
 	FreeRDP_CompressionEnabled,
 	FreeRDP_ConsoleSession,
 	FreeRDP_CredentialsFromStdin,
@@ -65,6 +63,7 @@ static const size_t bool_list_indices[] =
 	FreeRDP_Fullscreen,
 	FreeRDP_GatewayBypassLocal,
 	FreeRDP_GatewayEnabled,
+	FreeRDP_GatewayHttpExtAuthSspiNtlm,
 	FreeRDP_GatewayHttpTransport,
 	FreeRDP_GatewayHttpUseWebsockets,
 	FreeRDP_GatewayRpcTransport,
@@ -88,6 +87,7 @@ static const size_t bool_list_indices[] =
 	FreeRDP_IPv6Enabled,
 	FreeRDP_IgnoreCertificate,
 	FreeRDP_JpegCodec,
+	FreeRDP_KerberosRdgIsProxy,
 	FreeRDP_ListMonitors,
 	FreeRDP_LocalConnection,
 	FreeRDP_LogonErrors,
@@ -126,7 +126,6 @@ static const size_t bool_list_indices[] =
 	FreeRDP_RedirectSerialPorts,
 	FreeRDP_RedirectSmartCards,
 	FreeRDP_RefreshRect,
-	FreeRDP_RelativeMouseInput,
 	FreeRDP_RemdeskVirtualChannel,
 	FreeRDP_RemoteAppLanguageBarSupported,
 	FreeRDP_RemoteApplicationMode,
@@ -182,8 +181,7 @@ static const size_t bool_list_indices[] =
 };
 
 #define have_uint16_list_indices
-static const size_t uint16_list_indices[] =
-{
+static const size_t uint16_list_indices[] = {
 	FreeRDP_CapsGeneralCompressionLevel,
 	FreeRDP_CapsGeneralCompressionTypes,
 	FreeRDP_CapsProtocolVersion,
@@ -199,8 +197,7 @@ static const size_t uint16_list_indices[] =
 };
 
 #define have_uint32_list_indices
-static const size_t uint32_list_indices[] =
-{
+static const size_t uint32_list_indices[] = {
 	FreeRDP_AcceptedCertLength,
 	FreeRDP_AuthenticationLevel,
 	FreeRDP_AutoReconnectMaxRetries,
@@ -215,6 +212,7 @@ static const size_t uint32_list_indices[] =
 	FreeRDP_ClientSessionId,
 	FreeRDP_ClusterInfoFlags,
 	FreeRDP_ColorDepth,
+	FreeRDP_ColorPointerCacheSize,
 	FreeRDP_CompDeskSupportLevel,
 	FreeRDP_CompressionLevel,
 	FreeRDP_ConnectionType,
@@ -256,7 +254,6 @@ static const size_t uint32_list_indices[] =
 	FreeRDP_KeyboardType,
 	FreeRDP_LargePointerFlag,
 	FreeRDP_LoadBalanceInfoLength,
-	FreeRDP_MaxTimeInCheckLoop,
 	FreeRDP_MonitorAttributeFlags,
 	FreeRDP_MonitorCount,
 	FreeRDP_MonitorDefArraySize,
@@ -324,21 +321,18 @@ static const size_t uint32_list_indices[] =
 };
 
 #define have_int32_list_indices
-static const size_t int32_list_indices[] =
-{
+static const size_t int32_list_indices[] = {
 	FreeRDP_XPan,
 	FreeRDP_YPan,
 };
 
 #define have_uint64_list_indices
-static const size_t uint64_list_indices[] =
-{
+static const size_t uint64_list_indices[] = {
 	FreeRDP_ParentWindowId,
 };
 
 #define have_string_list_indices
-static const size_t string_list_indices[] =
-{
+static const size_t string_list_indices[] = {
 	FreeRDP_AcceptedCert,
 	FreeRDP_ActionScript,
 	FreeRDP_AllowedTlsCiphers,
@@ -431,8 +425,7 @@ static const size_t string_list_indices[] =
 };
 
 #define have_pointer_list_indices
-static const size_t pointer_list_indices[] =
-{
+static const size_t pointer_list_indices[] = {
 	FreeRDP_BitmapCacheV2CellInfo,
 	FreeRDP_ChannelDefArray,
 	FreeRDP_ClientAutoReconnectCookie,
@@ -465,4 +458,3 @@ static const size_t pointer_list_indices[] =
 };
 
 #endif /* TEST_SETTINGS_PROPERTY_LISTS */
-

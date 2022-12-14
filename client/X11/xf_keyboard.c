@@ -44,7 +44,25 @@
 #include <freerdp/log.h>
 #define TAG CLIENT_TAG("x11")
 
-static void xf_keyboard_send_key(xfContext* xfc, BOOL down, const XKeyEvent* ev);
+static void xf_keyboard_modifier_map_free(xfContext* xfc)
+{
+	WINPR_ASSERT(xfc);
+	if (xfc->modifierMap)
+	{
+		XFreeModifiermap(xfc->modifierMap);
+		xfc->modifierMap = NULL;
+	}
+}
+
+BOOL xf_keyboard_update_modifier_map(xfContext* xfc)
+{
+	WINPR_ASSERT(xfc);
+	xf_keyboard_modifier_map_free(xfc);
+	xfc->modifierMap = XGetModifierMapping(xfc->display);
+	return xfc->modifierMap != NULL;
+}
+
+static void xf_keyboard_send_key(xfContext* xfc, BOOL down, BOOL repeat, const XKeyEvent* ev);
 
 static BOOL xf_sync_kbd_state(xfContext* xfc)
 {
@@ -142,10 +160,7 @@ BOOL xf_keyboard_init(xfContext* xfc)
 	    freerdp_keyboard_init_ex(xfc->KeyboardLayout, settings->KeyboardRemappingList);
 	settings->KeyboardLayout = xfc->KeyboardLayout;
 
-	if (xfc->modifierMap)
-		XFreeModifiermap(xfc->modifierMap);
-
-	if (!(xfc->modifierMap = XGetModifierMapping(xfc->display)))
+	if (!xf_keyboard_update_modifier_map(xfc))
 		return FALSE;
 
 	xf_keyboard_action_script_init(xfc);
@@ -154,29 +169,27 @@ BOOL xf_keyboard_init(xfContext* xfc)
 
 void xf_keyboard_free(xfContext* xfc)
 {
-	if (xfc->modifierMap)
-	{
-		XFreeModifiermap(xfc->modifierMap);
-		xfc->modifierMap = NULL;
-	}
-
+	xf_keyboard_modifier_map_free(xfc);
 	xf_keyboard_action_script_free(xfc);
 }
 
 void xf_keyboard_key_press(xfContext* xfc, const XKeyEvent* event, KeySym keysym)
 {
+	BOOL last;
+
 	WINPR_ASSERT(xfc);
 	WINPR_ASSERT(event);
 
 	if (event->keycode < 8)
 		return;
 
+	last = xfc->KeyboardState[event->keycode];
 	xfc->KeyboardState[event->keycode] = TRUE;
 
 	if (xf_keyboard_handle_special_keys(xfc, keysym))
 		return;
 
-	xf_keyboard_send_key(xfc, TRUE, event);
+	xf_keyboard_send_key(xfc, TRUE, last, event);
 }
 
 void xf_keyboard_key_release(xfContext* xfc, const XKeyEvent* event, KeySym keysym)
@@ -187,9 +200,10 @@ void xf_keyboard_key_release(xfContext* xfc, const XKeyEvent* event, KeySym keys
 	if (event->keycode < 8)
 		return;
 
+	BOOL last = xfc->KeyboardState[event->keycode];
 	xfc->KeyboardState[event->keycode] = FALSE;
 	xf_keyboard_handle_special_keys_release(xfc, keysym);
-	xf_keyboard_send_key(xfc, FALSE, event);
+	xf_keyboard_send_key(xfc, FALSE, last, event);
 }
 
 void xf_keyboard_release_all_keypress(xfContext* xfc)
@@ -208,10 +222,11 @@ void xf_keyboard_release_all_keypress(xfContext* xfc)
 			// release tab before releasing the windows key.
 			// this stops the start menu from opening on unfocus event.
 			if (rdp_scancode == RDP_SCANCODE_LWIN)
-				freerdp_input_send_keyboard_event_ex(xfc->common.context.input, FALSE,
+				freerdp_input_send_keyboard_event_ex(xfc->common.context.input, FALSE, FALSE,
 				                                     RDP_SCANCODE_TAB);
 
-			freerdp_input_send_keyboard_event_ex(xfc->common.context.input, FALSE, rdp_scancode);
+			freerdp_input_send_keyboard_event_ex(xfc->common.context.input, FALSE, FALSE,
+			                                     rdp_scancode);
 			xfc->KeyboardState[keycode] = FALSE;
 		}
 	}
@@ -224,7 +239,7 @@ BOOL xf_keyboard_key_pressed(xfContext* xfc, KeySym keysym)
 	return xfc->KeyboardState[keycode];
 }
 
-void xf_keyboard_send_key(xfContext* xfc, BOOL down, const XKeyEvent* event)
+void xf_keyboard_send_key(xfContext* xfc, BOOL down, BOOL repeat, const XKeyEvent* event)
 {
 	DWORD rdp_scancode;
 	rdpInput* input;
@@ -280,7 +295,7 @@ void xf_keyboard_send_key(xfContext* xfc, BOOL down, const XKeyEvent* event)
 				if (rdp_scancode == RDP_SCANCODE_UNKNOWN)
 					WLog_ERR(TAG, "Unknown key with X keycode 0x%02" PRIx8 "", event->keycode);
 				else
-					freerdp_input_send_keyboard_event_ex(input, down, rdp_scancode);
+					freerdp_input_send_keyboard_event_ex(input, down, repeat, rdp_scancode);
 			}
 			else
 				freerdp_input_send_unicode_keyboard_event(input, down ? KBD_FLAGS_RELEASE : 0,
@@ -289,7 +304,7 @@ void xf_keyboard_send_key(xfContext* xfc, BOOL down, const XKeyEvent* event)
 		else if (rdp_scancode == RDP_SCANCODE_UNKNOWN)
 			WLog_ERR(TAG, "Unknown key with X keycode 0x%02" PRIx8 "", event->keycode);
 		else
-			freerdp_input_send_keyboard_event_ex(input, down, rdp_scancode);
+			freerdp_input_send_keyboard_event_ex(input, down, repeat, rdp_scancode);
 
 		if ((rdp_scancode == RDP_SCANCODE_CAPSLOCK) && (down == FALSE))
 		{
@@ -326,6 +341,7 @@ static int xf_keyboard_get_keymask(xfContext* xfc, int keysym)
 	if (keycode == NoSymbol)
 		return 0;
 
+	WINPR_ASSERT(xfc->modifierMap);
 	for (modifierpos = 0; modifierpos < 8; modifierpos++)
 	{
 		int offset = xfc->modifierMap->max_keypermod * modifierpos;

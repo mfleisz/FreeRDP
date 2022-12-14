@@ -585,10 +585,21 @@ static DWORD WINAPI tf_debug_channel_thread_func(LPVOID arg)
 
 	while (1)
 	{
-		WaitForSingleObject(context->event, INFINITE);
+		DWORD status;
+		DWORD nCount = 0;
+		HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
 
-		if (WaitForSingleObject(context->stopEvent, 0) == WAIT_OBJECT_0)
-			break;
+		handles[nCount++] = context->event;
+		handles[nCount++] = freerdp_abort_event(&context->_p);
+		handles[nCount++] = context->stopEvent;
+		status = WaitForMultipleObjects(nCount, handles, FALSE, INFINITE);
+		switch (status)
+		{
+			case WAIT_OBJECT_0:
+				break;
+			default:
+				goto fail;
+		}
 
 		Stream_SetPosition(s, 0);
 
@@ -611,7 +622,7 @@ static DWORD WINAPI tf_debug_channel_thread_func(LPVOID arg)
 		Stream_SetPosition(s, BytesReturned);
 		WLog_DBG(TAG, "got %" PRIu32 " bytes", BytesReturned);
 	}
-
+fail:
 	Stream_Free(s, TRUE);
 	return 0;
 }
@@ -790,7 +801,7 @@ static BOOL tf_peer_keyboard_event(rdpInput* input, UINT16 flags, UINT8 code)
 	WLog_DBG(TAG, "Client sent a keyboard event (flags:0x%04" PRIX16 " code:0x%04" PRIX8 ")", flags,
 	         code);
 
-	if ((flags & KBD_FLAGS_DOWN) && (code == RDP_SCANCODE_KEY_G)) /* 'g' key */
+	if (((flags & KBD_FLAGS_RELEASE) == 0) && (code == RDP_SCANCODE_KEY_G)) /* 'g' key */
 	{
 		if (settings->DesktopWidth != 800)
 		{
@@ -811,7 +822,7 @@ static BOOL tf_peer_keyboard_event(rdpInput* input, UINT16 flags, UINT8 code)
 		update->DesktopResize(update->context);
 		tcontext->activated = FALSE;
 	}
-	else if ((flags & KBD_FLAGS_DOWN) && code == RDP_SCANCODE_KEY_C) /* 'c' key */
+	else if (((flags & KBD_FLAGS_RELEASE) == 0) && code == RDP_SCANCODE_KEY_C) /* 'c' key */
 	{
 		if (tcontext->debug_channel)
 		{
@@ -819,22 +830,22 @@ static BOOL tf_peer_keyboard_event(rdpInput* input, UINT16 flags, UINT8 code)
 			WTSVirtualChannelWrite(tcontext->debug_channel, (PCHAR) "test2", 5, &written);
 		}
 	}
-	else if ((flags & KBD_FLAGS_DOWN) && code == RDP_SCANCODE_KEY_X) /* 'x' key */
+	else if (((flags & KBD_FLAGS_RELEASE) == 0) && code == RDP_SCANCODE_KEY_X) /* 'x' key */
 	{
 		WINPR_ASSERT(client->Close);
 		client->Close(client);
 	}
-	else if ((flags & KBD_FLAGS_DOWN) && code == RDP_SCANCODE_KEY_R) /* 'r' key */
+	else if (((flags & KBD_FLAGS_RELEASE) == 0) && code == RDP_SCANCODE_KEY_R) /* 'r' key */
 	{
 		tcontext->audin_open = !tcontext->audin_open;
 	}
 #if defined(CHANNEL_AINPUT_SERVER)
-	else if ((flags & KBD_FLAGS_DOWN) && code == RDP_SCANCODE_KEY_I) /* 'i' key */
+	else if (((flags & KBD_FLAGS_RELEASE) == 0) && code == RDP_SCANCODE_KEY_I) /* 'i' key */
 	{
 		tcontext->ainput_open = !tcontext->ainput_open;
 	}
 #endif
-	else if ((flags & KBD_FLAGS_DOWN) && code == RDP_SCANCODE_KEY_S) /* 's' key */
+	else if (((flags & KBD_FLAGS_RELEASE) == 0) && code == RDP_SCANCODE_KEY_S) /* 's' key */
 	{
 	}
 
@@ -983,10 +994,10 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 {
 	BOOL rc;
 	DWORD error = CHANNEL_RC_OK;
-	HANDLE handles[32] = { 0 };
-	DWORD count;
-	DWORD status;
-	testPeerContext* context;
+	HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
+	DWORD count = 0;
+	DWORD status = 0;
+	testPeerContext* context = NULL;
 	struct server_info* info;
 	rdpSettings* settings;
 	rdpInput* input;
@@ -1020,17 +1031,13 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 	{
 		if (!freerdp_settings_set_bool(settings, FreeRDP_TransportDumpReplay, TRUE) ||
 		    !freerdp_settings_set_string(settings, FreeRDP_TransportDumpFile, info->replay_dump))
-		{
-			freerdp_peer_free(client);
-			return 0;
-		}
+			goto fail;
 	}
 	if (!freerdp_settings_set_string(settings, FreeRDP_CertificateFile, cert) ||
 	    !freerdp_settings_set_string(settings, FreeRDP_PrivateKeyFile, key))
 	{
 		WLog_ERR(TAG, "Memory allocation failed (strdup)");
-		freerdp_peer_free(client);
-		return 0;
+		goto fail;
 	}
 
 	settings->RdpSecurity = TRUE;
@@ -1043,7 +1050,8 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 	settings->RemoteFxCodec = TRUE;
 	if (!freerdp_settings_set_bool(settings, FreeRDP_NSCodec, TRUE) ||
 	    !freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32))
-		return FALSE;
+		goto fail;
+
 	settings->SuppressOutput = TRUE;
 	settings->RefreshRect = TRUE;
 
@@ -1069,7 +1077,8 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 
 	WINPR_ASSERT(client->Initialize);
 	rc = client->Initialize(client);
-	WINPR_ASSERT(rc);
+	if (!rc)
+		goto fail;
 
 	context = (testPeerContext*)client->context;
 	WINPR_ASSERT(context);
@@ -1166,6 +1175,7 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 
 	WINPR_ASSERT(client->Disconnect);
 	client->Disconnect(client);
+fail:
 	freerdp_peer_context_free(client);
 	freerdp_peer_free(client);
 	return error;
