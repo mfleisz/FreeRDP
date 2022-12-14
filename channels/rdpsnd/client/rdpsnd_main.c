@@ -180,6 +180,7 @@ static void rdpsnd_select_supported_audio_formats(rdpsndPlugin* rdpsnd)
 		if (!audio_format_compatible(rdpsnd->fixed_format, serverFormat))
 			continue;
 
+		WINPR_ASSERT(rdpsnd->device->FormatSupported);
 		if (freerdp_dsp_supports_format(serverFormat, FALSE) ||
 		    rdpsnd->device->FormatSupported(rdpsnd->device, serverFormat))
 		{
@@ -282,18 +283,25 @@ static UINT rdpsnd_recv_server_audio_formats_pdu(rdpsndPlugin* rdpsnd, wStream* 
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 14ull * wNumberOfFormats))
 		return ERROR_BAD_LENGTH;
 
-	rdpsnd->ServerFormats = audio_formats_new(wNumberOfFormats);
-
-	if (!rdpsnd->ServerFormats)
-		return CHANNEL_RC_NO_MEMORY;
-
-	for (index = 0; index < wNumberOfFormats; index++)
+	if (rdpsnd->NumberOfServerFormats > 0)
 	{
-		AUDIO_FORMAT* format = &rdpsnd->ServerFormats[index];
+		rdpsnd->ServerFormats = audio_formats_new(wNumberOfFormats);
 
-		if (!audio_format_read(s, format))
-			goto out_fail;
+		if (!rdpsnd->ServerFormats)
+			return CHANNEL_RC_NO_MEMORY;
+
+		for (index = 0; index < wNumberOfFormats; index++)
+		{
+			AUDIO_FORMAT* format = &rdpsnd->ServerFormats[index];
+
+			if (!audio_format_read(s, format))
+				goto out_fail;
+		}
 	}
+
+	WINPR_ASSERT(rdpsnd->device);
+	ret = IFCALLRESULT(CHANNEL_RC_OK, rdpsnd->device->ServerFormatAnnounce, rdpsnd->device,
+	                   rdpsnd->ServerFormats, rdpsnd->NumberOfServerFormats);
 
 	rdpsnd_select_supported_audio_formats(rdpsnd);
 	WLog_Print(rdpsnd->log, WLOG_DEBUG, "%s Server Audio Formats",
@@ -622,12 +630,22 @@ static UINT rdpsnd_treat_wave(rdpsndPlugin* rdpsnd, wStream* s, size_t size)
 		wStream* pcmData = StreamPool_Take(rdpsnd->pool, 4096);
 
 		if (rdpsnd->device->FormatSupported(rdpsnd->device, format))
-			latency = IFCALLRESULT(0, rdpsnd->device->Play, rdpsnd->device, data, size);
+		{
+			if (rdpsnd->device->PlayEx)
+				latency = rdpsnd->device->PlayEx(rdpsnd->device, format, data, size);
+			else
+				latency = IFCALLRESULT(0, rdpsnd->device->Play, rdpsnd->device, data, size);
+		}
 		else if (freerdp_dsp_decode(rdpsnd->dsp_context, format, data, size, pcmData))
 		{
 			Stream_SealLength(pcmData);
-			latency = IFCALLRESULT(0, rdpsnd->device->Play, rdpsnd->device, Stream_Buffer(pcmData),
-			                       Stream_Length(pcmData));
+
+			if (rdpsnd->device->PlayEx)
+				latency = rdpsnd->device->PlayEx(rdpsnd->device, format, Stream_Buffer(pcmData),
+				                                 Stream_Length(pcmData));
+			else
+				latency = IFCALLRESULT(0, rdpsnd->device->Play, rdpsnd->device,
+				                       Stream_Buffer(pcmData), Stream_Length(pcmData));
 		}
 		else
 			status = ERROR_INTERNAL_ERROR;
