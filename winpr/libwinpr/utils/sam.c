@@ -31,7 +31,7 @@
 
 #include "../log.h"
 
-#ifdef HAVE_UNISTD_H
+#ifdef WINPR_HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 
@@ -57,9 +57,11 @@ static WINPR_SAM_ENTRY* SamEntryFromDataA(LPCSTR User, DWORD UserLength, LPCSTR 
 	WINPR_SAM_ENTRY* entry = calloc(1, sizeof(WINPR_SAM_ENTRY));
 	if (!entry)
 		return NULL;
-	entry->User = _strdup(User);
+	if (User && (UserLength > 0))
+		entry->User = _strdup(User);
 	entry->UserLength = UserLength;
-	entry->Domain = _strdup(Domain);
+	if (Domain && (DomainLength > 0))
+		entry->Domain = _strdup(Domain);
 	entry->DomainLength = DomainLength;
 	return entry;
 }
@@ -340,9 +342,12 @@ WINPR_SAM_ENTRY* SamLookupUserW(WINPR_SAM* sam, LPCWSTR User, UINT32 UserLength,
 	utfUser = ConvertWCharNToUtf8Alloc(User, UserLength / sizeof(WCHAR), &userCharLen);
 	if (!utfUser)
 		goto fail;
-	utfDomain = ConvertWCharNToUtf8Alloc(Domain, DomainLength / sizeof(WCHAR), &domainCharLen);
-	if (!utfDomain)
-		goto fail;
+	if (DomainLength > 0)
+	{
+		utfDomain = ConvertWCharNToUtf8Alloc(Domain, DomainLength / sizeof(WCHAR), &domainCharLen);
+		if (!utfDomain)
+			goto fail;
+	}
 	entry = SamLookupUserA(sam, utfUser, userCharLen, utfDomain, domainCharLen);
 fail:
 	free(utfUser);

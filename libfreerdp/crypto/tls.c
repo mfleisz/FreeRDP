@@ -32,15 +32,15 @@
 #include <freerdp/utils/ringbuffer.h>
 
 #include <freerdp/log.h>
-#include <freerdp/crypto/tls.h>
+#include "../crypto/tls.h"
 #include "../core/tcp.h"
 #include "opensslcompat.h"
 
-#ifdef HAVE_POLL_H
+#ifdef WINPR_HAVE_POLL_H
 #include <poll.h>
 #endif
 
-#ifdef HAVE_VALGRIND_MEMCHECK_H
+#ifdef FREERDP_HAVE_VALGRIND_MEMCHECK_H
 #include <valgrind/memcheck.h>
 #endif
 
@@ -74,7 +74,6 @@ typedef struct
 	CRITICAL_SECTION lock;
 } BIO_RDP_TLS;
 
-static BOOL tls_prep(rdpTls* tls, BIO* underlying, int options, BOOL clientMode);
 static int tls_verify_certificate(rdpTls* tls, CryptoCert cert, const char* hostname, UINT16 port);
 static void tls_print_certificate_name_mismatch_error(const char* hostname, UINT16 port,
                                                       const char* common_name, char** alt_names,
@@ -196,7 +195,7 @@ static int bio_rdp_tls_read(BIO* bio, char* buf, int size)
 		}
 	}
 
-#ifdef HAVE_VALGRIND_MEMCHECK_H
+#ifdef FREERDP_HAVE_VALGRIND_MEMCHECK_H
 
 	if (status > 0)
 	{
@@ -600,7 +599,7 @@ static CryptoCert tls_get_certificate(rdpTls* tls, BOOL peer)
 	return cert;
 }
 
-static void tls_free_certificate(CryptoCert cert)
+static void freerdp_tls_free_certificate(CryptoCert cert)
 {
 	X509_free(cert->px509);
 	free(cert);
@@ -684,7 +683,7 @@ static void SSLCTX_keylog_cb(const SSL* ssl, const char* line)
 	dfile = SSL_get_ex_data(ssl, secrets_file_idx);
 	if (dfile)
 	{
-		FILE* f = fopen(dfile, "a+");
+		FILE* f = winpr_fopen(dfile, "a+");
 		fwrite(line, strlen(line), 1, f);
 		fwrite("\n", 1, 1, f);
 		fclose(f);
@@ -767,138 +766,38 @@ static BOOL tls_prepare(rdpTls* tls, BIO* underlying, SSL_METHOD* method, int op
 	return TRUE;
 }
 
-static int tls_do_handshake(rdpTls* tls, BOOL clientMode)
+static void adjustSslOptions(int* options)
 {
-	CryptoCert cert;
-	int verify_status;
-
-	do
-	{
-#ifdef HAVE_POLL_H
-		int fd;
-		int status;
-		struct pollfd pollfds;
-#elif !defined(_WIN32)
-		SOCKET fd;
-		int status;
-		fd_set rset;
-		struct timeval tv;
-#else
-		HANDLE event;
-		DWORD status;
+	WINPR_ASSERT(options);
+#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
+	*options |= SSL_OP_NO_SSLv2;
+	*options |= SSL_OP_NO_SSLv3;
 #endif
-		status = BIO_do_handshake(tls->bio);
-
-		if (status == 1)
-			break;
-
-		if (!BIO_should_retry(tls->bio))
-			return -1;
-
-#ifndef _WIN32
-		/* we select() only for read even if we should test both read and write
-		 * depending of what have blocked */
-		fd = BIO_get_fd(tls->bio, NULL);
-
-		if (fd < 0)
-		{
-			WLog_ERR(TAG, "unable to retrieve BIO fd");
-			return -1;
-		}
-
-#else
-		BIO_get_event(tls->bio, &event);
-
-		if (!event)
-		{
-			WLog_ERR(TAG, "unable to retrieve BIO event");
-			return -1;
-		}
-
-#endif
-#ifdef HAVE_POLL_H
-		pollfds.fd = fd;
-		pollfds.events = POLLIN;
-		pollfds.revents = 0;
-
-		do
-		{
-			status = poll(&pollfds, 1, 10);
-		} while ((status < 0) && (errno == EINTR));
-
-#elif !defined(_WIN32)
-		FD_ZERO(&rset);
-		FD_SET(fd, &rset);
-		tv.tv_sec = 0;
-		tv.tv_usec = 10 * 1000; /* 10ms */
-		status = _select(fd + 1, &rset, NULL, NULL, &tv);
-#else
-		status = WaitForSingleObject(event, 10);
-#endif
-#ifndef _WIN32
-
-		if (status < 0)
-		{
-			WLog_ERR(TAG, "error during select()");
-			return -1;
-		}
-
-#else
-
-		if ((status != WAIT_OBJECT_0) && (status != WAIT_TIMEOUT))
-		{
-			WLog_ERR(TAG, "error during WaitForSingleObject(): 0x%08" PRIX32 "", status);
-			return -1;
-		}
-
-#endif
-	} while (TRUE);
-
-	cert = tls_get_certificate(tls, clientMode);
-
-	if (!cert)
-	{
-		WLog_ERR(TAG, "tls_get_certificate failed to return the server certificate.");
-		return -1;
-	}
-
-	tls->Bindings = tls_get_channel_bindings(cert->px509);
-
-	if (!tls->Bindings)
-	{
-		WLog_ERR(TAG, "unable to retrieve bindings");
-		verify_status = -1;
-		goto out;
-	}
-
-	if (!crypto_cert_get_public_key(cert, &tls->PublicKey, &tls->PublicKeyLength))
-	{
-		WLog_ERR(TAG, "crypto_cert_get_public_key failed to return the server public key.");
-		verify_status = -1;
-		goto out;
-	}
-
-	/* server-side NLA needs public keys (keys from us, the server) but no certificate verify */
-	verify_status = 1;
-
-	if (clientMode)
-	{
-		verify_status = tls_verify_certificate(tls, cert, tls->hostname, tls->port);
-
-		if (verify_status < 1)
-		{
-			WLog_ERR(TAG, "certificate not trusted, aborting.");
-			tls_send_alert(tls);
-		}
-	}
-
-out:
-	tls_free_certificate(cert);
-	return verify_status;
 }
 
-int tls_connect(rdpTls* tls, BIO* underlying)
+const SSL_METHOD* freerdp_tls_get_ssl_method(BOOL isDtls, BOOL isClient)
 {
+	if (isClient)
+	{
+		if (isDtls)
+			return (const SSL_METHOD*)DTLS_client_method();
+#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
+		return (const SSL_METHOD*)SSLv23_client_method();
+#else
+		return (const SSL_METHOD*)TLS_client_method();
+#endif
+	}
+
+	if (isDtls)
+		return (const SSL_METHOD*)DTLS_server_method();
+
+	return (const SSL_METHOD*)SSLv23_server_method();
+}
+
+TlsHandshakeResult freerdp_tls_connect_ex(rdpTls* tls, BIO* underlying, const SSL_METHOD* methods)
+{
+	WINPR_ASSERT(tls);
+
 	int options = 0;
 	/**
 	 * SSL_OP_NO_COMPRESSION:
@@ -927,28 +826,142 @@ int tls_connect(rdpTls* tls, BIO* underlying)
 	 */
 	options |= SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS;
 
-	if (!tls_prep(tls, underlying, options, TRUE))
+	tls->isClientMode = TRUE;
+	adjustSslOptions(&options);
+
+	if (!tls_prepare(tls, underlying, methods, options, TRUE))
 		return 0;
 
 #if !defined(OPENSSL_NO_TLSEXT) && !defined(LIBRESSL_VERSION_NUMBER)
 	SSL_set_tlsext_host_name(tls->ssl, tls->hostname);
 #endif
-	return tls_do_handshake(tls, TRUE);
+
+	return freerdp_tls_handshake(tls);
 }
 
-BOOL tls_prep(rdpTls* tls, BIO* underlying, int options, BOOL clientMode)
+TlsHandshakeResult freerdp_tls_handshake(rdpTls* tls)
 {
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-	/**
-	 * disable SSLv2 and SSLv3
-	 */
-	options |= SSL_OP_NO_SSLv2;
-	options |= SSL_OP_NO_SSLv3;
+	TlsHandshakeResult ret = TLS_HANDSHAKE_ERROR;
 
-	return tls_prepare(tls, underlying, SSLv23_client_method(), options, clientMode);
-#else
-	return tls_prepare(tls, underlying, TLS_client_method(), options, clientMode);
-#endif
+	WINPR_ASSERT(tls);
+	int status = BIO_do_handshake(tls->bio);
+	if (status != 1)
+	{
+		if (!BIO_should_retry(tls->bio))
+			return TLS_HANDSHAKE_ERROR;
+
+		return TLS_HANDSHAKE_CONTINUE;
+	}
+
+	int verify_status;
+	CryptoCert cert = tls_get_certificate(tls, tls->isClientMode);
+
+	if (!cert)
+	{
+		WLog_ERR(TAG, "tls_get_certificate failed to return the server certificate.");
+		return TLS_HANDSHAKE_ERROR;
+	}
+
+	do
+	{
+		tls->Bindings = tls_get_channel_bindings(cert->px509);
+		if (!tls->Bindings)
+		{
+			WLog_ERR(TAG, "unable to retrieve bindings");
+			break;
+		}
+
+		if (!crypto_cert_get_public_key(cert, &tls->PublicKey, &tls->PublicKeyLength))
+		{
+			WLog_ERR(TAG, "crypto_cert_get_public_key failed to return the server public key.");
+			break;
+		}
+
+		/* server-side NLA needs public keys (keys from us, the server) but no certificate verify */
+		ret = TLS_HANDSHAKE_SUCCESS;
+
+		if (tls->isClientMode)
+		{
+			verify_status = tls_verify_certificate(tls, cert, tls->hostname, tls->port);
+
+			if (verify_status < 1)
+			{
+				WLog_ERR(TAG, "certificate not trusted, aborting.");
+				freerdp_tls_send_alert(tls);
+				ret = TLS_HANDSHAKE_VERIFY_ERROR;
+			}
+		}
+	} while (0);
+
+	freerdp_tls_free_certificate(cert);
+	return ret;
+}
+
+static int pollAndHandshake(rdpTls* tls)
+{
+	WINPR_ASSERT(tls);
+
+	do
+	{
+		HANDLE event;
+		DWORD status;
+		if (BIO_get_event(tls->bio, &event) < 0)
+		{
+			WLog_ERR(TAG, "unable to retrieve BIO associated event");
+			return -1;
+		}
+
+		if (!event)
+		{
+			WLog_ERR(TAG, "unable to retrieve BIO event");
+			return -1;
+		}
+
+		status = WaitForSingleObjectEx(event, 50, TRUE);
+		switch (status)
+		{
+			case WAIT_OBJECT_0:
+				break;
+			case WAIT_TIMEOUT:
+				continue;
+			default:
+				WLog_ERR(TAG, "error during WaitForSingleObject(): 0x%08" PRIX32 "", status);
+				return -1;
+		}
+
+		TlsHandshakeResult result = freerdp_tls_handshake(tls);
+		switch (result)
+		{
+			case TLS_HANDSHAKE_CONTINUE:
+				break;
+			case TLS_HANDSHAKE_SUCCESS:
+				return 1;
+			case TLS_HANDSHAKE_ERROR:
+			case TLS_HANDSHAKE_VERIFY_ERROR:
+			default:
+				return -1;
+		}
+	} while (TRUE);
+}
+
+int freerdp_tls_connect(rdpTls* tls, BIO* underlying)
+{
+	const SSL_METHOD* method = freerdp_tls_get_ssl_method(FALSE, TRUE);
+
+	WINPR_ASSERT(tls);
+	TlsHandshakeResult result = freerdp_tls_connect_ex(tls, underlying, method);
+	switch (result)
+	{
+		case TLS_HANDSHAKE_SUCCESS:
+			return 1;
+		case TLS_HANDSHAKE_CONTINUE:
+			break;
+		case TLS_HANDSHAKE_ERROR:
+		case TLS_HANDSHAKE_VERIFY_ERROR:
+			return -1;
+	}
+
+	return pollAndHandshake(tls);
 }
 
 #if defined(MICROSOFT_IOS_SNI_BUG) && !defined(OPENSSL_NO_TLSEXT) && \
@@ -964,8 +977,31 @@ static void tls_openssl_tlsext_debug_callback(SSL* s, int client_server, int typ
 }
 #endif
 
-BOOL tls_accept(rdpTls* tls, BIO* underlying, rdpSettings* settings)
+BOOL freerdp_tls_accept(rdpTls* tls, BIO* underlying, rdpSettings* settings)
 {
+	WINPR_ASSERT(tls);
+	TlsHandshakeResult res =
+	    freerdp_tls_accept_ex(tls, underlying, settings, freerdp_tls_get_ssl_method(FALSE, FALSE));
+	switch (res)
+	{
+		case TLS_HANDSHAKE_SUCCESS:
+			return TRUE;
+		case TLS_HANDSHAKE_CONTINUE:
+			break;
+		case TLS_HANDSHAKE_ERROR:
+		case TLS_HANDSHAKE_VERIFY_ERROR:
+		default:
+			return FALSE;
+	}
+
+	return pollAndHandshake(tls) > 0;
+}
+
+TlsHandshakeResult freerdp_tls_accept_ex(rdpTls* tls, BIO* underlying, rdpSettings* settings,
+                                         const SSL_METHOD* methods)
+{
+	WINPR_ASSERT(tls);
+
 	long options = 0;
 	BIO* bio;
 	EVP_PKEY* privkey;
@@ -1006,8 +1042,19 @@ BOOL tls_accept(rdpTls* tls, BIO* underlying, rdpSettings* settings)
 	 */
 	options |= SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS;
 
-	if (!tls_prepare(tls, underlying, SSLv23_server_method(), options, FALSE))
-		return FALSE;
+	/**
+	 * SSL_OP_NO_RENEGOTIATION
+	 *
+	 * Disable SSL client site renegotiation.
+	 */
+
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && OPENSSL_VERSION_NUMBER < 0x30000000L) || \
+    defined(LIBRESSL_VERSION_NUMBER)
+	options |= SSL_OP_NO_RENEGOTIATION;
+#endif
+
+	if (!tls_prepare(tls, underlying, methods, options, FALSE))
+		return TLS_HANDSHAKE_ERROR;
 
 	if (settings->PrivateKeyFile)
 	{
@@ -1016,7 +1063,7 @@ BOOL tls_accept(rdpTls* tls, BIO* underlying, rdpSettings* settings)
 		if (!bio)
 		{
 			WLog_ERR(TAG, "BIO_new_file failed for private key %s", settings->PrivateKeyFile);
-			return FALSE;
+			return TLS_HANDSHAKE_ERROR;
 		}
 	}
 	else if (settings->PrivateKeyContent)
@@ -1026,13 +1073,13 @@ BOOL tls_accept(rdpTls* tls, BIO* underlying, rdpSettings* settings)
 		if (!bio)
 		{
 			WLog_ERR(TAG, "BIO_new_mem_buf failed for private key");
-			return FALSE;
+			return TLS_HANDSHAKE_ERROR;
 		}
 	}
 	else
 	{
 		WLog_ERR(TAG, "no private key defined");
-		return FALSE;
+		return TLS_HANDSHAKE_ERROR;
 	}
 
 	privkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
@@ -1041,7 +1088,7 @@ BOOL tls_accept(rdpTls* tls, BIO* underlying, rdpSettings* settings)
 	if (!privkey)
 	{
 		WLog_ERR(TAG, "invalid private key");
-		return FALSE;
+		return TLS_HANDSHAKE_ERROR;
 	}
 
 	status = SSL_use_PrivateKey(tls->ssl, privkey);
@@ -1054,7 +1101,7 @@ BOOL tls_accept(rdpTls* tls, BIO* underlying, rdpSettings* settings)
 	if (status <= 0)
 	{
 		WLog_ERR(TAG, "SSL_CTX_use_PrivateKey_file failed");
-		return FALSE;
+		return TLS_HANDSHAKE_ERROR;
 	}
 
 	if (settings->CertificateFile)
@@ -1066,13 +1113,13 @@ BOOL tls_accept(rdpTls* tls, BIO* underlying, rdpSettings* settings)
 	else
 	{
 		WLog_ERR(TAG, "no certificate defined");
-		return FALSE;
+		return TLS_HANDSHAKE_ERROR;
 	}
 
 	if (!x509)
 	{
 		WLog_ERR(TAG, "invalid certificate");
-		return FALSE;
+		return TLS_HANDSHAKE_ERROR;
 	}
 
 	status = SSL_use_certificate(tls->ssl, x509);
@@ -1085,18 +1132,21 @@ BOOL tls_accept(rdpTls* tls, BIO* underlying, rdpSettings* settings)
 	if (status <= 0)
 	{
 		WLog_ERR(TAG, "SSL_use_certificate_file failed");
-		return FALSE;
+		return TLS_HANDSHAKE_ERROR;
 	}
 
 #if defined(MICROSOFT_IOS_SNI_BUG) && !defined(OPENSSL_NO_TLSEXT) && \
     !defined(LIBRESSL_VERSION_NUMBER)
 	SSL_set_tlsext_debug_callback(tls->ssl, tls_openssl_tlsext_debug_callback);
 #endif
-	return tls_do_handshake(tls, FALSE) > 0;
+
+	return freerdp_tls_handshake(tls);
 }
 
-BOOL tls_send_alert(rdpTls* tls)
+BOOL freerdp_tls_send_alert(rdpTls* tls)
 {
+	WINPR_ASSERT(tls);
+
 	if (!tls)
 		return FALSE;
 
@@ -1140,8 +1190,9 @@ BOOL tls_send_alert(rdpTls* tls)
 	return TRUE;
 }
 
-int tls_write_all(rdpTls* tls, const BYTE* data, int length)
+int freerdp_tls_write_all(rdpTls* tls, const BYTE* data, int length)
 {
+	WINPR_ASSERT(tls);
 	int status;
 	int offset = 0;
 	BIO* bio = tls->bio;
@@ -1175,8 +1226,9 @@ int tls_write_all(rdpTls* tls, const BYTE* data, int length)
 	return length;
 }
 
-int tls_set_alert_code(rdpTls* tls, int level, int description)
+int freerdp_tls_set_alert_code(rdpTls* tls, int level, int description)
 {
+	WINPR_ASSERT(tls);
 	tls->alertLevel = level;
 	tls->alertDescription = description;
 	return 0;
@@ -1733,7 +1785,7 @@ void tls_print_certificate_name_mismatch_error(const char* hostname, UINT16 port
 	WLog_ERR(TAG, "A valid certificate for the wrong name should NOT be trusted!");
 }
 
-rdpTls* tls_new(rdpSettings* settings)
+rdpTls* freerdp_tls_new(rdpSettings* settings)
 {
 	rdpTls* tls;
 	tls = (rdpTls*)calloc(1, sizeof(rdpTls));
@@ -1759,7 +1811,7 @@ out_free:
 	return NULL;
 }
 
-void tls_free(rdpTls* tls)
+void freerdp_tls_free(rdpTls* tls)
 {
 	if (!tls)
 		return;

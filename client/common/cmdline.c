@@ -538,6 +538,26 @@ BOOL freerdp_client_print_command_line_help_ex(int argc, char** argv,
 	return TRUE;
 }
 
+static BOOL option_is_rdp_file(const char* option)
+{
+	WINPR_ASSERT(option);
+
+	if (option_ends_with(option, ".rdp"))
+		return TRUE;
+	if (option_ends_with(option, ".rdpw"))
+		return TRUE;
+	return FALSE;
+}
+
+static BOOL option_is_incident_file(const char* option)
+{
+	WINPR_ASSERT(option);
+
+	if (option_ends_with(option, ".msrcIncident"))
+		return TRUE;
+	return FALSE;
+}
+
 static int freerdp_client_command_line_pre_filter(void* context, int index, int argc, LPSTR* argv)
 {
 	if (index == 1)
@@ -552,7 +572,7 @@ static int freerdp_client_command_line_pre_filter(void* context, int index, int 
 
 		if (length > 4)
 		{
-			if (option_ends_with(argv[index], ".rdp"))
+			if (option_is_rdp_file(argv[index]))
 			{
 				settings = (rdpSettings*)context;
 
@@ -565,7 +585,7 @@ static int freerdp_client_command_line_pre_filter(void* context, int index, int 
 
 		if (length > 13)
 		{
-			if (option_ends_with(argv[index], ".msrcIncident"))
+			if (option_is_incident_file(argv[index]))
 			{
 				settings = (rdpSettings*)context;
 
@@ -1279,7 +1299,7 @@ static int freerdp_detect_command_line_pre_filter(void* context, int index, int 
 
 		if (length > 4)
 		{
-			if (option_ends_with(argv[index], ".rdp"))
+			if (option_is_rdp_file(argv[index]))
 			{
 				return 1;
 			}
@@ -1287,7 +1307,7 @@ static int freerdp_detect_command_line_pre_filter(void* context, int index, int 
 
 		if (length > 13)
 		{
-			if (option_ends_with(argv[index], ".msrcIncident"))
+			if (option_is_incident_file(argv[index]))
 			{
 				return 1;
 			}
@@ -1907,7 +1927,7 @@ static int parse_gfx_options(rdpSettings* settings, const COMMAND_LINE_ARGUMENT_
 					if (bval < 0)
 						rc = COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 					else
-						GfxH264 = bval > 0;
+						GfxAVC444 = bval > 0;
 					codecSelected = TRUE;
 				}
 				else if (option_starts_with("AVC420", val))
@@ -1916,7 +1936,7 @@ static int parse_gfx_options(rdpSettings* settings, const COMMAND_LINE_ARGUMENT_
 					if (bval < 0)
 						rc = COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 					else
-						GfxAVC444 = bval > 0;
+						GfxH264 = bval > 0;
 					codecSelected = TRUE;
 				}
 				else
@@ -1975,12 +1995,11 @@ static int parse_gfx_options(rdpSettings* settings, const COMMAND_LINE_ARGUMENT_
 			{
 				if (!freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444, GfxAVC444))
 					rc = COMMAND_LINE_ERROR;
-				else if (!freerdp_settings_set_bool(settings, FreeRDP_GfxH264, GfxH264))
+				if (!freerdp_settings_set_bool(settings, FreeRDP_GfxH264, GfxH264))
 					rc = COMMAND_LINE_ERROR;
-				else if (!freerdp_settings_set_bool(settings, FreeRDP_RemoteFxCodec, RemoteFxCodec))
+				if (!freerdp_settings_set_bool(settings, FreeRDP_RemoteFxCodec, RemoteFxCodec))
 					rc = COMMAND_LINE_ERROR;
-				else if (!freerdp_settings_set_bool(settings, FreeRDP_GfxProgressive,
-				                                    GfxProgressive))
+				if (!freerdp_settings_set_bool(settings, FreeRDP_GfxProgressive, GfxProgressive))
 					rc = COMMAND_LINE_ERROR;
 			}
 		}
@@ -2348,8 +2367,8 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 	 * legacy command line syntax. */
 	if (argc > 1)
 	{
-		ext = option_ends_with(argv[1], ".rdp");
-		assist = option_ends_with(argv[1], ".msrcIncident");
+		ext = option_is_rdp_file(argv[1]);
+		assist = option_is_incident_file(argv[1]);
 	}
 
 	if (!ext && !assist)
@@ -3354,55 +3373,9 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		CommandLineSwitchCase(arg, "gfx-h264")
 		{
 			WLog_WARN(TAG, "/gfx-h264 is deprecated, use /gfx:avc420 instead");
-			settings->SupportGraphicsPipeline = TRUE;
-			settings->GfxH264 = TRUE;
-
-			if (arg->Value)
-			{
-				int rc = CHANNEL_RC_OK;
-				union
-				{
-					char** p;
-					const char** pc;
-				} ptr;
-				size_t count, x;
-
-				ptr.p = CommandLineParseCommaSeparatedValues(arg->Value, &count);
-				if (!ptr.pc || (count == 0))
-					rc = COMMAND_LINE_ERROR;
-				else
-				{
-					for (x = 0; x < count; x++)
-					{
-						const char* val = ptr.pc[x];
-
-						if (option_starts_with("AVC444", val))
-						{
-							settings->GfxH264 = TRUE;
-							settings->GfxAVC444 = TRUE;
-						}
-						else if (option_starts_with("AVC420", val))
-						{
-							settings->GfxH264 = TRUE;
-							settings->GfxAVC444 = FALSE;
-						}
-						else if (option_starts_with("mask:", val))
-						{
-							ULONGLONG v;
-							const char* uv = &val[5];
-							if (!value_to_uint(uv, &v, 0, UINT32_MAX))
-								rc = COMMAND_LINE_ERROR;
-							else
-								settings->GfxCapsFilter = (UINT32)v;
-						}
-						else
-							rc = COMMAND_LINE_ERROR;
-					}
-				}
-				free(ptr.p);
-				if (rc != CHANNEL_RC_OK)
-					return rc;
-			}
+			int rc = parse_gfx_options(settings, arg);
+			if (rc != 0)
+				return rc;
 		}
 #endif
 #endif

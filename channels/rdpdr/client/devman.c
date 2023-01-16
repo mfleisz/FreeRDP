@@ -39,6 +39,8 @@
 
 #include "devman.h"
 
+#define TAG CHANNELS_TAG("rdpdr.client")
+
 static void devman_device_free(void* obj)
 {
 	DEVICE* device = (DEVICE*)obj;
@@ -60,7 +62,7 @@ DEVMAN* devman_new(rdpdrPlugin* rdpdr)
 
 	if (!devman)
 	{
-		WLog_INFO(TAG, "calloc failed!");
+		WLog_Print(rdpdr->log, WLOG_INFO, "calloc failed!");
 		return NULL;
 	}
 
@@ -70,7 +72,7 @@ DEVMAN* devman_new(rdpdrPlugin* rdpdr)
 
 	if (!devman->devices)
 	{
-		WLog_INFO(TAG, "ListDictionary_New failed!");
+		WLog_Print(rdpdr->log, WLOG_INFO, "ListDictionary_New failed!");
 		free(devman);
 		return NULL;
 	}
@@ -128,9 +130,14 @@ DEVICE* devman_get_device_by_id(DEVMAN* devman, UINT32 id)
 	void* key = (void*)(size_t)id;
 
 	if (!devman)
+	{
+		WLog_ERR(TAG, "[%s] device manager=%p", __FUNCTION__, devman);
 		return NULL;
+	}
 
 	device = (DEVICE*)ListDictionary_GetItemValue(devman->devices, key);
+	if (!device)
+		WLog_WARN(TAG, "[%s] could not find device ID 0x%08" PRIx32, __FUNCTION__, id);
 	return device;
 }
 

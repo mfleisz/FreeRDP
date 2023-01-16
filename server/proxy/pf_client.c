@@ -442,7 +442,6 @@ static BOOL pf_client_receive_channel_data_hook(freerdp* instance, UINT16 channe
 	pServerContext* ps;
 	proxyData* pdata;
 	pServerStaticChannelContext* channel;
-	UINT16 server_channel_id;
 	UINT64 channelId64 = channelId;
 
 	WINPR_ASSERT(instance);
@@ -466,23 +465,20 @@ static BOOL pf_client_receive_channel_data_hook(freerdp* instance, UINT16 channe
 	switch (channel->onBackData(pdata, channel, xdata, xsize, flags, totalSize))
 	{
 		case PF_CHANNEL_RESULT_PASS:
-			break;
+			/* Ignore messages for channels that can not be mapped.
+			 * The client might not have enabled support for this specific channel,
+			 * so just drop the message. */
+			if (channel->front_channel_id == 0)
+				return TRUE;
+
+			return ps->context.peer->SendChannelPacket(ps->context.peer, channel->front_channel_id,
+			                                           totalSize, flags, xdata, xsize);
 		case PF_CHANNEL_RESULT_DROP:
 			return TRUE;
 		case PF_CHANNEL_RESULT_ERROR:
+		default:
 			return FALSE;
 	}
-
-	server_channel_id = WTSChannelGetId(ps->context.peer, channel->channel_name);
-
-	/* Ignore messages for channels that can not be mapped.
-	 * The client might not have enabled support for this specific channel,
-	 * so just drop the message. */
-	if (server_channel_id == 0)
-		return TRUE;
-
-	return ps->context.peer->SendChannelPacket(ps->context.peer, server_channel_id, totalSize,
-	                                           flags, xdata, xsize);
 }
 
 static BOOL pf_client_on_server_heartbeat(freerdp* instance, BYTE period, BYTE count1, BYTE count2)

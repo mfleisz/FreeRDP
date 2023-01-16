@@ -27,6 +27,7 @@
 #include <freerdp/log.h>
 #include <freerdp/gdi/gfx.h>
 #include <freerdp/gdi/region.h>
+#include <freerdp/utils/gfx.h>
 
 #define TAG FREERDP_TAG("gdi")
 
@@ -1030,13 +1031,14 @@ static UINT gdi_SurfaceCommand(RdpgfxClientContext* context, const RDPGFX_SURFAC
 
 	EnterCriticalSection(&context->mux);
 	WLog_Print(gdi->log, WLOG_TRACE,
-	           "surfaceId=%" PRIu32 ", codec=%" PRIu32 ", contextId=%" PRIu32 ", format=%s, "
+	           "surfaceId=%" PRIu32 ", codec=%s [%" PRIu32 "], contextId=%" PRIu32 ", format=%s, "
 	           "left=%" PRIu32 ", top=%" PRIu32 ", right=%" PRIu32 ", bottom=%" PRIu32
 	           ", width=%" PRIu32 ", height=%" PRIu32 " "
 	           "length=%" PRIu32 ", data=%p, extra=%p",
-	           cmd->surfaceId, cmd->codecId, cmd->contextId, FreeRDPGetColorFormatName(cmd->format),
-	           cmd->left, cmd->top, cmd->right, cmd->bottom, cmd->width, cmd->height, cmd->length,
-	           (void*)cmd->data, (void*)cmd->extra);
+	           cmd->surfaceId, rdpgfx_get_codec_id_string(cmd->codecId), cmd->codecId,
+	           cmd->contextId, FreeRDPGetColorFormatName(cmd->format), cmd->left, cmd->top,
+	           cmd->right, cmd->bottom, cmd->width, cmd->height, cmd->length, (void*)cmd->data,
+	           (void*)cmd->extra);
 
 	switch (cmd->codecId)
 	{
@@ -1074,11 +1076,13 @@ static UINT gdi_SurfaceCommand(RdpgfxClientContext* context, const RDPGFX_SURFAC
 			break;
 
 		case RDPGFX_CODECID_CAPROGRESSIVE_V2:
-			WLog_WARN(TAG, "SurfaceCommand 0x%08" PRIX32 " not implemented", cmd->codecId);
+			WLog_WARN(TAG, "SurfaceCommand %s [0x%08" PRIX32 "] not implemented",
+			          rdpgfx_get_codec_id_string(cmd->codecId), cmd->codecId);
 			break;
 
 		default:
-			WLog_WARN(TAG, "Invalid SurfaceCommand 0x%08" PRIX32 "", cmd->codecId);
+			WLog_WARN(TAG, "Invalid SurfaceCommand %s [0x%08" PRIX32 "]",
+			          rdpgfx_get_codec_id_string(cmd->codecId), cmd->codecId);
 			break;
 	}
 
@@ -1249,9 +1253,10 @@ static UINT gdi_SolidFill(RdpgfxClientContext* context, const RDPGFX_SOLID_FILL_
 	b = solidFill->fillPixel.B;
 	g = solidFill->fillPixel.G;
 	r = solidFill->fillPixel.R;
-	/* a = solidFill->fillPixel.XA;
-	 * Ignore alpha channel, this is a solid fill. */
-	a = 0xFF;
+	if (FreeRDPColorHasAlpha(surface->format))
+		a = solidFill->fillPixel.XA;
+	else
+		a = 0xFF;
 	color = FreeRDPGetColor(surface->format, r, g, b, a);
 
 	for (index = 0; index < solidFill->fillRectCount; index++)
