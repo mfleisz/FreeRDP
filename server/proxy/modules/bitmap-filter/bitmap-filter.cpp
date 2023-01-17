@@ -237,6 +237,68 @@ static BOOL filter_set_plugin_data(proxyPlugin* plugin, proxyData* pdata, DynCha
 	return mgr->SetPluginData(mgr, plugin_name, pdata, data);
 }
 
+static UINT8 drdynvc_value_to_cblen(UINT32 value)
+{
+	if (value <= 0xFF)
+		return 0;
+	if (value <= 0xFFFF)
+		return 1;
+	return 2;
+}
+
+static BOOL drdynvc_write_variable_uint(wStream* s, UINT32 value, UINT8 cbLen)
+{
+	UINT32 val;
+
+	switch (cbLen)
+	{
+		case 0:
+			Stream_Write_UINT8(s, (UINT8)val);
+			break;
+
+		case 1:
+			Stream_Write_UINT16(s, (UINT16)val);
+			break;
+
+		default:
+			Stream_Write_UINT32(s, val);
+			break;
+	}
+
+	return TRUE;
+}
+
+static BOOL drdynvc_write_header(wStream* s, UINT32 channelId)
+{
+	const UINT8 cbChId = drdynvc_value_to_cblen(channelId);
+	const UINT8 value = (DATA_PDU << 4) | cbChId;
+	const size_t len = drdynvc_cblen_to_bytes(cbChId) + 1;
+
+	if (!Stream_EnsureRemainingCapacity(s, len))
+		return FALSE;
+
+	Stream_Write_UINT8(s, value);
+	return drdynvc_write_variable_uint(s, value, cbChId);
+}
+
+static BOOL filter_forward_empty_offer(proxyDynChannelInterceptData* data, size_t startPosition,
+                                       UINT32 channelId)
+{
+	WINPR_ASSERT(data);
+
+	Stream_SetPosition(data->data, startPosition);
+	if (!drdynvc_write_header(data->data, channelId))
+		return FALSE;
+
+	if (!Stream_EnsureRemainingCapacity(data->data, sizeof(UINT16)))
+		return FALSE;
+	Stream_Write_UINT16(data->data, 0);
+	Stream_SealLength(data->data);
+
+	data->rewritten = TRUE;
+	return TRUE;
+}
+
 static BOOL filter_dyn_channel_intercept(proxyPlugin* plugin, proxyData* pdata, void* arg)
 {
 	auto data = static_cast<proxyDynChannelInterceptData*>(arg);
@@ -281,6 +343,8 @@ static BOOL filter_dyn_channel_intercept(proxyPlugin* plugin, proxyData* pdata, 
 				{
 					case RDPGFX_CMDID_CACHEIMPORTOFFER:
 						state->setDrop(true);
+						if (!filter_forward_empty_offer(data, pos, channelId))
+							return FALSE;
 						break;
 					default:
 						break;
