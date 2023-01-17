@@ -94,13 +94,6 @@ class DynChannelState
 	bool _drop = false;
 };
 
-class DynChannelStateMap
-{
-  public:
-	std::map<std::string, DynChannelState> map;
-	std::mutex mux;
-};
-
 static BOOL filter_client_pre_connect(proxyPlugin* plugin, proxyData* pdata, void* custom)
 {
 	WINPR_ASSERT(plugin);
@@ -220,6 +213,30 @@ static BOOL drdynvc_try_read_header(wStream* s, size_t& channelId, size_t& lengt
 	return TRUE;
 }
 
+static DynChannelState* filter_get_plugin_data(proxyPlugin* plugin, proxyData* pdata)
+{
+	WINPR_ASSERT(plugin);
+	WINPR_ASSERT(pdata);
+
+	auto mgr = static_cast<proxyPluginsManager*>(plugin->custom);
+	WINPR_ASSERT(mgr);
+
+	WINPR_ASSERT(mgr->GetPluginData);
+	return static_cast<DynChannelState*>(mgr->GetPluginData(mgr, plugin_name, pdata));
+}
+
+static BOOL filter_set_plugin_data(proxyPlugin* plugin, proxyData* pdata, DynChannelState* data)
+{
+	WINPR_ASSERT(plugin);
+	WINPR_ASSERT(pdata);
+
+	auto mgr = static_cast<proxyPluginsManager*>(plugin->custom);
+	WINPR_ASSERT(mgr);
+
+	WINPR_ASSERT(mgr->SetPluginData);
+	return mgr->SetPluginData(mgr, plugin_name, pdata, data);
+}
+
 static BOOL filter_dyn_channel_intercept(proxyPlugin* plugin, proxyData* pdata, void* arg)
 {
 	auto data = static_cast<proxyDynChannelInterceptData*>(arg);
@@ -232,22 +249,17 @@ static BOOL filter_dyn_channel_intercept(proxyPlugin* plugin, proxyData* pdata, 
 	if (!data->isBackData &&
 	    (strncmp(data->name, RDPGFX_DVC_CHANNEL_NAME, ARRAYSIZE(RDPGFX_DVC_CHANNEL_NAME)) == 0))
 	{
-		const std::string sessionId = pdata->session_id;
-		auto map = static_cast<DynChannelStateMap*>(plugin->custom);
-		WINPR_ASSERT(map);
-
-		std::lock_guard<std::mutex> lk(map->mux);
-		if (map->map.find(sessionId) == map->map.end())
+		auto state = filter_get_plugin_data(plugin, pdata);
+		if (!state)
 		{
-			WLog_ERR(TAG, "[SessionID=%s][%s] missing custom data, aborting!", sessionId.c_str(),
+			WLog_ERR(TAG, "[SessionID=%s][%s] missing custom data, aborting!", pdata->session_id,
 			         plugin_name);
 			return FALSE;
 		}
-		auto& state = map->map[sessionId];
 		const size_t inputDataLength = Stream_Length(data->data);
 		UINT16 cmdId = RDPGFX_CMDID_UNUSED_0000;
 
-		if (!state.skip())
+		if (!state->skip())
 		{
 			if (data->first)
 			{
@@ -260,15 +272,15 @@ static BOOL filter_dyn_channel_intercept(proxyPlugin* plugin, proxyData* pdata, 
 					if (Stream_GetRemainingLength(data->data) >= 2)
 					{
 						Stream_Read_UINT16(data->data, cmdId);
-						state.setSkipSize(length);
-						state.setDrop(false);
+						state->setSkipSize(length);
+						state->setDrop(false);
 					}
 				}
 
 				switch (cmdId)
 				{
 					case RDPGFX_CMDID_CACHEIMPORTOFFER:
-						state.setDrop(true);
+						state->setDrop(true);
 						break;
 					default:
 						break;
@@ -277,32 +289,21 @@ static BOOL filter_dyn_channel_intercept(proxyPlugin* plugin, proxyData* pdata, 
 			}
 		}
 
-		if (state.skip())
+		if (state->skip())
 		{
-			state.skip(inputDataLength);
-			if (state.drop())
+			state->skip(inputDataLength);
+			if (state->drop())
 			{
 				WLog_WARN(TAG,
 				          "[SessionID=%s][%s] dropping %s packet [total:%" PRIuz ", current:%" PRIuz
 				          ", remaining: %" PRIuz "]",
 				          pdata->session_id, plugin_name,
-				          rdpgfx_get_cmd_id_string(RDPGFX_CMDID_CACHEIMPORTOFFER), state.total(),
-				          inputDataLength, state.remaining());
+				          rdpgfx_get_cmd_id_string(RDPGFX_CMDID_CACHEIMPORTOFFER), state->total(),
+				          inputDataLength, state->remaining());
 				data->result = PF_CHANNEL_RESULT_DROP;
 			}
 		}
 	}
-
-	return TRUE;
-}
-
-static BOOL filter_plugin_unload(proxyPlugin* plugin)
-{
-	WINPR_ASSERT(plugin);
-
-	/* Here we have to free up our custom data storage. */
-	if (plugin)
-		delete static_cast<DynChannelStateMap*>(plugin->custom);
 
 	return TRUE;
 }
@@ -312,12 +313,16 @@ static BOOL filter_server_session_started(proxyPlugin* plugin, proxyData* pdata,
 	WINPR_ASSERT(plugin);
 	WINPR_ASSERT(pdata);
 
-	const std::string sessionId = pdata->session_id;
-	auto map = static_cast<DynChannelStateMap*>(plugin->custom);
-	WINPR_ASSERT(map);
+	auto state = filter_get_plugin_data(plugin, pdata);
+	delete state;
 
-	std::lock_guard<std::mutex> lk(map->mux);
-	map->map.emplace(sessionId, DynChannelState());
+	auto newstate = new DynChannelState();
+	if (!filter_set_plugin_data(plugin, pdata, newstate))
+	{
+		delete newstate;
+		return FALSE;
+	}
+
 	return TRUE;
 }
 
@@ -326,12 +331,9 @@ static BOOL filter_server_session_end(proxyPlugin* plugin, proxyData* pdata, voi
 	WINPR_ASSERT(plugin);
 	WINPR_ASSERT(pdata);
 
-	const std::string sessionId = pdata->session_id;
-	auto map = static_cast<DynChannelStateMap*>(plugin->custom);
-	WINPR_ASSERT(map);
-
-	std::lock_guard<std::mutex> lk(map->mux);
-	map->map.erase(sessionId);
+	auto state = filter_get_plugin_data(plugin, pdata);
+	delete state;
+	filter_set_plugin_data(plugin, pdata, nullptr);
 	return TRUE;
 }
 
@@ -350,7 +352,6 @@ BOOL proxy_module_entry_point(proxyPluginsManager* plugins_manager, void* userda
 
 	plugin.name = plugin_name;
 	plugin.description = plugin_desc;
-	plugin.PluginUnload = filter_plugin_unload;
 
 	plugin.ServerSessionStarted = filter_server_session_started;
 	plugin.ServerSessionEnd = filter_server_session_end;
@@ -361,7 +362,7 @@ BOOL proxy_module_entry_point(proxyPluginsManager* plugins_manager, void* userda
 	plugin.DynChannelToIntercept = filter_dyn_channel_intercept_list;
 	plugin.DynChannelIntercept = filter_dyn_channel_intercept;
 
-	plugin.custom = new DynChannelStateMap();
+	plugin.custom = plugins_manager;
 	if (!plugin.custom)
 		return FALSE;
 	plugin.userdata = userdata;
