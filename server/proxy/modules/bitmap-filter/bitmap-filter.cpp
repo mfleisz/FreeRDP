@@ -377,12 +377,14 @@ static BOOL filter_dyn_channel_intercept(proxyPlugin* plugin, proxyData* pdata, 
 				          inputDataLength, state->remaining());
 				data->result = PF_CHANNEL_RESULT_DROP;
 
+#if 0 // TODO: Sending this does screw up some windows RDP server versions :/
 				if (state->remaining() == 0)
 				{
 					if (!filter_forward_empty_offer(pdata->session_id, data, pos,
 					                                state->channelId()))
 						return FALSE;
 				}
+#endif
 			}
 		}
 	}
