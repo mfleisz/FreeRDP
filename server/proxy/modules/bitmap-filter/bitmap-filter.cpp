@@ -88,10 +88,21 @@ class DynChannelState
 		_drop = d;
 	}
 
+	uint32_t channelId() const
+	{
+		return _channelId;
+	}
+
+	void setChannelId(uint32_t id)
+	{
+		_channelId = id;
+	}
+
   private:
 	size_t _toSkip = 0;
 	size_t _totalSkipSize = 0;
 	bool _drop = false;
+	uint32_t _channelId = 0;
 };
 
 static BOOL filter_client_pre_connect(proxyPlugin* plugin, proxyData* pdata, void* custom)
@@ -281,8 +292,8 @@ static BOOL drdynvc_write_header(wStream* s, UINT32 channelId)
 	return drdynvc_write_variable_uint(s, value, cbChId);
 }
 
-static BOOL filter_forward_empty_offer(proxyDynChannelInterceptData* data, size_t startPosition,
-                                       UINT32 channelId)
+static BOOL filter_forward_empty_offer(const char* sessionID, proxyDynChannelInterceptData* data,
+                                       size_t startPosition, UINT32 channelId)
 {
 	WINPR_ASSERT(data);
 
@@ -295,6 +306,8 @@ static BOOL filter_forward_empty_offer(proxyDynChannelInterceptData* data, size_
 	Stream_Write_UINT16(data->data, 0);
 	Stream_SealLength(data->data);
 
+	WLog_INFO(TAG, "[SessionID=%s][%s] forwarding empty %s", sessionID, plugin_name,
+	          rdpgfx_get_cmd_id_string(RDPGFX_CMDID_CACHEIMPORTOFFER));
 	data->rewritten = TRUE;
 	return TRUE;
 }
@@ -321,12 +334,11 @@ static BOOL filter_dyn_channel_intercept(proxyPlugin* plugin, proxyData* pdata, 
 		const size_t inputDataLength = Stream_Length(data->data);
 		UINT16 cmdId = RDPGFX_CMDID_UNUSED_0000;
 
+		const auto pos = Stream_GetPosition(data->data);
 		if (!state->skip())
 		{
 			if (data->first)
 			{
-				const auto pos = Stream_GetPosition(data->data);
-
 				size_t channelId = 0;
 				size_t length = 0;
 				if (drdynvc_try_read_header(data->data, channelId, length))
@@ -343,8 +355,7 @@ static BOOL filter_dyn_channel_intercept(proxyPlugin* plugin, proxyData* pdata, 
 				{
 					case RDPGFX_CMDID_CACHEIMPORTOFFER:
 						state->setDrop(true);
-						if (!filter_forward_empty_offer(data, pos, channelId))
-							return FALSE;
+						state->setChannelId(channelId);
 						break;
 					default:
 						break;
@@ -365,6 +376,13 @@ static BOOL filter_dyn_channel_intercept(proxyPlugin* plugin, proxyData* pdata, 
 				          rdpgfx_get_cmd_id_string(RDPGFX_CMDID_CACHEIMPORTOFFER), state->total(),
 				          inputDataLength, state->remaining());
 				data->result = PF_CHANNEL_RESULT_DROP;
+
+				if (state->remaining() == 0)
+				{
+					if (!filter_forward_empty_offer(pdata->session_id, data, pos,
+					                                state->channelId()))
+						return FALSE;
+				}
 			}
 		}
 	}
