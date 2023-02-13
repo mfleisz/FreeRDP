@@ -62,6 +62,8 @@
 
 #define TAG CLIENT_TAG("windows")
 
+static const UINT32 g_UserShowWindowMsg = WM_USER + 123;
+
 static BOOL wf_has_console(void)
 {
 #ifdef WITH_WIN_CONSOLE
@@ -135,9 +137,7 @@ static BOOL wf_end_paint(rdpContext* context)
 		}
 #endif
 
-		ShowWindow(wfc->hwnd, SW_SHOWNORMAL);
-		WLog_INFO(TAG, "Window is shown!");
-		fflush(stdout);
+		PostMessage(wfc->hwnd, g_UserShowWindowMsg, 0, 0);
 	}
 	return TRUE;
 }
@@ -1077,6 +1077,13 @@ static DWORD WINAPI wf_client_thread(LPVOID lpParam)
 				width = LOWORD(msg.lParam);
 				height = HIWORD(msg.lParam);
 				SetWindowPos(wfc->hwnd, HWND_TOP, 0, 0, width, height, SWP_FRAMECHANGED);
+			}
+
+			if (msg.message == g_UserShowWindowMsg)
+			{
+				ShowWindow(wfc->hwnd, SW_SHOWNORMAL);
+				WLog_INFO(TAG, "Window is shown!");
+				fflush(stdout);
 			}
 
 			if ((msg_ret == 0) || (msg_ret == -1))
