@@ -28,21 +28,6 @@
 
 #define CLIPRDR_SVC_CHANNEL_NAME "cliprdr"
 
-/**
- * Clipboard Formats
- */
-
-typedef enum
-{
-	CB_FORMAT_HTML = 0xD010,
-	CB_FORMAT_PNG = 0xD011,
-	CB_FORMAT_JPEG = 0xD012,
-	CB_FORMAT_GIF = 0xD013,
-	CB_FORMAT_TEXTURILIST = 0xD014,
-	CB_FORMAT_GNOMECOPIEDFILES = 0xD015,
-	CB_FORMAT_MATECOPIEDFILES = 0xD016
-} CliprdrFormatType;
-
 /* CLIPRDR_HEADER.msgType */
 typedef enum
 {

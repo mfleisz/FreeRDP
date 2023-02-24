@@ -166,11 +166,20 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	{ "from-stdin", COMMAND_LINE_VALUE_OPTIONAL, "force", NULL, NULL, -1, NULL,
 	  "Read credentials from stdin. With <force> the prompt is done before connection, otherwise "
 	  "on server request." },
+	{ "gateway", COMMAND_LINE_VALUE_REQUIRED,
+	  "g:<gateway>[:<port>],u:<user>,d:<domain>,p:<password>,usage-method:["
+	  "direct|detect],access-token:<"
+	  "token>,type:[rpc|http[,no-websockets][,extauth-sspi-ntlm]|auto[,no-websockets][,extauth-"
+	  "sspi-ntlm]],",
+	  NULL, NULL, -1, "gw", "Gateway Hostname" },
+#if defined(WITH_FREERDP_DEPRECATED_COMMANDLINE)
 	{ "g", COMMAND_LINE_VALUE_REQUIRED, "<gateway>[:<port>]", NULL, NULL, -1, NULL,
-	  "Gateway Hostname" },
+	  "[DEPRECATED, use /gateway:g:<url>] Gateway Hostname" },
 	{ "gateway-usage-method", COMMAND_LINE_VALUE_REQUIRED, "[direct|detect]", NULL, NULL, -1, "gum",
-	  "Gateway usage method" },
-	{ "gd", COMMAND_LINE_VALUE_REQUIRED, "<domain>", NULL, NULL, -1, NULL, "Gateway domain" },
+	  "[DEPRECATED, use /gateway:usage-method:<method>] Gateway usage method" },
+	{ "gd", COMMAND_LINE_VALUE_REQUIRED, "<domain>", NULL, NULL, -1, NULL,
+	  "[DEPRECATED, use /gateway:d:<domain>] Gateway domain" },
+#endif
 	{ "gdi", COMMAND_LINE_VALUE_REQUIRED, "sw|hw", NULL, NULL, -1, NULL, "GDI rendering" },
 	{ "geometry", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, NULL,
 	  "Geometry tracking channel" },
@@ -200,17 +209,22 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	{ "glyph-cache", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL,
 	  "[DEPRECATED, use /cache:glyph[:on|off]] Glyph cache (experimental)" },
 #endif
-	{ "gp", COMMAND_LINE_VALUE_REQUIRED, "<password>", NULL, NULL, -1, NULL, "Gateway password" },
+#if defined(WITH_FREERDP_DEPRECATED_COMMANDLINE)
+	{ "gp", COMMAND_LINE_VALUE_REQUIRED, "<password>", NULL, NULL, -1, NULL,
+	  "[DEPRECATED, use /gateway:p:<password>] Gateway password" },
+#endif
 	{ "grab-keyboard", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL,
 	  "Grab keyboard" },
 	{ "grab-mouse", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL, "Grab mouse" },
+#if defined(WITH_FREERDP_DEPRECATED_COMMANDLINE)
 	{ "gt", COMMAND_LINE_VALUE_REQUIRED,
 	  "[rpc|http[,no-websockets][,extauth-sspi-ntlm]|auto[,no-websockets][,extauth-sspi-ntlm]]",
-	  NULL, NULL, -1, NULL, "Gateway transport type" },
+	  NULL, NULL, -1, NULL, "[DEPRECATED, use /gateway:type:<type>] Gateway transport type" },
 	{ "gu", COMMAND_LINE_VALUE_REQUIRED, "[[<domain>\\]<user>|<user>[@<domain>]]", NULL, NULL, -1,
-	  NULL, "Gateway username" },
+	  NULL, "[DEPRECATED, use /gateway:u:<user>] Gateway username" },
 	{ "gat", COMMAND_LINE_VALUE_REQUIRED, "<access token>", NULL, NULL, -1, NULL,
-	  "Gateway Access Token" },
+	  "[DEPRECATED, use /gateway:access-token:<token>] Gateway Access Token" },
+#endif
 	{ "h", COMMAND_LINE_VALUE_REQUIRED, "<height>", "768", NULL, -1, NULL, "Height" },
 	{ "heartbeat", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL,
 	  "Support heartbeat PDUs" },
@@ -297,7 +311,7 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	  "Use multiple monitors" },
 	{ "multitouch", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL,
 	  "Redirect multitouch input" },
-	{ "multitransport", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL,
+	{ "multitransport", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL,
 	  "Support multitransport protocol" },
 	{ "nego", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL,
 	  "protocol security negotiation" },

@@ -176,7 +176,7 @@ static BOOL clear_decompress_subcode_rlex(wStream* s, UINT32 bitmapDataByteCount
 		return FALSE;
 	}
 
-	if (!Stream_CheckAndLogRequiredLength(TAG, s, 3ull * paletteCount))
+	if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, paletteCount, 3ull))
 		return FALSE;
 
 	for (i = 0; i < paletteCount; i++)
@@ -689,7 +689,7 @@ static BOOL clear_decompress_bands_data(CLEAR_CONTEXT* clear, wStream* s, UINT32
 					return FALSE;
 				}
 
-				if (!Stream_CheckAndLogRequiredLength(TAG, s, 3ull * vBarShortPixelCount))
+				if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, vBarShortPixelCount, 3ull))
 					return FALSE;
 
 				if (clear->ShortVBarStorageCursor >= CLEARCODEC_VBAR_SHORT_SIZE)
@@ -1116,7 +1116,7 @@ fail:
 int clear_compress(CLEAR_CONTEXT* clear, const BYTE* pSrcData, UINT32 SrcSize, BYTE** ppDstData,
                    UINT32* pDstSize)
 {
-	WLog_ERR(TAG, "TODO: %s not implemented!", __FUNCTION__);
+	WLog_ERR(TAG, "TODO: not implemented!");
 	return 1;
 }
 

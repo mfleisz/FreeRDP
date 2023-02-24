@@ -62,6 +62,8 @@
 
 #define TAG CLIENT_TAG("windows")
 
+#define WM_FREERDP_SHOWWINDOW (WM_USER + 100)
+
 static BOOL wf_has_console(void)
 {
 #ifdef WITH_WIN_CONSOLE
@@ -135,7 +137,7 @@ static BOOL wf_end_paint(rdpContext* context)
 		}
 #endif
 
-		ShowWindow(wfc->hwnd, SW_SHOWNORMAL);
+		PostMessage(wfc->hwnd, WM_FREERDP_SHOWWINDOW, 0, 0);
 		WLog_INFO(TAG, "Window is shown!");
 		fflush(stdout);
 	}
@@ -1072,11 +1074,22 @@ static DWORD WINAPI wf_client_thread(LPVOID lpParam)
 				}
 			}
 
-			if (msg.message == WM_SIZE)
+			switch (msg.message)
 			{
-				width = LOWORD(msg.lParam);
-				height = HIWORD(msg.lParam);
-				SetWindowPos(wfc->hwnd, HWND_TOP, 0, 0, width, height, SWP_FRAMECHANGED);
+				case WM_SIZE:
+				{
+					width = LOWORD(msg.lParam);
+					height = HIWORD(msg.lParam);
+					SetWindowPos(wfc->hwnd, HWND_TOP, 0, 0, width, height, SWP_FRAMECHANGED);
+					break;
+				}
+				case WM_FREERDP_SHOWWINDOW:
+				{
+					ShowWindow(wfc->hwnd, SW_NORMAL);
+					break;
+				}
+				default:
+					break;
 			}
 
 			if ((msg_ret == 0) || (msg_ret == -1))
@@ -1312,13 +1325,7 @@ static BOOL wfreerdp_client_new(freerdp* instance, rdpContext* context)
 	freerdp_settings_set_bool(context->settings, FreeRDP_CertificateCallbackPreferPEM, TRUE);
 #endif
 
-	if (wfc->isConsole)
-	{
-		instance->VerifyCertificateEx = wf_cli_verify_certificate_ex;
-		instance->VerifyChangedCertificateEx = client_cli_verify_changed_certificate_ex;
-		instance->PresentGatewayMessage = client_cli_present_gateway_message;
-	}
-	else
+	if (!wfc->isConsole)
 	{
 		instance->VerifyCertificateEx = wf_verify_certificate_ex;
 		instance->VerifyChangedCertificateEx = wf_verify_changed_certificate_ex;

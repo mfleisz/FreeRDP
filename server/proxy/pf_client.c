@@ -721,6 +721,10 @@ static BOOL pf_client_connect_without_nla(pClientContext* pc)
 	WINPR_ASSERT(pc);
 	instance = pc->context.instance;
 	WINPR_ASSERT(instance);
+
+	if (!freerdp_context_reset(instance))
+		return FALSE;
+
 	settings = pc->context.settings;
 	WINPR_ASSERT(settings);
 
@@ -733,7 +737,7 @@ static BOOL pf_client_connect_without_nla(pClientContext* pc)
 
 	/* do not allow next connection failure */
 	pc->allow_next_conn_failure = FALSE;
-	return freerdp_reconnect(instance);
+	return freerdp_connect(instance);
 }
 
 static BOOL pf_client_connect(freerdp* instance)
@@ -837,8 +841,7 @@ static DWORD WINAPI pf_client_thread_proc(pClientContext* pc)
 
 		if (status == WAIT_FAILED)
 		{
-			WLog_ERR(TAG, "%s: WaitForMultipleObjects failed with %" PRIu32 "", __FUNCTION__,
-			         status);
+			WLog_ERR(TAG, "WaitForMultipleObjects failed with %" PRIu32 "", status);
 			break;
 		}
 

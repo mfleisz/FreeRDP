@@ -161,29 +161,33 @@ BOOL rpc_ncacn_http_auth_init(rdpContext* context, RpcChannel* channel)
 		case AUTH_SUCCESS:
 		case AUTH_SKIP:
 			break;
+		case AUTH_CANCELLED:
+			freerdp_set_last_error_log(instance->context, FREERDP_ERROR_CONNECT_CANCELLED);
+			return FALSE;
 		case AUTH_NO_CREDENTIALS:
 			freerdp_set_last_error_log(instance->context,
 			                           FREERDP_ERROR_CONNECT_NO_OR_MISSING_CREDENTIALS);
-			return TRUE;
+			return FALSE;
 		case AUTH_FAILED:
 		default:
 			return FALSE;
 	}
 
 	if (!credssp_auth_init(auth, AUTH_PKG, tls->Bindings))
-		return TRUE;
+		return FALSE;
 
 	if (sspi_SetAuthIdentityA(&identity, settings->GatewayUsername, settings->GatewayDomain,
 	                          settings->GatewayPassword) < 0)
-		return TRUE;
+		return FALSE;
 
-	credssp_auth_setup_client(auth, "HTTP", settings->GatewayHostname, &identity, NULL);
+	const BOOL res =
+	    credssp_auth_setup_client(auth, "HTTP", settings->GatewayHostname, &identity, NULL);
 
 	sspi_FreeAuthIdentity(&identity);
 
 	credssp_auth_set_flags(auth, ISC_REQ_CONFIDENTIALITY);
 
-	return TRUE;
+	return res;
 }
 
 void rpc_ncacn_http_auth_uninit(RpcChannel* channel)

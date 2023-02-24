@@ -131,7 +131,7 @@ static void rdp_write_capability_set_header(wStream* s, UINT16 length, UINT16 ty
 static size_t rdp_capability_set_start(wStream* s)
 {
 	size_t header = Stream_GetPosition(s);
-	if (Stream_GetRemainingCapacity(s) < CAPSET_HEADER_LENGTH)
+	if (!Stream_CheckAndLogRequiredCapacity(TAG, (s), CAPSET_HEADER_LENGTH))
 		return SIZE_MAX;
 	Stream_Zero(s, CAPSET_HEADER_LENGTH);
 	return header;
@@ -652,23 +652,23 @@ static BOOL rdp_write_order_capability_set(wStream* s, const rdpSettings* settin
 		strncpy(terminalDescriptor, dsc, len);
 	}
 	Stream_Write(s, terminalDescriptor,
-	             sizeof(terminalDescriptor));    /* terminalDescriptor (16 bytes) */
-	Stream_Write_UINT32(s, 0);                   /* pad4OctetsA (4 bytes) */
-	Stream_Write_UINT16(s, 1);                   /* desktopSaveXGranularity (2 bytes) */
-	Stream_Write_UINT16(s, 20);                  /* desktopSaveYGranularity (2 bytes) */
-	Stream_Write_UINT16(s, 0);                   /* pad2OctetsA (2 bytes) */
-	Stream_Write_UINT16(s, 1);                   /* maximumOrderLevel (2 bytes) */
-	Stream_Write_UINT16(s, 0);                   /* numberFonts (2 bytes) */
-	Stream_Write_UINT16(s, orderFlags);          /* orderFlags (2 bytes) */
-	Stream_Write(s, settings->OrderSupport, 32); /* orderSupport (32 bytes) */
-	Stream_Write_UINT16(s, 0);                   /* textFlags (2 bytes) */
-	Stream_Write_UINT16(s, orderSupportExFlags); /* orderSupportExFlags (2 bytes) */
-	Stream_Write_UINT32(s, 0);                   /* pad4OctetsB (4 bytes) */
-	Stream_Write_UINT32(s, 230400);              /* desktopSaveSize (4 bytes) */
-	Stream_Write_UINT16(s, 0);                   /* pad2OctetsC (2 bytes) */
-	Stream_Write_UINT16(s, 0);                   /* pad2OctetsD (2 bytes) */
+	             sizeof(terminalDescriptor));           /* terminalDescriptor (16 bytes) */
+	Stream_Write_UINT32(s, 0);                          /* pad4OctetsA (4 bytes) */
+	Stream_Write_UINT16(s, 1);                          /* desktopSaveXGranularity (2 bytes) */
+	Stream_Write_UINT16(s, 20);                         /* desktopSaveYGranularity (2 bytes) */
+	Stream_Write_UINT16(s, 0);                          /* pad2OctetsA (2 bytes) */
+	Stream_Write_UINT16(s, 1);                          /* maximumOrderLevel (2 bytes) */
+	Stream_Write_UINT16(s, 0);                          /* numberFonts (2 bytes) */
+	Stream_Write_UINT16(s, orderFlags);                 /* orderFlags (2 bytes) */
+	Stream_Write(s, settings->OrderSupport, 32);        /* orderSupport (32 bytes) */
+	Stream_Write_UINT16(s, 0);                          /* textFlags (2 bytes) */
+	Stream_Write_UINT16(s, orderSupportExFlags);        /* orderSupportExFlags (2 bytes) */
+	Stream_Write_UINT32(s, 0);                          /* pad4OctetsB (4 bytes) */
+	Stream_Write_UINT32(s, 230400);                     /* desktopSaveSize (4 bytes) */
+	Stream_Write_UINT16(s, 0);                          /* pad2OctetsC (2 bytes) */
+	Stream_Write_UINT16(s, 0);                          /* pad2OctetsD (2 bytes) */
 	Stream_Write_UINT16(s, settings->TextANSICodePage); /* textANSICodePage (2 bytes) */
-	Stream_Write_UINT16(s, 0);                   /* pad2OctetsE (2 bytes) */
+	Stream_Write_UINT16(s, 0);                          /* pad2OctetsE (2 bytes) */
 	return rdp_capability_set_finish(s, (UINT16)header, CAPSET_TYPE_ORDER);
 }
 
@@ -1867,9 +1867,9 @@ static BOOL rdp_print_offscreen_bitmap_cache_capability_set(wStream* s)
 static BOOL rdp_apply_bitmap_cache_host_support_capability_set(rdpSettings* settings,
                                                                const rdpSettings* src)
 {
-	if (freerdp_settings_get_bool(src, FreeRDP_BitmapCachePersistEnabled))
-		return freerdp_settings_set_bool(settings, FreeRDP_BitmapCachePersistEnabled, TRUE);
-	return TRUE;
+	const BOOL val = (freerdp_settings_get_bool(src, FreeRDP_BitmapCachePersistEnabled) &&
+	                  freerdp_settings_get_bool(settings, FreeRDP_BitmapCachePersistEnabled));
+	return freerdp_settings_set_bool(settings, FreeRDP_BitmapCachePersistEnabled, val);
 }
 
 /*
@@ -2058,7 +2058,7 @@ static BOOL rdp_write_bitmap_cache_v2_capability_set(wStream* s, const rdpSettin
 		return FALSE;
 	cacheFlags = ALLOW_CACHE_WAITING_LIST_FLAG;
 
-	if (settings->BitmapCachePersistEnabled)
+	if (freerdp_settings_get_bool(settings, FreeRDP_BitmapCachePersistEnabled))
 	{
 		cacheFlags |= PERSISTENT_KEYS_EXPECTED_FLAG;
 		settings->BitmapCacheV2CellInfo[0].persistent = 1;
@@ -2429,12 +2429,11 @@ static BOOL rdp_apply_remote_programs_capability_set(rdpSettings* settings, cons
 	/* 2.2.2.2.3 HandshakeEx PDU (TS_RAIL_ORDER_HANDSHAKE_EX)
 	 * the handshake ex pdu is supported when both, client and server announce
 	 * it OR if we are ready to begin enhanced remoteAPP mode. */
+	UINT32 supportLevel = src->RemoteApplicationSupportLevel;
 	if (settings->RemoteApplicationMode)
-		settings->RemoteApplicationSupportLevel |=
-		    RAIL_LEVEL_HANDSHAKE_EX_SUPPORTED & settings->RemoteApplicationSupportMask;
+		supportLevel |= RAIL_LEVEL_HANDSHAKE_EX_SUPPORTED;
 
-	settings->RemoteApplicationSupportLevel =
-	    src->RemoteApplicationSupportLevel & settings->RemoteApplicationSupportMask;
+	settings->RemoteApplicationSupportLevel = supportLevel & settings->RemoteApplicationSupportMask;
 
 	return TRUE;
 }
@@ -3681,7 +3680,7 @@ BOOL rdp_print_capability_sets(wStream* s, size_t start, BOOL receiving)
 	}
 	else
 	{
-		if (Stream_GetRemainingCapacity(s) < 4)
+		if (!Stream_CheckAndLogRequiredCapacity(TAG, (s), 4))
 			goto fail;
 	}
 
@@ -3989,7 +3988,7 @@ BOOL rdp_read_capability_set(wStream* sub, UINT16 type, rdpSettings* settings, B
 
 		WINPR_ASSERT(settings->ReceivedCapabilityData);
 		tmp = realloc(settings->ReceivedCapabilityData[type], size);
-		if (!tmp)
+		if (!tmp && (size > 0))
 			return FALSE;
 		memcpy(tmp, Stream_Buffer(sub), size);
 		settings->ReceivedCapabilityData[type] = tmp;
@@ -4219,13 +4218,13 @@ BOOL rdp_read_capability_set(wStream* sub, UINT16 type, rdpSettings* settings, B
 	return TRUE;
 }
 
-static BOOL rdp_read_capability_sets(wStream* s, rdpSettings* settings, UINT16 totalLength)
+static BOOL rdp_read_capability_sets(wStream* s, rdpSettings* settings, rdpSettings* rcvSettings,
+                                     UINT16 totalLength)
 {
 	BOOL rc = FALSE;
 	size_t start, end, len;
 	UINT16 numberCapabilities;
 	UINT16 count;
-	rdpSettings* rcvSettings;
 
 #ifdef WITH_DEBUG_CAPABILITIES
 	const size_t capstart = Stream_GetPosition(s);
@@ -4233,10 +4232,6 @@ static BOOL rdp_read_capability_sets(wStream* s, rdpSettings* settings, UINT16 t
 
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(settings);
-
-	rcvSettings = freerdp_settings_new(0);
-	if (!rcvSettings)
-		goto fail;
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 		return FALSE;
@@ -4289,7 +4284,6 @@ static BOOL rdp_read_capability_sets(wStream* s, rdpSettings* settings, UINT16 t
 	}
 	rc = freerdp_capability_buffer_copy(settings, rcvSettings);
 fail:
-	freerdp_settings_free(rcvSettings);
 	return rc;
 }
 
@@ -4314,10 +4308,7 @@ BOOL rdp_recv_get_active_header(rdpRdp* rdp, wStream* s, UINT16* pChannelId, UIN
 		if (securityFlags & SEC_ENCRYPT)
 		{
 			if (!rdp_decrypt(rdp, s, length, securityFlags))
-			{
-				WLog_ERR(TAG, "rdp_decrypt failed");
 				return FALSE;
-			}
 		}
 	}
 
@@ -4343,7 +4334,6 @@ BOOL rdp_recv_demand_active(rdpRdp* rdp, wStream* s)
 	UINT16 length;
 	UINT16 lengthSourceDescriptor;
 	UINT16 lengthCombinedCapabilities;
-	const char* pduName;
 
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(rdp->context);
@@ -4356,12 +4346,8 @@ BOOL rdp_recv_demand_active(rdpRdp* rdp, wStream* s)
 		return TRUE;
 
 	if (!rdp_read_share_control_header(s, NULL, NULL, &pduType, &pduSource))
-	{
-		WLog_ERR(TAG, "rdp_read_share_control_header failed");
 		return FALSE;
-	}
 
-	pduName = pdu_type_to_str(pduType);
 	if (pduType == PDU_TYPE_DATA)
 	{
 		/*
@@ -4378,8 +4364,14 @@ BOOL rdp_recv_demand_active(rdpRdp* rdp, wStream* s)
 	if (pduType != PDU_TYPE_DEMAND_ACTIVE)
 	{
 		if (pduType != PDU_TYPE_SERVER_REDIRECTION)
-			WLog_ERR(TAG, "expected %s %04x, got %04" PRIx16 "", pduName, PDU_TYPE_DEMAND_ACTIVE,
-			         pduType);
+		{
+			char buffer1[256] = { 0 };
+			char buffer2[256] = { 0 };
+
+			WLog_ERR(TAG, "expected %s, got %s",
+			         pdu_type_to_str(PDU_TYPE_DEMAND_ACTIVE, buffer1, sizeof(buffer1)),
+			         pdu_type_to_str(pduType, buffer2, sizeof(buffer2)));
+		}
 
 		return FALSE;
 	}
@@ -4398,14 +4390,18 @@ BOOL rdp_recv_demand_active(rdpRdp* rdp, wStream* s)
 		return FALSE;
 
 	/* capabilitySets */
-	if (!rdp_read_capability_sets(s, rdp->settings, lengthCombinedCapabilities))
+	if (!rdp_read_capability_sets(s, rdp->settings, rdp->remoteSettings,
+	                              lengthCombinedCapabilities))
 	{
 		WLog_ERR(TAG, "rdp_read_capability_sets failed");
 		return FALSE;
 	}
 
-	if (!Stream_SafeSeek(s, 4)) /* SessionId */
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 		return FALSE;
+
+	UINT32 SessionId = 0;
+	Stream_Read_UINT32(s, SessionId); /* SessionId */
 
 	{
 		rdp_secondary_update_internal* secondary = secondary_update_cast(rdp->update->secondary);
@@ -4524,7 +4520,8 @@ BOOL rdp_recv_confirm_active(rdpRdp* rdp, wStream* s, UINT16 pduLength)
 		return FALSE;
 
 	Stream_Seek(s, lengthSourceDescriptor); /* sourceDescriptor */
-	if (!rdp_read_capability_sets(s, rdp->settings, lengthCombinedCapabilities))
+	if (!rdp_read_capability_sets(s, rdp->settings, rdp->remoteSettings,
+	                              lengthCombinedCapabilities))
 		return FALSE;
 
 	if (!settings->ReceivedCapabilities[CAPSET_TYPE_SURFACE_COMMANDS])

@@ -55,6 +55,7 @@
 #include <freerdp/version.h>
 #include <freerdp/client/utils/smartcard_cli.h>
 
+#include <openssl/tls1.h>
 #include "cmdline.h"
 
 #include <freerdp/log.h>
@@ -776,41 +777,13 @@ fail:
 
 static BOOL read_pem_file(rdpSettings* settings, size_t id, const char* file)
 {
-	INT64 s;
-	int rs;
-	size_t fr;
-	char* ptr;
-	BOOL rc = FALSE;
-	FILE* fp = winpr_fopen(file, "r");
-	if (!fp)
-		goto fail;
-	rs = _fseeki64(fp, 0, SEEK_END);
-	if (rs < 0)
-		goto fail;
-	s = _ftelli64(fp);
-	if (s < 0)
-		goto fail;
-	rs = _fseeki64(fp, 0, SEEK_SET);
-	if (rs < 0)
-		goto fail;
+	size_t length = 0;
+	char* pem = crypto_read_pem(file, &length);
+	if (!pem || (length == 0))
+		return FALSE;
 
-	if (!freerdp_settings_set_string_len(settings, id, NULL, (size_t)s + 1ull))
-		goto fail;
-
-	ptr = freerdp_settings_get_string_writable(settings, id);
-	fr = fread(ptr, (size_t)s, 1, fp);
-	if (fr != 1)
-		goto fail;
-	rc = TRUE;
-fail:
-	if (!rc)
-	{
-		char buffer[8192] = { 0 };
-		WLog_WARN(TAG, "Failed to read file '%s' [%s]", file,
-		          winpr_strerror(errno, buffer, sizeof(buffer)));
-	}
-	if (fp)
-		fclose(fp);
+	BOOL rc = freerdp_settings_set_string_len(settings, id, pem, length);
+	free(pem);
 	return rc;
 }
 
@@ -1580,7 +1553,10 @@ int freerdp_client_settings_command_line_status_print_ex(rdpSettings* settings, 
 			else if (option_equals("smartcard", arg->Value))
 				freerdp_smartcard_list(settings);
 			else
+			{
+				freerdp_client_print_command_line_help_ex(argc, argv, custom);
 				return COMMAND_LINE_ERROR;
+			}
 		}
 #if defined(WITH_FREERDP_DEPRECATED_COMMANDLINE)
 		arg = CommandLineFindArgumentA(largs, "tune-list");
@@ -2346,11 +2322,280 @@ static int parse_cache_options(rdpSettings* settings, const COMMAND_LINE_ARGUMEN
 	return rc;
 }
 
+static BOOL parse_gateway_host_option(rdpSettings* settings, const char* host)
+{
+	WINPR_ASSERT(settings);
+	WINPR_ASSERT(host);
+
+	char* name = NULL;
+	int port = -1;
+	if (!freerdp_parse_hostname(host, &name, &port))
+		return FALSE;
+	const BOOL rc = freerdp_settings_set_string(settings, FreeRDP_GatewayHostname, name);
+	free(name);
+	if (!rc)
+		return FALSE;
+	if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayUseSameCredentials, TRUE))
+		return FALSE;
+	if (!freerdp_set_gateway_usage_method(settings, TSC_PROXY_MODE_DIRECT))
+		return FALSE;
+
+	return TRUE;
+}
+
+static BOOL parse_gateway_cred_option(rdpSettings* settings, const char* value, size_t what)
+{
+	WINPR_ASSERT(settings);
+	WINPR_ASSERT(value);
+
+	switch (what)
+	{
+		case FreeRDP_GatewayUsername:
+			if (!freerdp_parse_username(value, &settings->GatewayUsername,
+			                            &settings->GatewayDomain))
+				return FALSE;
+			break;
+		default:
+			if (!freerdp_settings_set_string(settings, what, value))
+				return COMMAND_LINE_ERROR_MEMORY;
+			break;
+	}
+
+	return freerdp_settings_set_bool(settings, FreeRDP_GatewayUseSameCredentials, FALSE);
+}
+
+static BOOL parse_gateway_type_option(rdpSettings* settings, const char* value)
+{
+	WINPR_ASSERT(settings);
+	WINPR_ASSERT(value);
+
+	if (option_equals(value, "rpc"))
+	{
+		if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayRpcTransport, TRUE) ||
+		    !freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpTransport, FALSE) ||
+		    !freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpUseWebsockets, FALSE))
+			return FALSE;
+	}
+	else
+	{
+		char* c = strchr(value, ',');
+		while (c)
+		{
+			char* next = strchr(c + 1, ',');
+			if (next)
+				*next = '\0';
+			*c++ = '\0';
+			if (option_equals(c, "no-websockets"))
+			{
+				if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpUseWebsockets, FALSE))
+					return FALSE;
+			}
+			else if (option_equals(c, "extauth-sspi-ntlm"))
+			{
+				if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpExtAuthSspiNtlm, TRUE))
+					return FALSE;
+			}
+			else
+				return FALSE;
+			c = next;
+		}
+
+		if (option_equals(value, "http"))
+		{
+			if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayRpcTransport, FALSE) ||
+			    !freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpTransport, TRUE))
+				return FALSE;
+		}
+		else if (option_equals(value, "auto"))
+		{
+			if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayRpcTransport, TRUE) ||
+			    !freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpTransport, TRUE))
+				return FALSE;
+		}
+	}
+	return TRUE;
+}
+
+static BOOL parse_gateway_usage_option(rdpSettings* settings, const char* value)
+{
+	UINT32 type = 0;
+
+	WINPR_ASSERT(settings);
+	WINPR_ASSERT(value);
+
+	if (option_equals(value, "none"))
+		type = TSC_PROXY_MODE_NONE_DIRECT;
+	else if (option_equals(value, "direct"))
+		type = TSC_PROXY_MODE_DIRECT;
+	else if (option_equals(value, "detect"))
+		type = TSC_PROXY_MODE_DETECT;
+	else if (option_equals(value, "default"))
+		type = TSC_PROXY_MODE_DEFAULT;
+	else
+	{
+		LONGLONG val = 0;
+
+		if (!value_to_int(value, &val, TSC_PROXY_MODE_NONE_DIRECT, TSC_PROXY_MODE_NONE_DETECT))
+			return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
+	}
+
+	return freerdp_set_gateway_usage_method(settings, type);
+}
+
+static BOOL parse_gateway_options(rdpSettings* settings, const COMMAND_LINE_ARGUMENT_A* arg)
+{
+	BOOL rc = FALSE;
+
+	WINPR_ASSERT(settings);
+	WINPR_ASSERT(arg);
+
+	size_t count = 0;
+	char** args = CommandLineParseCommaSeparatedValues(arg->Value, &count);
+	if (count == 0)
+		return TRUE;
+	WINPR_ASSERT(args);
+
+	if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayEnabled, TRUE))
+		goto fail;
+
+	for (size_t x = 0; x < count; x++)
+	{
+		BOOL validOption = FALSE;
+		const char* argval = args[x];
+
+		WINPR_ASSERT(argval);
+
+		const char g[] = "g:";
+		if (option_starts_with(g, argval))
+		{
+			const char* val = &argval[sizeof(g)];
+			if (!parse_gateway_host_option(settings, val))
+				goto fail;
+			validOption = TRUE;
+		}
+
+		const char u[] = "u:";
+		if (option_starts_with(u, argval))
+		{
+			const char* val = &argval[sizeof(u)];
+			if (!parse_gateway_cred_option(settings, val, FreeRDP_GatewayUsername))
+				goto fail;
+			validOption = TRUE;
+		}
+
+		const char d[] = "d:";
+		if (option_starts_with(d, argval))
+		{
+			const char* val = &argval[sizeof(d)];
+			if (!parse_gateway_cred_option(settings, val, FreeRDP_GatewayDomain))
+				goto fail;
+			validOption = TRUE;
+		}
+
+		const char p[] = "p:";
+		if (option_starts_with(p, argval))
+		{
+			const char* val = &argval[sizeof(p)];
+			if (!parse_gateway_cred_option(settings, val, FreeRDP_GatewayPassword))
+				goto fail;
+			validOption = TRUE;
+		}
+
+		const char type[] = "type:";
+		if (option_starts_with(type, argval))
+		{
+			const char* val = &argval[sizeof(type)];
+			if (!parse_gateway_type_option(settings, val))
+				goto fail;
+			validOption = TRUE;
+		}
+
+		const char gat[] = "access-token:";
+		if (option_starts_with(gat, argval))
+		{
+			const char* val = &argval[sizeof(gat)];
+			if (!freerdp_settings_set_string(settings, FreeRDP_GatewayAccessToken, val))
+				goto fail;
+			validOption = TRUE;
+		}
+
+		const char method[] = "usage-method:";
+		if (option_starts_with(method, argval))
+		{
+			const char* val = &argval[sizeof(method)];
+			if (!parse_gateway_usage_option(settings, val))
+				goto fail;
+			validOption = TRUE;
+		}
+
+		if (!validOption)
+			goto fail;
+	}
+
+	rc = TRUE;
+fail:
+	free(args);
+	return rc;
+}
+
+static void fill_credential_string(COMMAND_LINE_ARGUMENT_A* args, const char* value)
+{
+	WINPR_ASSERT(args);
+	WINPR_ASSERT(value);
+
+	COMMAND_LINE_ARGUMENT_A* arg = CommandLineFindArgumentA(args, value);
+	if (!arg)
+		return;
+
+	if (arg->Flags & COMMAND_LINE_ARGUMENT_PRESENT)
+		FillMemory(arg->Value, strlen(arg->Value), '*');
+}
+
+static void fill_credential_strings(COMMAND_LINE_ARGUMENT_A* args)
+{
+	const char* credentials[] = {
+		"p",
+		"smartcard-logon",
+#if defined(WITH_FREERDP_DEPRECATED_COMMANDLINE)
+		"gp",
+		"gat",
+#endif
+		"pth",
+		"reconnect-cookie",
+		"assistance"
+	};
+
+	for (size_t x = 0; x < ARRAYSIZE(credentials); x++)
+	{
+		const char* cred = credentials[x];
+		fill_credential_string(args, cred);
+	}
+
+	COMMAND_LINE_ARGUMENT_A* arg = CommandLineFindArgumentA(args, "gateway");
+	if (arg && ((arg->Flags & COMMAND_LINE_ARGUMENT_PRESENT) != 0))
+	{
+		const char* gwcreds[] = { "p:", "access-token:" };
+		char* tok = strtok(arg->Value, ",");
+		while (tok)
+		{
+			for (size_t x = 0; x < ARRAYSIZE(gwcreds); x++)
+			{
+				const char* opt = gwcreds[x];
+				if (option_starts_with(opt, tok))
+				{
+					char* val = &tok[strlen(opt)];
+					FillMemory(val, strlen(val), '*');
+				}
+			}
+			tok = strtok(NULL, ",");
+		}
+	}
+}
+
 int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, int argc,
                                                          char** argv, BOOL allowUnknown)
 {
 	char* user = NULL;
-	char* gwUser = NULL;
 	char* str;
 	int status;
 	BOOL ext = FALSE;
@@ -2883,46 +3128,10 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 			if (!freerdp_settings_set_string(settings, FreeRDP_Password, arg->Value))
 				return COMMAND_LINE_ERROR_MEMORY;
 		}
-		CommandLineSwitchCase(arg, "g")
+		CommandLineSwitchCase(arg, "gateway")
 		{
-			if (arg->Flags & COMMAND_LINE_VALUE_PRESENT)
-			{
-				char* p;
-				if (!arg->Value)
-					return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-				p = strchr(arg->Value, ':');
-
-				if (p)
-				{
-					size_t s;
-					LONGLONG val;
-
-					if (!value_to_int(&p[1], &val, 0, UINT32_MAX))
-						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-
-					s = (size_t)(p - arg->Value);
-					settings->GatewayPort = (UINT32)val;
-
-					if (!freerdp_settings_set_string_len(settings, FreeRDP_GatewayHostname,
-					                                     arg->Value, s))
-						return COMMAND_LINE_ERROR_MEMORY;
-				}
-				else
-				{
-					if (!freerdp_settings_set_string(settings, FreeRDP_GatewayHostname, arg->Value))
-						return COMMAND_LINE_ERROR_MEMORY;
-				}
-			}
-			else
-			{
-				if (!freerdp_settings_set_string(settings, FreeRDP_GatewayHostname,
-				                                 settings->ServerHostname))
-					return COMMAND_LINE_ERROR_MEMORY;
-			}
-
-			settings->GatewayEnabled = TRUE;
-			settings->GatewayUseSameCredentials = TRUE;
-			freerdp_set_gateway_usage_method(settings, TSC_PROXY_MODE_DIRECT);
+			if (!parse_gateway_options(settings, arg))
+				return COMMAND_LINE_ERROR;
 		}
 		CommandLineSwitchCase(arg, "proxy")
 		{
@@ -2946,79 +3155,31 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 			}
 		}
+#if defined(WITH_FREERDP_DEPRECATED_COMMANDLINE)
+		CommandLineSwitchCase(arg, "g")
+		{
+			if (!parse_gateway_host_option(settings, arg->Value))
+				return FALSE;
+		}
 		CommandLineSwitchCase(arg, "gu")
 		{
-			if (!(gwUser = _strdup(arg->Value)))
-				return COMMAND_LINE_ERROR_MEMORY;
-
-			settings->GatewayUseSameCredentials = FALSE;
+			if (!parse_gateway_cred_option(settings, arg->Value, FreeRDP_GatewayUsername))
+				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 		}
 		CommandLineSwitchCase(arg, "gd")
 		{
-			if (!freerdp_settings_set_string(settings, FreeRDP_GatewayDomain, arg->Value))
-				return COMMAND_LINE_ERROR_MEMORY;
-
-			settings->GatewayUseSameCredentials = FALSE;
+			if (!parse_gateway_cred_option(settings, arg->Value, FreeRDP_GatewayDomain))
+				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 		}
 		CommandLineSwitchCase(arg, "gp")
 		{
-			if (!freerdp_settings_set_string(settings, FreeRDP_GatewayPassword, arg->Value))
-				return COMMAND_LINE_ERROR_MEMORY;
-
-			settings->GatewayUseSameCredentials = FALSE;
+			if (!parse_gateway_cred_option(settings, arg->Value, FreeRDP_GatewayPassword))
+				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 		}
 		CommandLineSwitchCase(arg, "gt")
 		{
-			if ((arg->Flags & COMMAND_LINE_VALUE_PRESENT) == 0)
+			if (!parse_gateway_type_option(settings, arg->Value))
 				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-
-			WINPR_ASSERT(arg->Value);
-			if (option_equals(arg->Value, "rpc"))
-			{
-				if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayRpcTransport, TRUE) ||
-				    !freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpTransport, FALSE) ||
-				    !freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpUseWebsockets, FALSE))
-					return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-			}
-			else
-			{
-				char* c = strchr(arg->Value, ',');
-				while (c)
-				{
-					char* next = strchr(c + 1, ',');
-					if (next)
-						*next = '\0';
-					*c++ = '\0';
-					if (option_equals(c, "no-websockets"))
-					{
-						if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpUseWebsockets,
-						                               FALSE))
-							return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-					}
-					else if (option_equals(c, "extauth-sspi-ntlm"))
-					{
-						if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpExtAuthSspiNtlm,
-						                               TRUE))
-							return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-					}
-					else
-						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-					c = next;
-				}
-
-				if (option_equals(arg->Value, "http"))
-				{
-					if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayRpcTransport, FALSE) ||
-					    !freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpTransport, TRUE))
-						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-				}
-				else if (option_equals(arg->Value, "auto"))
-				{
-					if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayRpcTransport, TRUE) ||
-					    !freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpTransport, TRUE))
-						return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-				}
-			}
 		}
 		CommandLineSwitchCase(arg, "gat")
 		{
@@ -3027,27 +3188,10 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		}
 		CommandLineSwitchCase(arg, "gateway-usage-method")
 		{
-			UINT32 type = 0;
-
-			if (option_equals(arg->Value, "none"))
-				type = TSC_PROXY_MODE_NONE_DIRECT;
-			else if (option_equals(arg->Value, "direct"))
-				type = TSC_PROXY_MODE_DIRECT;
-			else if (option_equals(arg->Value, "detect"))
-				type = TSC_PROXY_MODE_DETECT;
-			else if (option_equals(arg->Value, "default"))
-				type = TSC_PROXY_MODE_DEFAULT;
-			else
-			{
-				LONGLONG val;
-
-				if (!value_to_int(arg->Value, &val, TSC_PROXY_MODE_NONE_DIRECT,
-				                  TSC_PROXY_MODE_NONE_DETECT))
-					return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
-			}
-
-			freerdp_set_gateway_usage_method(settings, type);
+			if (!parse_gateway_usage_option(settings, arg->Value))
+				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 		}
+#endif
 		CommandLineSwitchCase(arg, "app")
 		{
 			int rc = parse_app_options(settings, arg);
@@ -3822,7 +3966,8 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		CommandLineSwitchCase(arg, "persist-cache")
 		{
 			WLog_WARN(TAG, "/persist-cache is deprecated, use /cache:persist[:on|off] instead");
-			settings->BitmapCachePersistEnabled = enable;
+			if (!freerdp_settings_set_bool(settings, FreeRDP_BitmapCachePersistEnabled, enable))
+				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 		}
 		CommandLineSwitchCase(arg, "persist-cache-file")
 		{
@@ -3831,7 +3976,8 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 			if (!freerdp_settings_set_string(settings, FreeRDP_BitmapCachePersistFile, arg->Value))
 				return COMMAND_LINE_ERROR_MEMORY;
 
-			settings->BitmapCachePersistEnabled = TRUE;
+			if (!freerdp_settings_set_bool(settings, FreeRDP_BitmapCachePersistEnabled, TRUE))
+				return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 		}
 		CommandLineSwitchCase(arg, "offscreen-cache")
 		{
@@ -4140,25 +4286,6 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 			settings->Username = user;
 	}
 
-	if (gwUser)
-	{
-		free(settings->GatewayUsername);
-
-		if (!settings->GatewayDomain && gwUser)
-		{
-			BOOL ret;
-			free(settings->GatewayDomain);
-			ret = freerdp_parse_username(gwUser, &settings->GatewayUsername,
-			                             &settings->GatewayDomain);
-			free(gwUser);
-
-			if (!ret)
-				return COMMAND_LINE_ERROR;
-		}
-		else
-			settings->GatewayUsername = gwUser;
-	}
-
 	if (promptForPassword)
 	{
 		const size_t size = 512;
@@ -4212,24 +4339,7 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		settings->ServerPort = (UINT32)val;
 	}
 
-	arg = CommandLineFindArgumentA(largs, "p");
-	if (arg->Flags & COMMAND_LINE_ARGUMENT_PRESENT)
-	{
-		FillMemory(arg->Value, strlen(arg->Value), '*');
-	}
-
-	arg = CommandLineFindArgumentA(largs, "smartcard-logon");
-	if (arg->Flags & COMMAND_LINE_ARGUMENT_PRESENT)
-	{
-		if (arg->Flags & COMMAND_LINE_VALUE_PRESENT)
-			FillMemory(arg->Value, strlen(arg->Value), '*');
-	}
-
-	arg = CommandLineFindArgumentA(largs, "gp");
-	if (arg->Flags & COMMAND_LINE_ARGUMENT_PRESENT)
-	{
-		FillMemory(arg->Value, strlen(arg->Value), '*');
-	}
+	fill_credential_strings(largs);
 
 	return status;
 }

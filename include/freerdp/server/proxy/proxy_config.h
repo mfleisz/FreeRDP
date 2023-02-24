@@ -2,8 +2,8 @@
  * FreeRDP: A Remote Desktop Protocol Implementation
  * FreeRDP Proxy Server
  *
- * Copyright 2021 Armin Novak <armin.novak@thincast.com>
- * Copyright 2021 Thincast Technologies GmbH
+ * Copyright 2021-2023 Armin Novak <armin.novak@thincast.com>
+ * Copyright 2021-2023 Thincast Technologies GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -94,6 +94,14 @@ struct proxy_config
 
 	char* PrivateKeyFile;
 	char* PrivateKeyContent;
+
+	/* Data extracted from CertificateContent or CertificateFile  (evaluation in this order) */
+	char* CertificatePEM;
+	size_t CertificatePEMLength;
+
+	/* Data extracted from PrivateKeyContent or PrivateKeyFile  (evaluation in this order) */
+	char* PrivateKeyPEM;
+	size_t PrivateKeyPEMLength;
 };
 
 #ifdef __cplusplus
@@ -206,6 +214,6 @@ extern "C"
 	FREERDP_API BOOL pf_config_plugin(proxyPluginsManager* plugins_manager, void* userdata);
 
 #ifdef __cplusplus
-};
+}
 #endif
 #endif /* FREERDP_SERVER_PROXY_CONFIG_H */

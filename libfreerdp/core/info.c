@@ -153,7 +153,7 @@ static char* rdp_info_package_flags_description(UINT32 flags)
 
 static BOOL rdp_compute_client_auto_reconnect_cookie(rdpRdp* rdp)
 {
-	BYTE ClientRandom[32] = { 0 };
+	BYTE ClientRandom[CLIENT_RANDOM_LENGTH] = { 0 };
 	BYTE AutoReconnectRandom[32] = { 0 };
 	ARC_SC_PRIVATE_PACKET* serverCookie;
 	ARC_CS_PRIVATE_PACKET* clientCookie;
@@ -167,18 +167,17 @@ static BOOL rdp_compute_client_auto_reconnect_cookie(rdpRdp* rdp)
 	clientCookie->cbLen = 28;
 	clientCookie->version = serverCookie->version;
 	clientCookie->logonId = serverCookie->logonId;
-	ZeroMemory(clientCookie->securityVerifier, 16);
-	ZeroMemory(AutoReconnectRandom, sizeof(AutoReconnectRandom));
-	CopyMemory(AutoReconnectRandom, serverCookie->arcRandomBits, 16);
-	ZeroMemory(ClientRandom, sizeof(ClientRandom));
+	ZeroMemory(clientCookie->securityVerifier, sizeof(clientCookie->securityVerifier));
+	CopyMemory(AutoReconnectRandom, serverCookie->arcRandomBits,
+	           sizeof(serverCookie->arcRandomBits));
 
 	if (settings->SelectedProtocol == PROTOCOL_RDP)
 		CopyMemory(ClientRandom, settings->ClientRandom, settings->ClientRandomLength);
 
 	/* SecurityVerifier = HMAC_MD5(AutoReconnectRandom, ClientRandom) */
 
-	if (!winpr_HMAC(WINPR_MD_MD5, AutoReconnectRandom, 16, ClientRandom, 32,
-	                clientCookie->securityVerifier, 16))
+	if (!winpr_HMAC(WINPR_MD_MD5, AutoReconnectRandom, 16, ClientRandom, sizeof(ClientRandom),
+	                clientCookie->securityVerifier, sizeof(clientCookie->securityVerifier)))
 		return FALSE;
 
 	return TRUE;
@@ -322,11 +321,15 @@ static size_t rdp_get_client_address_max_size(const rdpRdp* rdp)
 
 static BOOL rdp_read_extended_info_packet(rdpRdp* rdp, wStream* s)
 {
-	UINT16 clientAddressFamily;
-	UINT16 cbClientAddress;
-	UINT16 cbClientDir;
-	UINT16 cbAutoReconnectLen;
+	UINT16 clientAddressFamily = 0;
+	UINT16 cbClientAddress = 0;
+	UINT16 cbClientDir = 0;
+	UINT16 cbAutoReconnectLen = 0;
+
+	WINPR_ASSERT(rdp);
+
 	rdpSettings* settings = rdp->settings;
+	WINPR_ASSERT(settings);
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 		return FALSE;
@@ -424,7 +427,7 @@ static BOOL rdp_read_extended_info_packet(rdpRdp* rdp, wStream* s)
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 		return FALSE;
 	{
-		UINT16 cbDynamicDSTTimeZoneKeyName;
+		UINT16 cbDynamicDSTTimeZoneKeyName = 0;
 
 		Stream_Read_UINT16(s, cbDynamicDSTTimeZoneKeyName);
 
@@ -462,20 +465,21 @@ end:
 static BOOL rdp_write_extended_info_packet(rdpRdp* rdp, wStream* s)
 {
 	BOOL ret = FALSE;
-	UINT16 clientAddressFamily;
-	WCHAR* clientAddress = NULL;
-	size_t cbClientAddress;
+	size_t cbClientAddress = 0;
 	const size_t cbClientAddressMax = rdp_get_client_address_max_size(rdp);
 	WCHAR* clientDir = NULL;
-	size_t cbClientDir;
+	size_t cbClientDir = 0;
 	const size_t cbClientDirMax = 512;
-	UINT16 cbAutoReconnectCookie;
-	rdpSettings* settings;
-	if (!rdp || !rdp->settings || !s)
-		return FALSE;
-	settings = rdp->settings;
-	clientAddressFamily = settings->IPv6Enabled ? ADDRESS_FAMILY_INET6 : ADDRESS_FAMILY_INET;
-	clientAddress = ConvertUtf8ToWCharAlloc(settings->ClientAddress, &cbClientAddress);
+	UINT16 cbAutoReconnectCookie = 0;
+
+	WINPR_ASSERT(rdp);
+
+	rdpSettings* settings = rdp->settings;
+	WINPR_ASSERT(settings);
+
+	const UINT16 clientAddressFamily =
+	    settings->IPv6Enabled ? ADDRESS_FAMILY_INET6 : ADDRESS_FAMILY_INET;
+	WCHAR* clientAddress = ConvertUtf8ToWCharAlloc(settings->ClientAddress, &cbClientAddress);
 
 	if (cbClientAddress > (UINT16_MAX / sizeof(WCHAR)))
 		goto fail;
@@ -486,9 +490,9 @@ static BOOL rdp_write_extended_info_packet(rdpRdp* rdp, wStream* s)
 		if (cbClientAddress > cbClientAddressMax)
 		{
 			WLog_WARN(TAG,
-			          "[%s] the client address %s [%" PRIuz "] exceeds the limit of %" PRIuz
+			          "the client address %s [%" PRIuz "] exceeds the limit of %" PRIuz
 			          ", truncating.",
-			          __FUNCTION__, settings->ClientAddress, cbClientAddress, cbClientAddressMax);
+			          settings->ClientAddress, cbClientAddress, cbClientAddressMax);
 
 			clientAddress[(cbClientAddressMax / sizeof(WCHAR)) - 1] = '\0';
 			cbClientAddress = cbClientAddressMax;
@@ -505,9 +509,8 @@ static BOOL rdp_write_extended_info_packet(rdpRdp* rdp, wStream* s)
 		if (cbClientDir > cbClientDirMax)
 		{
 			WLog_WARN(TAG,
-			          "[%s] the client dir %s [%" PRIuz "] exceeds the limit of %" PRIuz
-			          ", truncating.",
-			          __FUNCTION__, settings->ClientDir, cbClientDir, cbClientDirMax);
+			          "the client dir %s [%" PRIuz "] exceeds the limit of %" PRIuz ", truncating.",
+			          settings->ClientDir, cbClientDir, cbClientDirMax);
 
 			clientDir[(cbClientDirMax / sizeof(WCHAR)) - 1] = '\0';
 			cbClientDir = cbClientDirMax;
@@ -555,7 +558,7 @@ static BOOL rdp_write_extended_info_packet(rdpRdp* rdp, wStream* s)
 		Stream_Write_UINT16(s, 0); /* reserved2 (2 bytes) */
 	}
 
-	if (settings->EarlyCapabilityFlags & RNS_UD_CS_SUPPORT_DYNAMIC_TIME_ZONE)
+	if (freerdp_settings_get_bool(settings, FreeRDP_SupportDynamicTimeZone))
 	{
 		if (!Stream_EnsureRemainingCapacity(s, 10 + 254 * sizeof(WCHAR)))
 			goto fail;
@@ -568,7 +571,7 @@ static BOOL rdp_write_extended_info_packet(rdpRdp* rdp, wStream* s)
 		if (tz)
 			rlen = strnlen(tz, 254);
 		Stream_Write_UINT16(s, (UINT16)rlen);
-		if (Stream_Write_UTF16_String_From_UTF8(s, rlen / sizeof(WCHAR), tz, rlen, FALSE) < 0)
+		if (Stream_Write_UTF16_String_From_UTF8(s, rlen, tz, rlen, FALSE) < 0)
 			goto fail;
 		Stream_Write_UINT16(s, settings->DynamicDaylightTimeDisabled ? 0x01 : 0x00);
 	}
@@ -713,9 +716,15 @@ static BOOL rdp_read_info_packet(rdpRdp* rdp, wStream* s, UINT16 tpktlength)
 		return FALSE;
 
 	if (settings->RdpVersion >= RDP_VERSION_5_PLUS)
-		return rdp_read_extended_info_packet(rdp, s); /* extraInfo */
+	{
+		if (!rdp_read_extended_info_packet(rdp, s)) /* extraInfo */
+			return FALSE;
+	}
 
-	return tpkt_ensure_stream_consumed(s, tpktlength);
+	const size_t xrem = Stream_GetRemainingLength(s);
+	if (!tpkt_ensure_stream_consumed(s, tpktlength))
+		Stream_Seek(s, xrem);
+	return TRUE;
 }
 
 /**
@@ -960,10 +969,7 @@ BOOL rdp_recv_client_info(rdpRdp* rdp, wStream* s)
 		if (securityFlags & SEC_ENCRYPT)
 		{
 			if (!rdp_decrypt(rdp, s, &length, securityFlags))
-			{
-				WLog_ERR(TAG, "rdp_decrypt failed");
 				return FALSE;
-			}
 		}
 	}
 

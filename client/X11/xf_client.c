@@ -289,19 +289,19 @@ void xf_draw_screen_(xfContext* xfc, int x, int y, int w, int h, const char* fkt
 {
 	if (!xfc)
 	{
-		WLog_DBG(TAG, "[%s] called from [%s] xfc=%p", __FUNCTION__, fkt, xfc);
+		WLog_DBG(TAG, "called from [%s] xfc=%p", fkt, xfc);
 		return;
 	}
 
 	if (w == 0 || h == 0)
 	{
-		WLog_WARN(TAG, "[%s] invalid width and/or height specified: w=%d h=%d", __FUNCTION__, w, h);
+		WLog_WARN(TAG, "invalid width and/or height specified: w=%d h=%d", w, h);
 		return;
 	}
 
 	if (!xfc->window)
 	{
-		WLog_WARN(TAG, "[%s] invalid xfc->window=%p", __FUNCTION__, xfc->window);
+		WLog_WARN(TAG, "invalid xfc->window=%p", xfc->window);
 		return;
 	}
 
@@ -411,9 +411,12 @@ static BOOL xf_end_paint(rdpContext* context)
 	if (gdi->suppressOutput)
 		return TRUE;
 
+	const BOOL sw = freerdp_settings_get_bool(context->settings, FreeRDP_SoftwareGdi);
+	HGDI_DC hdc = sw ? gdi->primary->hdc : xfc->hdc;
+
 	if (!xfc->complex_regions)
 	{
-		const GDI_RGN* rgn = gdi->primary->hdc->hwnd->invalid;
+		const GDI_RGN* rgn = hdc->hwnd->invalid;
 		if (rgn->null)
 			return TRUE;
 		xf_lock_x11(xfc);
@@ -423,10 +426,10 @@ static BOOL xf_end_paint(rdpContext* context)
 	}
 	else
 	{
-		const INT32 ninvalid = gdi->primary->hdc->hwnd->ninvalid;
-		const GDI_RGN* cinvalid = gdi->primary->hdc->hwnd->cinvalid;
+		const INT32 ninvalid = hdc->hwnd->ninvalid;
+		const GDI_RGN* cinvalid = hdc->hwnd->cinvalid;
 
-		if (gdi->primary->hdc->hwnd->ninvalid < 1)
+		if (hdc->hwnd->ninvalid < 1)
 			return TRUE;
 
 		xf_lock_x11(xfc);
@@ -442,8 +445,8 @@ static BOOL xf_end_paint(rdpContext* context)
 		xf_unlock_x11(xfc);
 	}
 
-	gdi->primary->hdc->hwnd->invalid->null = TRUE;
-	gdi->primary->hdc->hwnd->ninvalid = 0;
+	hdc->hwnd->invalid->null = TRUE;
+	hdc->hwnd->ninvalid = 0;
 	return TRUE;
 }
 
@@ -601,12 +604,8 @@ BOOL xf_create_window(xfContext* xfc)
 	{
 		if (xfc->remote_app)
 		{
-			WLog_WARN(TAG,
-			          "[%s] running in remote app mode, but XServer does not support transparency",
-			          __FUNCTION__);
-			WLog_WARN(TAG,
-			          "[%s] display of remote applications might be distorted (black frames, ...)",
-			          __FUNCTION__);
+			WLog_WARN(TAG, "running in remote app mode, but XServer does not support transparency");
+			WLog_WARN(TAG, "display of remote applications might be distorted (black frames, ...)");
 		}
 		xfc->depth = DefaultDepthOfScreen(xfc->screen);
 		xfc->visual = DefaultVisual(xfc->display, xfc->screen_number);
@@ -818,7 +817,7 @@ void xf_lock_x11_(xfContext* xfc, const char* fkt)
 		XLockDisplay(xfc->display);
 
 	xfc->locked++;
-	WLog_VRB(TAG, "%s:\t[%" PRIu32 "] from %s", __FUNCTION__, xfc->locked, fkt);
+	WLog_VRB(TAG, "[%" PRIu32 "] from %s", xfc->locked, fkt);
 }
 
 void xf_unlock_x11_(xfContext* xfc, const char* fkt)
@@ -826,7 +825,7 @@ void xf_unlock_x11_(xfContext* xfc, const char* fkt)
 	if (xfc->locked == 0)
 		WLog_WARN(TAG, "X11: trying to unlock although not locked!");
 
-	WLog_VRB(TAG, "%s:\t[%" PRIu32 "] from %s", __FUNCTION__, xfc->locked - 1, fkt);
+	WLog_VRB(TAG, "[%" PRIu32 "] from %s", xfc->locked - 1, fkt);
 	if (!xfc->UseXThreads)
 		ReleaseMutex(xfc->mutex);
 	else
@@ -1876,11 +1875,6 @@ static BOOL xfreerdp_client_new(freerdp* instance, rdpContext* context)
 	instance->PostConnect = xf_post_connect;
 	instance->PostDisconnect = xf_post_disconnect;
 	instance->PostFinalDisconnect = xf_post_final_disconnect;
-	instance->AuthenticateEx = client_cli_authenticate_ex;
-	instance->ChooseSmartcard = client_cli_choose_smartcard;
-	instance->VerifyCertificateEx = client_cli_verify_certificate_ex;
-	instance->VerifyChangedCertificateEx = client_cli_verify_changed_certificate_ex;
-	instance->PresentGatewayMessage = client_cli_present_gateway_message;
 	instance->LogonErrorInfo = xf_logon_error_info;
 	PubSub_SubscribeTerminate(context->pubSub, xf_TerminateEventHandler);
 #ifdef WITH_XRENDER

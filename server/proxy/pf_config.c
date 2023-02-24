@@ -4,8 +4,8 @@
  *
  * Copyright 2019 Kobi Mizrachi <kmizrachi18@gmail.com>
  * Copyright 2019 Idan Freiberg <speidy@gmail.com>
- * Copyright 2021 Armin Novak <anovak@thincast.com>
- * Copyright 2021 Thincast Technologies GmbH
+ * Copyright 2021,2023 Armin Novak <anovak@thincast.com>
+ * Copyright 2021,2023 Thincast Technologies GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@
 #include <freerdp/server/proxy/proxy_config.h>
 #include <freerdp/server/proxy/proxy_log.h>
 
+#include <freerdp/crypto/crypto.h>
 #include <freerdp/channels/cliprdr.h>
 #include <freerdp/channels/rdpsnd.h>
 #include <freerdp/channels/audin.h>
@@ -144,13 +145,13 @@ static BOOL pf_config_get_uint16(wIniFile* ini, const char* section, const char*
 	strval = IniFile_GetKeyValueString(ini, section, key);
 	if (!strval && required)
 	{
-		WLog_ERR(TAG, "[%s]: key '%s.%s' does not exist.", __FUNCTION__, section, key);
+		WLog_ERR(TAG, "key '%s.%s' does not exist.", section, key);
 		return FALSE;
 	}
 	val = IniFile_GetKeyValueInt(ini, section, key);
 	if ((val <= 0) || (val > UINT16_MAX))
 	{
-		WLog_ERR(TAG, "[%s]: invalid value %d for key '%s.%s'.", __FUNCTION__, val, section, key);
+		WLog_ERR(TAG, "invalid value %d for key '%s.%s'.", val, section, key);
 		return FALSE;
 	}
 
@@ -169,14 +170,14 @@ static BOOL pf_config_get_uint32(wIniFile* ini, const char* section, const char*
 	strval = IniFile_GetKeyValueString(ini, section, key);
 	if (!strval && required)
 	{
-		WLog_ERR(TAG, "[%s]: key '%s.%s' does not exist.", __FUNCTION__, section, key);
+		WLog_ERR(TAG, "key '%s.%s' does not exist.", section, key);
 		return FALSE;
 	}
 
 	val = IniFile_GetKeyValueInt(ini, section, key);
 	if ((val < 0) || (val > INT32_MAX))
 	{
-		WLog_ERR(TAG, "[%s]: invalid value %d for key '%s.%s'.", __FUNCTION__, val, section, key);
+		WLog_ERR(TAG, "invalid value %d for key '%s.%s'.", val, section, key);
 		return FALSE;
 	}
 
@@ -192,8 +193,8 @@ static BOOL pf_config_get_bool(wIniFile* ini, const char* section, const char* k
 	str_value = IniFile_GetKeyValueString(ini, section, key);
 	if (!str_value)
 	{
-		WLog_WARN(TAG, "[%s]: key '%s.%s' not found, value defaults to %s.", __FUNCTION__, section,
-		          key, fallback ? bool_str_true : bool_str_false);
+		WLog_WARN(TAG, "key '%s.%s' not found, value defaults to %s.", section, key,
+		          fallback ? bool_str_true : bool_str_false);
 		return fallback;
 	}
 
@@ -220,7 +221,7 @@ static const char* pf_config_get_str(wIniFile* ini, const char* section, const c
 	if (!value)
 	{
 		if (required)
-			WLog_ERR(TAG, "[%s]: key '%s.%s' not found.", __FUNCTION__, section, key);
+			WLog_ERR(TAG, "key '%s.%s' not found.", section, key);
 		return NULL;
 	}
 
@@ -387,6 +388,25 @@ static BOOL pf_config_load_gfx_settings(wIniFile* ini, proxyConfig* config)
 	return TRUE;
 }
 
+static char* pf_config_decode_base64(const char* data, const char* name, size_t* pLength)
+{
+	size_t decoded_length = 0;
+	char* decoded = NULL;
+	if (!data)
+		return NULL;
+
+	WINPR_ASSERT(name);
+	WINPR_ASSERT(pLength);
+
+	const size_t length = strlen(data);
+	crypto_base64_decode(data, length, &decoded, &decoded_length);
+	if (!decoded || decoded_length == 0)
+		WLog_ERR(TAG, "Failed to decode base64 data from %s of length %" PRIuz, name, length);
+	WINPR_ASSERT(strnlen(decoded, decoded_length) == decoded_length - 1);
+	*pLength = decoded_length;
+	return decoded;
+}
+
 static BOOL pf_config_load_certificates(wIniFile* ini, proxyConfig* config)
 {
 	const char* tmp1;
@@ -405,6 +425,10 @@ static BOOL pf_config_load_certificates(wIniFile* ini, proxyConfig* config)
 			return FALSE;
 		}
 		config->CertificateFile = _strdup(tmp1);
+		config->CertificatePEM =
+		    crypto_read_pem(config->CertificateFile, &config->CertificatePEMLength);
+		if (!config->CertificatePEM)
+			return FALSE;
 	}
 	tmp2 = pf_config_get_str(ini, section_certificates, key_cert_content, FALSE);
 	if (tmp2)
@@ -415,6 +439,10 @@ static BOOL pf_config_load_certificates(wIniFile* ini, proxyConfig* config)
 			return FALSE;
 		}
 		config->CertificateContent = _strdup(tmp2);
+		config->CertificatePEM = pf_config_decode_base64(
+		    config->CertificateContent, "CertificateContent", &config->CertificatePEMLength);
+		if (!config->CertificatePEM)
+			return FALSE;
 	}
 	if (tmp1 && tmp2)
 	{
@@ -443,6 +471,10 @@ static BOOL pf_config_load_certificates(wIniFile* ini, proxyConfig* config)
 			return FALSE;
 		}
 		config->PrivateKeyFile = _strdup(tmp1);
+		config->PrivateKeyPEM =
+		    crypto_read_pem(config->PrivateKeyFile, &config->PrivateKeyPEMLength);
+		if (!config->PrivateKeyPEM)
+			return FALSE;
 	}
 	tmp2 = pf_config_get_str(ini, section_certificates, key_private_key_content, FALSE);
 	if (tmp2)
@@ -454,6 +486,10 @@ static BOOL pf_config_load_certificates(wIniFile* ini, proxyConfig* config)
 			return FALSE;
 		}
 		config->PrivateKeyContent = _strdup(tmp2);
+		config->PrivateKeyPEM = pf_config_decode_base64(
+		    config->PrivateKeyContent, "PrivateKeyContent", &config->PrivateKeyPEMLength);
+		if (!config->PrivateKeyPEM)
+			return FALSE;
 	}
 
 	if (tmp1 && tmp2)
@@ -653,13 +689,13 @@ proxyConfig* pf_server_config_load_buffer(const char* buffer)
 
 	if (!ini)
 	{
-		WLog_ERR(TAG, "[%s]: IniFile_New() failed!", __FUNCTION__);
+		WLog_ERR(TAG, "IniFile_New() failed!");
 		return NULL;
 	}
 
 	if (IniFile_ReadBuffer(ini, buffer) < 0)
 	{
-		WLog_ERR(TAG, "[%s] failed to parse ini: '%s'", __FUNCTION__, buffer);
+		WLog_ERR(TAG, "failed to parse ini: '%s'", buffer);
 		goto out;
 	}
 
@@ -676,13 +712,13 @@ proxyConfig* pf_server_config_load_file(const char* path)
 
 	if (!ini)
 	{
-		WLog_ERR(TAG, "[%s]: IniFile_New() failed!", __FUNCTION__);
+		WLog_ERR(TAG, "IniFile_New() failed!");
 		return NULL;
 	}
 
 	if (IniFile_ReadFile(ini, path) < 0)
 	{
-		WLog_ERR(TAG, "[%s] failed to parse ini file: '%s'", __FUNCTION__, path);
+		WLog_ERR(TAG, "failed to parse ini file: '%s'", path);
 		goto out;
 	}
 
@@ -800,8 +836,14 @@ void pf_server_config_free(proxyConfig* config)
 	free(config->Host);
 	free(config->CertificateFile);
 	free(config->CertificateContent);
+	if (config->CertificatePEM)
+		memset(config->CertificatePEM, 0, config->CertificatePEMLength);
+	free(config->CertificatePEM);
 	free(config->PrivateKeyFile);
 	free(config->PrivateKeyContent);
+	if (config->PrivateKeyPEM)
+		memset(config->PrivateKeyPEM, 0, config->PrivateKeyPEMLength);
+	free(config->PrivateKeyPEM);
 	free(config);
 }
 
@@ -845,6 +887,22 @@ static BOOL pf_config_copy_string(char** dst, const char* src)
 	*dst = NULL;
 	if (src)
 		*dst = _strdup(src);
+	return TRUE;
+}
+
+static BOOL pf_config_copy_string_n(char** dst, const char* src, size_t size)
+{
+	*dst = NULL;
+
+	if (src && (size > 0))
+	{
+		WINPR_ASSERT(strnlen(src, size) == size - 1);
+		*dst = calloc(size, sizeof(char));
+		if (!*dst)
+			return FALSE;
+		memcpy(*dst, src, size);
+	}
+
 	return TRUE;
 }
 
@@ -900,9 +958,15 @@ BOOL pf_config_clone(proxyConfig** dst, const proxyConfig* config)
 		goto fail;
 	if (!pf_config_copy_string(&tmp->CertificateContent, config->CertificateContent))
 		goto fail;
+	if (!pf_config_copy_string_n(&tmp->CertificatePEM, config->CertificatePEM,
+	                             config->CertificatePEMLength))
+		goto fail;
 	if (!pf_config_copy_string(&tmp->PrivateKeyFile, config->PrivateKeyFile))
 		goto fail;
 	if (!pf_config_copy_string(&tmp->PrivateKeyContent, config->PrivateKeyContent))
+		goto fail;
+	if (!pf_config_copy_string_n(&tmp->PrivateKeyPEM, config->PrivateKeyPEM,
+	                             config->PrivateKeyPEMLength))
 		goto fail;
 
 	*dst = tmp;
@@ -957,7 +1021,7 @@ static BOOL config_plugin_keyboard_event(proxyPlugin* plugin, proxyData* pdata, 
 	WINPR_ASSERT(cfg);
 
 	rc = cfg->Keyboard;
-	WLog_DBG(TAG, "%s: %s", __FUNCTION__, boolstr(rc));
+	WLog_DBG(TAG, "%s", boolstr(rc));
 	return rc;
 }
 
@@ -981,7 +1045,7 @@ static BOOL config_plugin_unicode_event(proxyPlugin* plugin, proxyData* pdata, v
 	WINPR_ASSERT(cfg);
 
 	rc = cfg->Keyboard;
-	WLog_DBG(TAG, "%s: %s", __FUNCTION__, boolstr(rc));
+	WLog_DBG(TAG, "%s", boolstr(rc));
 	return rc;
 }
 
@@ -1039,8 +1103,8 @@ static BOOL config_plugin_client_channel_data(proxyPlugin* plugin, proxyData* pd
 	WINPR_ASSERT(pdata);
 	WINPR_ASSERT(channel);
 
-	WLog_DBG(TAG, "%s: %s [0x%04" PRIx16 "] got %" PRIuz, __FUNCTION__, channel->channel_name,
-	         channel->channel_id, channel->data_len);
+	WLog_DBG(TAG, "%s [0x%04" PRIx16 "] got %" PRIuz, channel->channel_name, channel->channel_id,
+	         channel->data_len);
 	return TRUE;
 }
 
@@ -1052,8 +1116,8 @@ static BOOL config_plugin_server_channel_data(proxyPlugin* plugin, proxyData* pd
 	WINPR_ASSERT(pdata);
 	WINPR_ASSERT(channel);
 
-	WLog_DBG(TAG, "%s: %s [0x%04" PRIx16 "] got %" PRIuz, __FUNCTION__, channel->channel_name,
-	         channel->channel_id, channel->data_len);
+	WLog_DBG(TAG, "%s [0x%04" PRIx16 "] got %" PRIuz, channel->channel_name, channel->channel_id,
+	         channel->data_len);
 	return TRUE;
 }
 
@@ -1120,8 +1184,8 @@ static BOOL config_plugin_dynamic_channel_create(proxyPlugin* plugin, proxyData*
 			accept = cfg->CameraRedirection;
 	}
 
-	WLog_DBG(TAG, "%s: %s [0x%04" PRIx16 "]: %s", __FUNCTION__, channel->channel_name,
-	         channel->channel_id, boolstr(accept));
+	WLog_DBG(TAG, "%s [0x%04" PRIx16 "]: %s", channel->channel_name, channel->channel_id,
+	         boolstr(accept));
 	return accept;
 }
 
@@ -1174,7 +1238,7 @@ static BOOL config_plugin_channel_create(proxyPlugin* plugin, proxyData* pdata, 
 			accept = cfg->RemoteApp;
 	}
 
-	WLog_DBG(TAG, "%s: %s [static]: %s", __FUNCTION__, channel->channel_name, boolstr(accept));
+	WLog_DBG(TAG, "%s [static]: %s", channel->channel_name, boolstr(accept));
 	return accept;
 }
 

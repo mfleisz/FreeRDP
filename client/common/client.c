@@ -68,6 +68,12 @@ static BOOL freerdp_client_common_new(freerdp* instance, rdpContext* context)
 	WINPR_ASSERT(context);
 
 	instance->LoadChannels = freerdp_client_load_channels;
+	instance->AuthenticateEx = client_cli_authenticate_ex;
+	instance->ChooseSmartcard = client_cli_choose_smartcard;
+	instance->VerifyCertificateEx = client_cli_verify_certificate_ex;
+	instance->VerifyChangedCertificateEx = client_cli_verify_changed_certificate_ex;
+	instance->PresentGatewayMessage = client_cli_present_gateway_message;
+	instance->LogonErrorInfo = client_cli_logon_error_info;
 
 	pEntryPoints = instance->pClientEntryPoints;
 	WINPR_ASSERT(pEntryPoints);
@@ -520,8 +526,8 @@ BOOL client_cli_authenticate_ex(freerdp* instance, char** username, char** passw
 	return client_cli_authenticate_raw(instance, reason, username, password, domain);
 }
 
-BOOL client_cli_choose_smartcard(SmartcardCertInfo** cert_list, DWORD count, DWORD* choice,
-                                 BOOL gateway)
+BOOL client_cli_choose_smartcard(freerdp* instance, SmartcardCertInfo** cert_list, DWORD count,
+                                 DWORD* choice, BOOL gateway)
 {
 	unsigned long answer;
 	char* p = NULL;
@@ -1557,4 +1563,16 @@ BOOL freerdp_client_load_channels(freerdp* instance)
 		return FALSE;
 	}
 	return TRUE;
+}
+
+int client_cli_logon_error_info(freerdp* instance, UINT32 data, UINT32 type)
+{
+	const char* str_data = freerdp_get_logon_error_info_data(data);
+	const char* str_type = freerdp_get_logon_error_info_type(type);
+
+	if (!instance || !instance->context)
+		return -1;
+
+	WLog_INFO(TAG, "Logon Error Info %s [%s]", str_data, str_type);
+	return 1;
 }

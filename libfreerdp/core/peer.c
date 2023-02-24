@@ -4,6 +4,8 @@
  *
  * Copyright 2011 Vic Lee
  * Copyright 2014 DI (FH) Martin Haimberger <martin.haimberger@thincast.com>
+ * Copyright 2023 Armin Novak <anovak@thincast.com>
+ * Copyright 2023 Thincast Technologies GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,10 +28,11 @@
 
 #include "info.h"
 #include "display.h"
-#include "certificate.h"
 
 #include <freerdp/log.h>
 #include <freerdp/streamdump.h>
+#include <freerdp/redirection.h>
+#include <freerdp/crypto/certificate.h>
 
 #include "rdp.h"
 #include "peer.h"
@@ -244,29 +247,29 @@ static BOOL freerdp_peer_initialize(freerdp_peer* client)
 	settings->ServerMode = TRUE;
 	settings->FrameAcknowledge = 0;
 	settings->LocalConnection = client->local;
+
+	const rdpCertificate* cert =
+	    freerdp_settings_get_pointer(settings, FreeRDP_RdpServerCertificate);
+	if (!cert)
+	{
+		WLog_ERR(TAG, "Missing server certificate, can not continue.");
+		return FALSE;
+	}
+
+	if (!freerdp_certificate_is_rsa(cert))
+	{
+		if (freerdp_settings_get_bool(settings, FreeRDP_RdpSecurity))
+			WLog_WARN(TAG, "certificate is not of RSA type, deactivating RDP security for good.");
+		else
+			WLog_INFO(TAG, "certificate is not of RSA type, RDP security not supported.");
+
+		if (!freerdp_settings_set_bool(settings, FreeRDP_RdpSecurity, FALSE))
+			return FALSE;
+		if (!freerdp_settings_set_bool(settings, FreeRDP_UseRdpSecurityLayer, FALSE))
+			return FALSE;
+	}
 	if (!rdp_server_transition_to_state(rdp, CONNECTION_STATE_INITIAL))
 		return FALSE;
-
-	if (settings->PrivateKeyFile)
-	{
-		settings->RdpServerRsaKey = key_new(settings->PrivateKeyFile);
-
-		if (!settings->RdpServerRsaKey)
-		{
-			WLog_ERR(TAG, "invalid RDP key file %s", settings->PrivateKeyFile);
-			return FALSE;
-		}
-	}
-	else if (settings->PrivateKeyContent)
-	{
-		settings->RdpServerRsaKey = key_new_from_content(settings->PrivateKeyContent, NULL);
-
-		if (!settings->RdpServerRsaKey)
-		{
-			WLog_ERR(TAG, "invalid RDP key content");
-			return FALSE;
-		}
-	}
 
 	return TRUE;
 }
@@ -384,7 +387,8 @@ static state_run_t peer_recv_data_pdu(freerdp_peer* client, wStream* s, UINT16 t
 
 		case DATA_PDU_TYPE_SHUTDOWN_REQUEST:
 			mcs_send_disconnect_provider_ultimatum(client->context->rdp->mcs);
-			return STATE_RUN_FAILED;
+			WLog_WARN(TAG, "disconnect provider ultimatum sent to peer, closing connection");
+			return STATE_RUN_QUIT_SESSION;
 
 		case DATA_PDU_TYPE_FRAME_ACKNOWLEDGE:
 			if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
@@ -445,9 +449,13 @@ static state_run_t peer_recv_tpkt_pdu(freerdp_peer* client, wStream* s)
 
 	if (rdp_get_state(rdp) <= CONNECTION_STATE_LICENSING)
 	{
-		if (!rdp_read_security_header(s, &securityFlags, NULL))
+		if (!rdp_read_security_header(s, &securityFlags, &length))
 			return STATE_RUN_FAILED;
-
+		if (securityFlags & SEC_ENCRYPT)
+		{
+			if (!rdp_decrypt(rdp, s, &length, securityFlags))
+				return STATE_RUN_FAILED;
+		}
 		return rdp_recv_message_channel_pdu(rdp, s, securityFlags);
 	}
 
@@ -465,13 +473,14 @@ static state_run_t peer_recv_tpkt_pdu(freerdp_peer* client, wStream* s)
 
 	if (channelId == MCS_GLOBAL_CHANNEL_ID)
 	{
+		char buffer[256] = { 0 };
 		UINT16 pduLength, remain;
 		if (!rdp_read_share_control_header(s, &pduLength, &remain, &pduType, &pduSource))
 			return STATE_RUN_FAILED;
 
 		settings->PduSource = pduSource;
 
-		WLog_DBG(TAG, "Received %s", pdu_type_to_str(pduType));
+		WLog_DBG(TAG, "Received %s", pdu_type_to_str(pduType, buffer, sizeof(buffer)));
 		switch (pduType)
 		{
 			case PDU_TYPE_DATA:
@@ -670,14 +679,8 @@ static state_run_t peer_recv_fastpath_pdu(freerdp_peer* client, wStream* s)
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, length))
 		return STATE_RUN_FAILED;
 
-	if (fastpath_get_encryption_flags(fastpath) & FASTPATH_OUTPUT_ENCRYPTED)
-	{
-		if (!rdp_decrypt(rdp, s, &length,
-		                 (fastpath_get_encryption_flags(fastpath) & FASTPATH_OUTPUT_SECURE_CHECKSUM)
-		                     ? SEC_SECURE_CHECKSUM
-		                     : 0))
-			return STATE_RUN_FAILED;
-	}
+	if (!fastpath_decrypt(fastpath, s, &length))
+		return STATE_RUN_FAILED;
 
 	rdp->inPackets++;
 
@@ -759,6 +762,7 @@ static state_run_t rdp_peer_handle_state_active(freerdp_peer* client)
 	}
 	if (!client->connected)
 	{
+		WLog_ERR(TAG, "PostConnect for peer %p failed", client);
 		ret = STATE_RUN_FAILED;
 	}
 	else if (!client->activated)
@@ -772,7 +776,10 @@ static state_run_t rdp_peer_handle_state_active(freerdp_peer* client)
 		IFCALLRET(client->Activate, activated, client);
 
 		if (!activated)
+		{
+			WLog_ERR(TAG, "Activate for peer %p failed", client);
 			ret = STATE_RUN_FAILED;
+		}
 		else
 			ret = STATE_RUN_SUCCESS;
 	}
@@ -810,8 +817,7 @@ static state_run_t peer_recv_callback_internal(rdpTransport* transport, wStream*
 		case CONNECTION_STATE_NEGO:
 			if (!rdp_server_accept_nego(rdp, s))
 			{
-				WLog_ERR(TAG, "%s: %s - rdp_server_accept_nego() fail", __FUNCTION__,
-				         rdp_get_state_string(rdp));
+				WLog_ERR(TAG, "%s - rdp_server_accept_nego() fail", rdp_get_state_string(rdp));
 			}
 			else
 			{
@@ -847,9 +853,9 @@ static state_run_t peer_recv_callback_internal(rdpTransport* transport, wStream*
 			if (!rdp_server_accept_mcs_connect_initial(rdp, s))
 			{
 				WLog_ERR(TAG,
-				         "%s: %s - "
+				         "%s - "
 				         "rdp_server_accept_mcs_connect_initial() fail",
-				         __FUNCTION__, rdp_get_state_string(rdp));
+				         rdp_get_state_string(rdp));
 			}
 			else
 				ret = STATE_RUN_SUCCESS;
@@ -860,9 +866,9 @@ static state_run_t peer_recv_callback_internal(rdpTransport* transport, wStream*
 			if (!rdp_server_accept_mcs_erect_domain_request(rdp, s))
 			{
 				WLog_ERR(TAG,
-				         "%s: %s - "
+				         "%s - "
 				         "rdp_server_accept_mcs_erect_domain_request() fail",
-				         __FUNCTION__, rdp_get_state_string(rdp));
+				         rdp_get_state_string(rdp));
 			}
 			else
 				ret = STATE_RUN_SUCCESS;
@@ -873,9 +879,9 @@ static state_run_t peer_recv_callback_internal(rdpTransport* transport, wStream*
 			if (!rdp_server_accept_mcs_attach_user_request(rdp, s))
 			{
 				WLog_ERR(TAG,
-				         "%s: %s - "
+				         "%s - "
 				         "rdp_server_accept_mcs_attach_user_request() fail",
-				         __FUNCTION__, rdp_get_state_string(rdp));
+				         rdp_get_state_string(rdp));
 			}
 			else
 				ret = STATE_RUN_SUCCESS;
@@ -886,9 +892,9 @@ static state_run_t peer_recv_callback_internal(rdpTransport* transport, wStream*
 			if (!rdp_server_accept_mcs_channel_join_request(rdp, s))
 			{
 				WLog_ERR(TAG,
-				         "%s: %s - "
+				         "%s - "
 				         "rdp_server_accept_mcs_channel_join_request() fail",
-				         __FUNCTION__, rdp_get_state_string(rdp));
+				         rdp_get_state_string(rdp));
 			}
 			else
 				ret = STATE_RUN_SUCCESS;
@@ -896,17 +902,16 @@ static state_run_t peer_recv_callback_internal(rdpTransport* transport, wStream*
 
 		case CONNECTION_STATE_RDP_SECURITY_COMMENCEMENT:
 			ret = STATE_RUN_SUCCESS;
-			if (rdp->settings->UseRdpSecurityLayer)
+
+			if (!rdp_server_establish_keys(rdp, s))
 			{
-				if (!rdp_server_establish_keys(rdp, s))
-				{
-					WLog_ERR(TAG,
-					         "%s: %s - "
-					         "rdp_server_establish_keys() fail",
-					         __FUNCTION__, rdp_get_state_string(rdp));
-					ret = STATE_RUN_FAILED;
-				}
+				WLog_ERR(TAG,
+				         "%s - "
+				         "rdp_server_establish_keys() fail",
+				         rdp_get_state_string(rdp));
+				ret = STATE_RUN_FAILED;
 			}
+
 			if (state_run_success(ret))
 			{
 				if (!rdp_server_transition_to_state(rdp, CONNECTION_STATE_SECURE_SETTINGS_EXCHANGE))
@@ -917,14 +922,7 @@ static state_run_t peer_recv_callback_internal(rdpTransport* transport, wStream*
 			break;
 
 		case CONNECTION_STATE_SECURE_SETTINGS_EXCHANGE:
-			if (!rdp_recv_client_info(rdp, s))
-			{
-				WLog_ERR(TAG,
-				         "%s: %s - "
-				         "rdp_recv_client_info() fail",
-				         __FUNCTION__, rdp_get_state_string(rdp));
-			}
-			else
+			if (rdp_recv_client_info(rdp, s))
 			{
 				if (rdp_server_transition_to_state(
 				        rdp, CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT_REQUEST))
@@ -933,16 +931,11 @@ static state_run_t peer_recv_callback_internal(rdpTransport* transport, wStream*
 			break;
 
 		case CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT_REQUEST:
+			ret = peer_recv_handle_auto_detect(client, s);
+			break;
+
 		case CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT_RESPONSE:
-			if (settings->EarlyCapabilityFlags & RNS_UD_CS_SUPPORT_NETCHAR_AUTODETECT)
-			{
-				ret = peer_recv_handle_auto_detect(client, s);
-			}
-			else
-			{
-				if (rdp_server_transition_to_state(rdp, CONNECTION_STATE_LICENSING))
-					ret = STATE_RUN_CONTINUE;
-			}
+			ret = peer_recv_handle_auto_detect(client, s);
 			break;
 
 		case CONNECTION_STATE_LICENSING:
@@ -992,7 +985,7 @@ static state_run_t peer_recv_callback_internal(rdpTransport* transport, wStream*
 			break;
 
 		case CONNECTION_STATE_CAPABILITIES_EXCHANGE_MONITOR_LAYOUT:
-			if (settings->EarlyCapabilityFlags & RNS_UD_CS_SUPPORT_MONITOR_LAYOUT_PDU)
+			if (freerdp_settings_get_bool(settings, FreeRDP_SupportMonitorLayoutPdu))
 			{
 				MONITOR_DEF* monitors = NULL;
 
@@ -1040,7 +1033,13 @@ static state_run_t peer_recv_callback_internal(rdpTransport* transport, wStream*
 				free(monitors);
 			}
 			else
-				ret = STATE_RUN_SUCCESS;
+			{
+				const size_t len = Stream_GetRemainingLength(s);
+				if (len > 0)
+					ret = STATE_RUN_CONTINUE;
+				else
+					ret = STATE_RUN_SUCCESS;
+			}
 			if (!rdp_server_transition_to_state(
 			        rdp, CONNECTION_STATE_CAPABILITIES_EXCHANGE_CONFIRM_ACTIVE))
 				ret = STATE_RUN_FAILED;
@@ -1225,248 +1224,23 @@ static BOOL freerdp_peer_send_channel_data(freerdp_peer* client, UINT16 channelI
 	return rdp_send_channel_data(client->context->rdp, channelId, data, size);
 }
 
-static BOOL freerdp_peer_send_server_redirection_pdu(
-    freerdp_peer* peer, UINT32 sessionId, const char* targetNetAddress, const char* routingToken,
-    const char* userName, const char* domain, const char* password, const char* targetFQDN,
-    const char* targetNetBiosName, DWORD tsvUrlLength, const BYTE* tsvUrl,
-    UINT32 targetNetAddressesCount, const char** targetNetAddresses)
+static BOOL freerdp_peer_send_server_redirection_pdu(freerdp_peer* peer,
+                                                     const rdpRedirection* redirection)
 {
+	WINPR_ASSERT(peer);
+	WINPR_ASSERT(peer->context);
+
 	wStream* s = rdp_send_stream_pdu_init(peer->context->rdp);
-	UINT16 length;
-	UINT32 redirFlags;
-
-	UINT32 targetNetAddressLength = 0;
-	UINT32 loadBalanceInfoLength = 0;
-	UINT32 userNameLength = 0;
-	UINT32 domainLength = 0;
-	UINT32 passwordLength = 0;
-	UINT32 targetFQDNLength = 0;
-	UINT32 targetNetBiosNameLength = 0;
-	UINT32 targetNetAddressesLength = 0;
-	UINT32* targetNetAddressesWLength = NULL;
-
-	LPWSTR targetNetAddressW = NULL;
-	LPWSTR userNameW = NULL;
-	LPWSTR domainW = NULL;
-	LPWSTR passwordW = NULL;
-	LPWSTR targetFQDNW = NULL;
-	LPWSTR targetNetBiosNameW = NULL;
-	LPWSTR* targetNetAddressesW = NULL;
-
-	length = 12; /* Flags (2) + length (2) + sessionId (4)  + redirection flags (4) */
-	redirFlags = 0;
-
-	if (targetNetAddress)
-	{
-		size_t len = 0;
-		redirFlags |= LB_TARGET_NET_ADDRESS;
-
-		targetNetAddressW = ConvertUtf8ToWCharAlloc(targetNetBiosName, &len);
-		targetNetAddressLength = (len + 1) * sizeof(WCHAR);
-
-		length += 4 + targetNetAddressLength;
-	}
-
-	if (routingToken)
-	{
-		redirFlags |= LB_LOAD_BALANCE_INFO;
-		loadBalanceInfoLength =
-		    13 + strlen(routingToken) + 2; /* Add routing token prefix and suffix */
-		length += 4 + loadBalanceInfoLength;
-	}
-
-	if (userName)
-	{
-		size_t len = 0;
-		redirFlags |= LB_USERNAME;
-
-		userNameW = ConvertUtf8ToWCharAlloc(userName, &len);
-		userNameLength = (len + 1) * sizeof(WCHAR);
-
-		length += 4 + userNameLength;
-	}
-
-	if (domain)
-	{
-		size_t len = 0;
-		redirFlags |= LB_DOMAIN;
-
-		domainW = ConvertUtf8ToWCharAlloc(domain, &len);
-		domainLength = (len + 1) * sizeof(WCHAR);
-
-		length += 4 + domainLength;
-	}
-
-	if (password)
-	{
-		size_t len = 0;
-		redirFlags |= LB_PASSWORD;
-
-		passwordW = ConvertUtf8ToWCharAlloc(password, &len);
-		passwordLength = (len + 1) * sizeof(WCHAR);
-
-		length += 4 + passwordLength;
-	}
-
-	if (targetFQDN)
-	{
-		size_t len = 0;
-		redirFlags |= LB_TARGET_FQDN;
-
-		targetFQDNW = ConvertUtf8ToWCharAlloc(targetFQDN, &len);
-		targetFQDNLength = (len + 1) * sizeof(WCHAR);
-
-		length += 4 + targetFQDNLength;
-	}
-
-	if (targetNetBiosName)
-	{
-		size_t len = 0;
-		redirFlags |= LB_TARGET_NETBIOS_NAME;
-
-		targetNetBiosNameW = ConvertUtf8ToWCharAlloc(targetNetBiosName, &len);
-		targetNetBiosNameLength = (len + 1) * sizeof(WCHAR);
-
-		length += 4 + targetNetBiosNameLength;
-	}
-
-	if (tsvUrl)
-	{
-		redirFlags |= LB_CLIENT_TSV_URL;
-		length += 4 + tsvUrlLength;
-	}
-
-	if (targetNetAddresses)
-	{
-		UINT32 i;
-
-		redirFlags |= LB_TARGET_NET_ADDRESSES;
-
-		targetNetAddressesLength = 0;
-		targetNetAddressesW = calloc(targetNetAddressesCount, sizeof(LPWSTR));
-		targetNetAddressesWLength = calloc(targetNetAddressesCount, sizeof(UINT32));
-		for (i = 0; i < targetNetAddressesCount; i++)
-		{
-			size_t len = 0;
-			targetNetAddressesW[i] = ConvertUtf8ToWCharAlloc(targetNetAddresses[i], &len);
-			targetNetAddressesWLength[i] = (len + 1) * sizeof(WCHAR);
-			targetNetAddressesLength += 4 + targetNetAddressesWLength[i];
-		}
-
-		length += 4 + 4 + targetNetAddressesLength;
-	}
-
-	Stream_Write_UINT16(s, 0);
-	Stream_Write_UINT16(s, SEC_REDIRECTION_PKT);
-	Stream_Write_UINT16(s, length);
-
-	if (!Stream_EnsureRemainingCapacity(s, length))
-	{
-		WLog_ERR(TAG, "Stream_EnsureRemainingCapacity failed!");
+	if (!s)
+		return FALSE;
+	if (!rdp_write_enhanced_security_redirection_packet(s, redirection))
 		goto fail;
-	}
+	if (!rdp_send_pdu(peer->context->rdp, s, PDU_TYPE_SERVER_REDIRECTION, 0))
+		goto fail;
 
-	if (sessionId)
-		Stream_Write_UINT32(s, sessionId);
-	else
-		Stream_Write_UINT32(s, 0);
-
-	Stream_Write_UINT32(s, redirFlags);
-
-	if (redirFlags & LB_TARGET_NET_ADDRESS)
-	{
-		Stream_Write_UINT32(s, targetNetAddressLength);
-		Stream_Write(s, targetNetAddressW, targetNetAddressLength);
-		free(targetNetAddressW);
-	}
-
-	if (redirFlags & LB_LOAD_BALANCE_INFO)
-	{
-		Stream_Write_UINT32(s, loadBalanceInfoLength);
-		Stream_Write(s, "Cookie: msts=", 13);
-		Stream_Write(s, routingToken, strlen(routingToken));
-		Stream_Write_UINT8(s, 0x0d);
-		Stream_Write_UINT8(s, 0x0a);
-	}
-
-	if (redirFlags & LB_USERNAME)
-	{
-		Stream_Write_UINT32(s, userNameLength);
-		Stream_Write(s, userNameW, userNameLength);
-		free(userNameW);
-	}
-
-	if (redirFlags & LB_DOMAIN)
-	{
-		Stream_Write_UINT32(s, domainLength);
-		Stream_Write(s, domainW, domainLength);
-		free(domainW);
-	}
-
-	if (redirFlags & LB_PASSWORD)
-	{
-		Stream_Write_UINT32(s, passwordLength);
-		Stream_Write(s, passwordW, passwordLength);
-		free(passwordW);
-	}
-
-	if (redirFlags & LB_TARGET_FQDN)
-	{
-		Stream_Write_UINT32(s, targetFQDNLength);
-		Stream_Write(s, targetFQDNW, targetFQDNLength);
-		free(targetFQDNW);
-	}
-
-	if (redirFlags & LB_TARGET_NETBIOS_NAME)
-	{
-		Stream_Write_UINT32(s, targetNetBiosNameLength);
-		Stream_Write(s, targetNetBiosNameW, targetNetBiosNameLength);
-		free(targetNetBiosNameW);
-	}
-
-	if (redirFlags & LB_CLIENT_TSV_URL)
-	{
-		Stream_Write_UINT32(s, tsvUrlLength);
-		Stream_Write(s, tsvUrl, tsvUrlLength);
-	}
-
-	if (redirFlags & LB_TARGET_NET_ADDRESSES)
-	{
-		UINT32 i;
-		Stream_Write_UINT32(s, targetNetAddressesLength);
-		Stream_Write_UINT32(s, targetNetAddressesCount);
-		for (i = 0; i < targetNetAddressesCount; i++)
-		{
-			Stream_Write_UINT32(s, targetNetAddressesWLength[i]);
-			Stream_Write(s, targetNetAddressesW[i], targetNetAddressesWLength[i]);
-			free(targetNetAddressesW[i]);
-		}
-		free(targetNetAddressesW);
-		free(targetNetAddressesWLength);
-	}
-
-	Stream_Write_UINT8(s, 0);
-	rdp_send_pdu(peer->context->rdp, s, PDU_TYPE_SERVER_REDIRECTION, 0);
-
-	return TRUE;
-
+	return rdp_reset_runtime_settings(peer->context->rdp);
 fail:
-	free(targetNetAddressW);
-	free(userNameW);
-	free(domainW);
-	free(passwordW);
-	free(targetFQDNW);
-	free(targetNetBiosNameW);
-	free(targetNetAddressesWLength);
-
-	if (targetNetAddressesCount > 0)
-	{
-		UINT32 i;
-		for (i = 0; i < targetNetAddressesCount; i++)
-			free(targetNetAddressesW[i]);
-		free(targetNetAddressesW);
-	}
-
+	Stream_Release(s);
 	return FALSE;
 }
 

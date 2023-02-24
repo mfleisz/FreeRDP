@@ -371,7 +371,7 @@ static BOOL rts_read_version(wStream* s, p_rt_version_t* version)
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(version);
 
-	if (!Stream_CheckAndLogRequiredLength(TAG, s, 2 * sizeof(UINT8)))
+	if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, 2, sizeof(UINT8)))
 		return FALSE;
 	Stream_Read_UINT8(s, version->major);
 	Stream_Read_UINT8(s, version->minor);
@@ -1319,7 +1319,7 @@ static BOOL rts_version_command_write(wStream* buffer)
 {
 	WINPR_ASSERT(buffer);
 
-	if (Stream_GetRemainingCapacity(buffer) < 8)
+	if (!Stream_CheckAndLogRequiredCapacity(TAG, (buffer), 8))
 		return FALSE;
 
 	Stream_Write_UINT32(buffer, RTS_CMD_VERSION); /* CommandType (4 bytes) */

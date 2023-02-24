@@ -4,6 +4,8 @@
  *
  * Copyright 2012 Marc-Andre Moreau <marcandre.moreau@gmail.com>
  * Copyright 2016 Armin Novak <armin.novak@gmail.com>
+ * Copyright 2023 Armin Novak <anovak@thincast.com>
+ * Copyright 2023 Thincast Technologies GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,8 +31,9 @@
 #include <winpr/assert.h>
 
 #include "../core/settings.h"
-#include "../core/certificate.h"
 #include "../core/capabilities.h"
+
+#include <freerdp/crypto/certificate.h>
 #include <freerdp/settings.h>
 #include <freerdp/freerdp.h>
 #include <freerdp/log.h>
@@ -1244,8 +1247,8 @@ BOOL freerdp_settings_set_value_for_name(rdpSettings* settings, const char* name
 static BOOL freerdp_settings_set_pointer_len_(rdpSettings* settings, size_t id, SSIZE_T lenId,
                                               const void* data, size_t len, size_t size)
 {
-	BOOL rc;
-	void* copy;
+	BOOL rc = FALSE;
+	void* copy = NULL;
 	void* old = freerdp_settings_get_pointer_writable(settings, id);
 	free(old);
 	if (!freerdp_settings_set_pointer(settings, id, NULL))
@@ -1301,7 +1304,7 @@ BOOL freerdp_settings_set_pointer_len(rdpSettings* settings, size_t id, const vo
 	switch (id)
 	{
 		case FreeRDP_RdpServerCertificate:
-			certificate_free(settings->RdpServerCertificate);
+			freerdp_certificate_free(settings->RdpServerCertificate);
 
 			if (len > 1)
 			{
@@ -1311,19 +1314,25 @@ BOOL freerdp_settings_set_pointer_len(rdpSettings* settings, size_t id, const vo
 			settings->RdpServerCertificate = cnv.v;
 			if (!settings->RdpServerCertificate && (len > 0))
 			{
-				settings->RdpServerCertificate = certificate_new();
+				settings->RdpServerCertificate = freerdp_certificate_new();
 				if (!settings->RdpServerCertificate)
 					return FALSE;
 			}
 			return TRUE;
 		case FreeRDP_RdpServerRsaKey:
-			key_free(settings->RdpServerRsaKey);
+			freerdp_key_free(settings->RdpServerRsaKey);
 			if (len > 1)
 			{
 				WLog_ERR(TAG, "FreeRDP_RdpServerRsaKey::len must be 0 or 1");
 				return FALSE;
 			}
-			settings->RdpServerRsaKey = (rdpRsaKey*)cnv.v;
+			settings->RdpServerRsaKey = (rdpPrivateKey*)cnv.v;
+			if (!settings->RdpServerRsaKey && (len > 0))
+			{
+				settings->RdpServerRsaKey = freerdp_key_new();
+				if (!settings->RdpServerRsaKey)
+					return FALSE;
+			}
 			return TRUE;
 		case FreeRDP_RedirectionPassword:
 			return freerdp_settings_set_pointer_len_(
@@ -1331,6 +1340,12 @@ BOOL freerdp_settings_set_pointer_len(rdpSettings* settings, size_t id, const vo
 		case FreeRDP_RedirectionTsvUrl:
 			return freerdp_settings_set_pointer_len_(settings, id, FreeRDP_RedirectionTsvUrlLength,
 			                                         data, len, sizeof(char));
+		case FreeRDP_RedirectionTargetCertificate:
+			return freerdp_settings_set_pointer_len_(
+			    settings, id, FreeRDP_RedirectionTargetCertificateLength, data, len, sizeof(BYTE));
+		case FreeRDP_RedirectionGuid:
+			return freerdp_settings_set_pointer_len_(settings, id, FreeRDP_RedirectionGuidLength,
+			                                         data, len, sizeof(BYTE));
 		case FreeRDP_LoadBalanceInfo:
 			return freerdp_settings_set_pointer_len_(settings, id, FreeRDP_LoadBalanceInfoLength,
 			                                         data, len, sizeof(char));
@@ -1444,7 +1459,7 @@ BOOL freerdp_settings_set_pointer_len(rdpSettings* settings, size_t id, const vo
 				freerdp_settings_set_pointer(settings, id, NULL);
 			}
 			else
-				WLog_WARN(TAG, "Invalid id %" PRIuz " for %s", id, __FUNCTION__);
+				WLog_WARN(TAG, "Invalid id %" PRIuz, id);
 			return FALSE;
 	}
 }
@@ -1564,7 +1579,7 @@ void* freerdp_settings_get_pointer_array_writable(const rdpSettings* settings, s
 			max = freerdp_settings_get_uint32(settings, FreeRDP_TargetNetAddressCount);
 			if (offset >= max)
 				goto fail;
-			return settings->TargetNetPorts[offset];
+			return &settings->TargetNetPorts[offset];
 		case FreeRDP_ClientTimeZone:
 			max = 1;
 			if (offset >= max)
@@ -1581,8 +1596,7 @@ void* freerdp_settings_get_pointer_array_writable(const rdpSettings* settings, s
 				goto fail;
 			return settings->RdpServerRsaKey;
 		default:
-			WLog_WARN(TAG, "Invalid id %s [%" PRIuz "] for %s",
-			          freerdp_settings_get_name_for_key(id), id, __FUNCTION__);
+			WLog_WARN(TAG, "Invalid id %s [%" PRIuz "]", freerdp_settings_get_name_for_key(id), id);
 			return NULL;
 	}
 
@@ -1742,8 +1756,7 @@ BOOL freerdp_settings_set_pointer_array(rdpSettings* settings, size_t id, size_t
 			return TRUE;
 
 		default:
-			WLog_WARN(TAG, "Invalid id %s [%" PRIuz "] for %s",
-			          freerdp_settings_get_name_for_key(id), id, __FUNCTION__);
+			WLog_WARN(TAG, "Invalid id %s [%" PRIuz "]", freerdp_settings_get_name_for_key(id), id);
 			return FALSE;
 	}
 
@@ -1942,7 +1955,7 @@ char* freerdp_rail_support_flags_to_string(UINT32 flags, char* buffer, size_t le
 		winpr_str_append("RAIL_LEVEL_HANDSHAKE_EX_SUPPORTED", buffer, length, "|");
 	if (flags & RAIL_LEVEL_LANGUAGE_IME_SYNC_SUPPORTED)
 		winpr_str_append("RAIL_LEVEL_LANGUAGE_IME_SYNC_SUPPORTED", buffer, length, "|");
-	if ((flags & mask) != 0)
+	if ((flags & ~mask) != 0)
 	{
 		char tbuffer[64] = { 0 };
 		_snprintf(tbuffer, sizeof(tbuffer), "RAIL_FLAG_UNKNOWN 0x%08" PRIx32, flags & mask);
@@ -2019,7 +2032,7 @@ BOOL freerdp_settings_set_string_from_utf16(rdpSettings* settings, size_t id, co
 	WINPR_ASSERT(settings);
 
 	if (!param)
-		return freerdp_settings_set_string_(settings, id, NULL, 0, TRUE, TRUE);
+		return freerdp_settings_set_string_copy_(settings, id, NULL, 0, TRUE);
 
 	size_t len = 0;
 
@@ -2027,7 +2040,7 @@ BOOL freerdp_settings_set_string_from_utf16(rdpSettings* settings, size_t id, co
 	if (!str && (len != 0))
 		return FALSE;
 
-	return freerdp_settings_set_string_(settings, id, str, len, FALSE, TRUE);
+	return freerdp_settings_set_string_(settings, id, str, len);
 }
 
 BOOL freerdp_settings_set_string_from_utf16N(rdpSettings* settings, size_t id, const WCHAR* param,
@@ -2038,13 +2051,19 @@ BOOL freerdp_settings_set_string_from_utf16N(rdpSettings* settings, size_t id, c
 	WINPR_ASSERT(settings);
 
 	if (!param)
-		return freerdp_settings_set_string_(settings, id, NULL, length, TRUE, TRUE);
+		return freerdp_settings_set_string_copy_(settings, id, NULL, length, TRUE);
 
 	char* str = ConvertWCharNToUtf8Alloc(param, length, &len);
 	if (!str && (length != 0))
-		return FALSE;
+	{
+		/* If the input string is an empty string, but length > 0
+		 * consider the conversion a success */
+		const size_t wlen = _wcsnlen(param, length);
+		if (wlen != 0)
+			return FALSE;
+	}
 
-	return freerdp_settings_set_string_(settings, id, str, len, FALSE, TRUE);
+	return freerdp_settings_set_string_(settings, id, str, len);
 }
 
 WCHAR* freerdp_settings_get_string_as_utf16(const rdpSettings* settings, size_t id,
@@ -2075,4 +2094,51 @@ const char* freerdp_rdpdr_dtyp_string(UINT32 type)
 		default:
 			return "RDPDR_DTYP_UNKNOWN";
 	}
+}
+
+const char* freerdp_encryption_level_string(UINT32 EncryptionLevel)
+{
+	switch (EncryptionLevel)
+	{
+		case ENCRYPTION_LEVEL_NONE:
+			return "ENCRYPTION_LEVEL_NONE";
+		case ENCRYPTION_LEVEL_LOW:
+			return "ENCRYPTION_LEVEL_LOW";
+		case ENCRYPTION_LEVEL_CLIENT_COMPATIBLE:
+			return "ENCRYPTION_LEVEL_CLIENT_COMPATIBLE";
+		case ENCRYPTION_LEVEL_HIGH:
+			return "ENCRYPTION_LEVEL_HIGH";
+		case ENCRYPTION_LEVEL_FIPS:
+			return "ENCRYPTION_LEVEL_FIPS";
+		default:
+			return "ENCRYPTION_LEVEL_UNKNOWN";
+	}
+}
+
+const char* freerdp_encryption_methods_string(UINT32 EncryptionMethods, char* buffer, size_t size)
+{
+	if (EncryptionMethods == ENCRYPTION_METHOD_NONE)
+	{
+		winpr_str_append("ENCRYPTION_METHOD_NONE", buffer, size, "|");
+		return buffer;
+	}
+
+	if (EncryptionMethods & ENCRYPTION_METHOD_40BIT)
+	{
+		winpr_str_append("ENCRYPTION_METHOD_40BIT", buffer, size, "|");
+	}
+	if (EncryptionMethods & ENCRYPTION_METHOD_128BIT)
+	{
+		winpr_str_append("ENCRYPTION_METHOD_128BIT", buffer, size, "|");
+	}
+	if (EncryptionMethods & ENCRYPTION_METHOD_56BIT)
+	{
+		winpr_str_append("ENCRYPTION_METHOD_56BIT", buffer, size, "|");
+	}
+	if (EncryptionMethods & ENCRYPTION_METHOD_FIPS)
+	{
+		winpr_str_append("ENCRYPTION_METHOD_FIPS", buffer, size, "|");
+	}
+
+	return buffer;
 }

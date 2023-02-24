@@ -5,6 +5,8 @@
  * Copyright 2009-2011 Jay Sorg
  * Copyright 2010-2012 Marc-Andre Moreau <marcandre.moreau@gmail.com>
  * Copyright 2016 Armin Novak <armin.novak@gmail.com>
+ * Copyright 2023 Armin Novak <anovak@thincast.com>
+ * Copyright 2023 Thincast Technologies GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +29,10 @@
 
 #include <freerdp/api.h>
 #include <freerdp/types.h>
+#include <freerdp/redirection.h>
+
+#include <freerdp/crypto/certificate.h>
+#include <freerdp/crypto/privatekey.h>
 
 /** \file
  * \brief This is the FreeRDP settings module.
@@ -117,7 +123,7 @@ typedef enum
 	RDP_VERSION_10_8 = 0x0008000D,
 	RDP_VERSION_10_9 = 0x0008000E,
 	RDP_VERSION_10_10 = 0x0008000F,
-	RDP_VERSION_10_11 = 0x00080010,
+	RDP_VERSION_10_11 = 0x00080010
 } RDP_VERSION;
 
 /* Color depth */
@@ -152,17 +158,20 @@ typedef enum
 #define RNS_UD_CS_SUPPORT_DYNVC_GFX_PROTOCOL 0x0100
 #define RNS_UD_CS_SUPPORT_DYNAMIC_TIME_ZONE 0x0200
 #define RNS_UD_CS_SUPPORT_HEARTBEAT_PDU 0x0400
+#define RNS_UD_CS_SUPPORT_SKIP_CHANNELJOIN 0x0800
 
 /* Early Capability Flags (Server to Client) */
-#define RNS_UD_SC_EDGE_ACTIONS_SUPPORTED 0x00000001
+#define RNS_UD_SC_EDGE_ACTIONS_SUPPORTED_V1 0x00000001
 #define RNS_UD_SC_DYNAMIC_DST_SUPPORTED 0x00000002
 #define RNS_UD_SC_EDGE_ACTIONS_SUPPORTED_V2 0x00000004
+#define RNS_UD_SC_SKIP_CHANNELJOIN_SUPPORTED 0x00000008
 
 /* Cluster Information Flags */
 #define REDIRECTION_SUPPORTED 0x00000001
 #define REDIRECTED_SESSIONID_FIELD_VALID 0x00000002
 #define REDIRECTED_SMARTCARD 0x00000040
 
+#define ServerSessionRedirectionVersionMask 0x0000003c
 #define REDIRECTION_VERSION1 0x00
 #define REDIRECTION_VERSION2 0x01
 #define REDIRECTION_VERSION3 0x02
@@ -264,23 +273,6 @@ typedef enum
 #define TSC_PROXY_CREDS_MODE_SMARTCARD 0x1
 #define TSC_PROXY_CREDS_MODE_ANY 0x2
 
-/* Redirection Flags */
-#define LB_TARGET_NET_ADDRESS 0x00000001
-#define LB_LOAD_BALANCE_INFO 0x00000002
-#define LB_USERNAME 0x00000004
-#define LB_DOMAIN 0x00000008
-#define LB_PASSWORD 0x00000010
-#define LB_DONTSTOREUSERNAME 0x00000020
-#define LB_SMARTCARD_LOGON 0x00000040
-#define LB_NOREDIRECT 0x00000080
-#define LB_TARGET_FQDN 0x00000100
-#define LB_TARGET_NETBIOS_NAME 0x00000200
-#define LB_TARGET_NET_ADDRESSES 0x00000800
-#define LB_CLIENT_TSV_URL 0x00001000
-#define LB_SERVER_TSV_CAPABLE 0x00002000
-
-#define LB_PASSWORD_MAX_LENGTH 512
-
 /* Keyboard Hook */
 #define KEYBOARD_HOOK_LOCAL 0
 #define KEYBOARD_HOOK_REMOTE 1
@@ -344,46 +336,6 @@ typedef struct
 	UINT32 logonId;
 	BYTE arcRandomBits[16];
 } ARC_SC_PRIVATE_PACKET;
-
-/* Certificates */
-
-struct rdp_CertBlob
-{
-	UINT32 length;
-	BYTE* data;
-};
-typedef struct rdp_CertBlob rdpCertBlob;
-
-struct rdp_X509CertChain
-{
-	UINT32 count;
-	rdpCertBlob* array;
-};
-typedef struct rdp_X509CertChain rdpX509CertChain;
-
-struct rdp_CertInfo
-{
-	BYTE* Modulus;
-	DWORD ModulusLength;
-	BYTE exponent[4];
-};
-typedef struct rdp_CertInfo rdpCertInfo;
-
-struct rdp_certificate
-{
-	rdpCertInfo cert_info;
-	rdpX509CertChain* x509_cert_chain;
-};
-typedef struct rdp_certificate rdpCertificate;
-
-typedef struct
-{
-	BYTE* Modulus;
-	DWORD ModulusLength;
-	BYTE* PrivateExponent;
-	DWORD PrivateExponentLength;
-	BYTE exponent[4];
-} rdpRsaKey;
 
 /* Channels */
 
@@ -563,6 +515,9 @@ typedef struct
 #define FreeRDP_DesktopOrientation (147)
 #define FreeRDP_DesktopScaleFactor (148)
 #define FreeRDP_DeviceScaleFactor (149)
+#define FreeRDP_SupportEdgeActionV1 (150)
+#define FreeRDP_SupportEdgeActionV2 (151)
+#define FreeRDP_SupportSkipChannelJoin (152)
 #define FreeRDP_UseRdpSecurityLayer (192)
 #define FreeRDP_EncryptionMethods (193)
 #define FreeRDP_ExtEncryptionMethods (194)
@@ -699,6 +654,10 @@ typedef struct
 #define FreeRDP_RedirectionAcceptedCert (1231)
 #define FreeRDP_RedirectionAcceptedCertLength (1232)
 #define FreeRDP_RedirectionPreferType (1233)
+#define FreeRDP_RedirectionGuid (1234)
+#define FreeRDP_RedirectionGuidLength (1235)
+#define FreeRDP_RedirectionTargetCertificate (1236)
+#define FreeRDP_RedirectionTargetCertificateLength (1237)
 #define FreeRDP_Password51 (1280)
 #define FreeRDP_Password51Length (1281)
 #define FreeRDP_SmartcardLogon (1282)
@@ -724,17 +683,12 @@ typedef struct
 #define FreeRDP_KerberosRdgIsProxy (1352)
 #define FreeRDP_IgnoreCertificate (1408)
 #define FreeRDP_CertificateName (1409)
-#define FreeRDP_CertificateFile (1410)
-#define FreeRDP_PrivateKeyFile (1411)
 #define FreeRDP_RdpServerRsaKey (1413)
 #define FreeRDP_RdpServerCertificate (1414)
 #define FreeRDP_ExternalCertificateManagement (1415)
-#define FreeRDP_CertificateContent (1416)
-#define FreeRDP_PrivateKeyContent (1417)
 #define FreeRDP_AutoAcceptCertificate (1419)
 #define FreeRDP_AutoDenyCertificate (1420)
 #define FreeRDP_CertificateAcceptedFingerprints (1421)
-#define FreeRDP_CertificateUseKnownHosts (1422)
 #define FreeRDP_CertificateCallbackPreferPEM (1423)
 #define FreeRDP_Workarea (1536)
 #define FreeRDP_Fullscreen (1537)
@@ -1021,7 +975,11 @@ struct rdp_settings
 	ALIGN64 UINT16 DesktopOrientation;    /* 147 */
 	ALIGN64 UINT32 DesktopScaleFactor;    /* 148 */
 	ALIGN64 UINT32 DeviceScaleFactor;     /* 149 */
-	UINT64 padding0192[192 - 150];        /* 150 */
+	ALIGN64 BOOL SupportEdgeActionV1;     /* 150 */
+	ALIGN64 BOOL SupportEdgeActionV2;     /* 151 */
+	ALIGN64 BOOL SupportSkipChannelJoin;  /* 152 */
+
+	UINT64 padding0192[192 - 153]; /* 153 */
 
 	/* Client/Server Security Data */
 	ALIGN64 BOOL UseRdpSecurityLayer;                /* 192 */
@@ -1214,7 +1172,11 @@ struct rdp_settings
 	ALIGN64 char* RedirectionAcceptedCert;        /* 1231 */
 	ALIGN64 UINT32 RedirectionAcceptedCertLength; /* 1232 */
 	ALIGN64 UINT32 RedirectionPreferType;         /* 1233 */
-	UINT64 padding1280[1280 - 1234];              /* 1234 */
+	ALIGN64 BYTE* RedirectionGuid;                /* 1234 */
+	ALIGN64 UINT32 RedirectionGuidLength;         /* 1235 */
+	ALIGN64 BYTE* RedirectionTargetCertificate;   /* 1236 */
+	ALIGN64 UINT32 RedirectionTargetCertificateLength; /* 1237 */
+	UINT64 padding1280[1280 - 1238];                   /* 1238 */
 
 	/**
 	 * Security
@@ -1256,19 +1218,15 @@ struct rdp_settings
 	/* Server Certificate */
 	ALIGN64 BOOL IgnoreCertificate;                /* 1408 */
 	ALIGN64 char* CertificateName;                 /* 1409 */
-	ALIGN64 char* CertificateFile;                 /* 1410 */
-	ALIGN64 char* PrivateKeyFile;                  /* 1411 */
-	UINT64 padding1412[1413 - 1412];               /* 1412 */
-	ALIGN64 rdpRsaKey* RdpServerRsaKey;            /* 1413 */
+	UINT64 padding1410[1413 - 1410];               /* 1410 */
+	ALIGN64 rdpPrivateKey* RdpServerRsaKey;        /* 1413 */
 	ALIGN64 rdpCertificate* RdpServerCertificate;  /* 1414 */
 	ALIGN64 BOOL ExternalCertificateManagement;    /* 1415 */
-	ALIGN64 char* CertificateContent;              /* 1416 */
-	ALIGN64 char* PrivateKeyContent;               /* 1417 */
-	UINT64 padding1418[1419 - 1418];               /* 1418 */
+	UINT64 padding1416[1419 - 1416];               /* 1416 */
 	ALIGN64 BOOL AutoAcceptCertificate;            /* 1419 */
 	ALIGN64 BOOL AutoDenyCertificate;              /* 1420 */
 	ALIGN64 char* CertificateAcceptedFingerprints; /* 1421 */
-	ALIGN64 BOOL CertificateUseKnownHosts;         /* 1422 */
+	UINT64 padding1422[1423 - 1422];               /* 1422 */
 	ALIGN64 BOOL CertificateCallbackPreferPEM;     /* 1423 */
 	UINT64 padding1472[1472 - 1424];               /* 1424 */
 	UINT64 padding1536[1536 - 1472];               /* 1472 */
@@ -2216,6 +2174,10 @@ extern "C"
 	 *  \return A string representation of the \b RDPDR_DTYP_* or "RDPDR_DTYP_UNKNOWN"
 	 */
 	FREERDP_API const char* freerdp_rdpdr_dtyp_string(UINT32 type);
+
+	FREERDP_API const char* freerdp_encryption_level_string(UINT32 EncryptionLevel);
+	FREERDP_API const char* freerdp_encryption_methods_string(UINT32 EncryptionLevel, char* buffer,
+	                                                          size_t size);
 
 #ifdef __cplusplus
 }

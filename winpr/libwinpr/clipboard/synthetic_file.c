@@ -49,11 +49,10 @@
 #include "../log.h"
 #define TAG WINPR_TAG("clipboard.synthetic.file")
 
-const char* mime_uri_list = "text/uri-list";
-const char* mime_FileGroupDescriptorW = "FileGroupDescriptorW";
-const char* mime_nautilus_clipboard = "x-special/nautilus-clipboard";
-const char* mime_gnome_copied_files = "x-special/gnome-copied-files";
-const char* mime_mate_copied_files = "x-special/mate-copied-files";
+static const char* mime_uri_list = "text/uri-list";
+static const char* mime_FileGroupDescriptorW = "FileGroupDescriptorW";
+static const char* mime_gnome_copied_files = "x-special/gnome-copied-files";
+static const char* mime_mate_copied_files = "x-special/mate-copied-files";
 
 struct synthetic_file
 {
@@ -727,19 +726,6 @@ static void* convert_mate_copied_files_to_filedescriptors(wClipboard* clipboard,
 	return convert_any_uri_list_to_filedescriptors(clipboard, formatId, pSize);
 }
 
-static void* convert_nautilus_clipboard_to_filedescriptors(wClipboard* clipboard, UINT32 formatId,
-                                                           const void* data, UINT32* pSize)
-{
-	const UINT32 expected = ClipboardGetFormatId(clipboard, mime_nautilus_clipboard);
-	if (formatId != expected)
-		return NULL;
-
-	if (!process_nautilus_clipboard(clipboard, (const char*)data, *pSize))
-		return NULL;
-
-	return convert_any_uri_list_to_filedescriptors(clipboard, formatId, pSize);
-}
-
 static size_t count_special_chars(const WCHAR* str)
 {
 	size_t count = 0;
@@ -917,9 +903,16 @@ static void* convert_filedescriptors_to_file_list(wClipboard* clipboard, UINT32 
 		const size_t endlen = strlen(lineending);
 		if (alloc > endlen)
 		{
-			if (memcmp(&dst[alloc - endlen - 1], lineending, endlen) == 0)
+			const size_t len = strnlen(dst, alloc);
+			if (len < endlen)
 			{
-				memset(&dst[alloc - endlen - 1], 0, endlen);
+				free(dst);
+				return NULL;
+			}
+
+			if (memcmp(&dst[len - endlen], lineending, endlen) == 0)
+			{
+				memset(&dst[len - endlen], 0, endlen);
 				alloc -= endlen;
 			}
 		}
@@ -939,8 +932,8 @@ static void* convert_filedescriptors_to_file_list(wClipboard* clipboard, UINT32 
 static void* convert_filedescriptors_to_uri_list(wClipboard* clipboard, UINT32 formatId,
                                                  const void* data, UINT32* pSize)
 {
-	return convert_filedescriptors_to_file_list(clipboard, formatId, data, pSize, "",
-	                                            "file:", "\r\n", FALSE);
+	return convert_filedescriptors_to_file_list(clipboard, formatId, data, pSize, "", "file://",
+	                                            "\r\n", FALSE);
 }
 
 /* Prepend header of common gnome format to file list*/
@@ -1008,7 +1001,6 @@ static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 	UINT32 local_file_format_id;
 	UINT32 local_gnome_file_format_id;
 	UINT32 local_mate_file_format_id;
-	UINT32 local_nautilus_file_format_id;
 
 	/*
 	    1. Gnome Nautilus based file manager (Nautilus only with version >= 3.30 AND < 40):
@@ -1033,12 +1025,11 @@ static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 
 	local_gnome_file_format_id = ClipboardRegisterFormat(clipboard, mime_gnome_copied_files);
 	local_mate_file_format_id = ClipboardRegisterFormat(clipboard, mime_mate_copied_files);
-	local_nautilus_file_format_id = ClipboardRegisterFormat(clipboard, mime_utf8_string);
 	file_group_format_id = ClipboardRegisterFormat(clipboard, mime_FileGroupDescriptorW);
 	local_file_format_id = ClipboardRegisterFormat(clipboard, mime_uri_list);
 
 	if (!file_group_format_id || !local_file_format_id || !local_gnome_file_format_id ||
-	    !local_mate_file_format_id || !local_nautilus_file_format_id)
+	    !local_mate_file_format_id)
 		goto error;
 
 	clipboard->localFiles = ArrayList_New(FALSE);
@@ -1071,16 +1062,6 @@ static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 
 	if (!ClipboardRegisterSynthesizer(clipboard, file_group_format_id, local_mate_file_format_id,
 	                                  convert_filedescriptors_to_mate_copied_files))
-		goto error_free_local_files;
-
-	if (!ClipboardRegisterSynthesizer(clipboard, local_nautilus_file_format_id,
-	                                  file_group_format_id,
-	                                  convert_nautilus_clipboard_to_filedescriptors))
-		goto error_free_local_files;
-
-	if (!ClipboardRegisterSynthesizer(clipboard, file_group_format_id,
-	                                  local_nautilus_file_format_id,
-	                                  convert_filedescriptors_to_nautilus_clipboard))
 		goto error_free_local_files;
 
 	return TRUE;
@@ -1180,7 +1161,7 @@ static UINT file_get_range(struct synthetic_file* file, UINT64 offset, UINT32 si
 		if (INVALID_HANDLE_VALUE == file->fd)
 		{
 			error = GetLastError();
-			WLog_ERR(TAG, "failed to open file %s: %s", file->local_name, error);
+			WLog_ERR(TAG, "failed to open file %s: 0x%08" PRIx32, file->local_name, error);
 			return error;
 		}
 
@@ -1189,7 +1170,7 @@ static UINT file_get_range(struct synthetic_file* file, UINT64 offset, UINT32 si
 			file->fd = INVALID_HANDLE_VALUE;
 			CloseHandle(file->fd);
 			error = GetLastError();
-			WLog_ERR(TAG, "Get file [%s] information fail: %d", file->local_name, error);
+			WLog_ERR(TAG, "Get file [%s] information fail: 0x%08" PRIx32, file->local_name, error);
 			return error;
 		}
 
@@ -1258,7 +1239,7 @@ static UINT file_get_range(struct synthetic_file* file, UINT64 offset, UINT32 si
 	{
 		free(buffer);
 	}
-	synthetic_file_read_close(file, (error != NO_ERROR) && (size > 0));
+	synthetic_file_read_close(file, TRUE /* (error != NO_ERROR) && (size > 0) */);
 	return error;
 }
 

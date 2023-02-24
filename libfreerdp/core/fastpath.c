@@ -46,6 +46,18 @@
 
 #define TAG FREERDP_TAG("core.fastpath")
 
+enum FASTPATH_INPUT_ENCRYPTION_FLAGS
+{
+	FASTPATH_INPUT_SECURE_CHECKSUM = 0x1,
+	FASTPATH_INPUT_ENCRYPTED = 0x2
+};
+
+enum FASTPATH_OUTPUT_ENCRYPTION_FLAGS
+{
+	FASTPATH_OUTPUT_SECURE_CHECKSUM = 0x1,
+	FASTPATH_OUTPUT_ENCRYPTED = 0x2
+};
+
 struct rdp_fastpath
 {
 	rdpRdp* rdp;
@@ -107,29 +119,28 @@ static BOOL fastpath_read_update_header(wStream* s, BYTE* updateCode, BYTE* frag
 	return TRUE;
 }
 
-static BOOL fastpath_write_update_header(wStream* s, FASTPATH_UPDATE_HEADER* fpUpdateHeader)
+static BOOL fastpath_write_update_header(wStream* s, const FASTPATH_UPDATE_HEADER* fpUpdateHeader)
 {
-	if (!s || !fpUpdateHeader)
-		return FALSE;
+	BYTE updateHeader = 0;
+	WINPR_ASSERT(fpUpdateHeader);
 
-	fpUpdateHeader->updateHeader = 0;
-	fpUpdateHeader->updateHeader |= fpUpdateHeader->updateCode & 0x0F;
-	fpUpdateHeader->updateHeader |= (fpUpdateHeader->fragmentation & 0x03) << 4;
-	fpUpdateHeader->updateHeader |= (fpUpdateHeader->compression & 0x03) << 6;
+	updateHeader |= fpUpdateHeader->updateCode & 0x0F;
+	updateHeader |= (fpUpdateHeader->fragmentation & 0x03) << 4;
+	updateHeader |= (fpUpdateHeader->compression & 0x03) << 6;
 
-	if (Stream_GetRemainingCapacity(s) < 1)
+	if (!Stream_CheckAndLogRequiredCapacity(TAG, s, 1))
 		return FALSE;
-	Stream_Write_UINT8(s, fpUpdateHeader->updateHeader);
+	Stream_Write_UINT8(s, updateHeader);
 
 	if (fpUpdateHeader->compression)
 	{
-		if (Stream_GetRemainingCapacity(s) < 1)
+		if (!Stream_CheckAndLogRequiredCapacity(TAG, s, 1))
 			return FALSE;
 
 		Stream_Write_UINT8(s, fpUpdateHeader->compressionFlags);
 	}
 
-	if (Stream_GetRemainingCapacity(s) < 2)
+	if (!Stream_CheckAndLogRequiredCapacity(TAG, s, 2))
 		return FALSE;
 
 	Stream_Write_UINT16(s, fpUpdateHeader->size);
@@ -143,19 +154,19 @@ static UINT32 fastpath_get_update_header_size(FASTPATH_UPDATE_HEADER* fpUpdateHe
 }
 
 static BOOL fastpath_write_update_pdu_header(wStream* s,
-                                             FASTPATH_UPDATE_PDU_HEADER* fpUpdatePduHeader,
+                                             const FASTPATH_UPDATE_PDU_HEADER* fpUpdatePduHeader,
                                              rdpRdp* rdp)
 {
-	if (!s || !fpUpdatePduHeader || !rdp)
+	BYTE fpOutputHeader = 0;
+	WINPR_ASSERT(fpUpdatePduHeader);
+	WINPR_ASSERT(rdp);
+
+	if (!Stream_CheckAndLogRequiredCapacity(TAG, s, 3))
 		return FALSE;
 
-	if (Stream_GetRemainingCapacity(s) < 3)
-		return FALSE;
-
-	fpUpdatePduHeader->fpOutputHeader = 0;
-	fpUpdatePduHeader->fpOutputHeader |= (fpUpdatePduHeader->action & 0x03);
-	fpUpdatePduHeader->fpOutputHeader |= (fpUpdatePduHeader->secFlags & 0x03) << 6;
-	Stream_Write_UINT8(s, fpUpdatePduHeader->fpOutputHeader);       /* fpOutputHeader (1 byte) */
+	fpOutputHeader |= (fpUpdatePduHeader->action & 0x03);
+	fpOutputHeader |= (fpUpdatePduHeader->secFlags & 0x03) << 6;
+	Stream_Write_UINT8(s, fpOutputHeader);                          /* fpOutputHeader (1 byte) */
 	Stream_Write_UINT8(s, 0x80 | (fpUpdatePduHeader->length >> 8)); /* length1 */
 	Stream_Write_UINT8(s, fpUpdatePduHeader->length & 0xFF);        /* length2 */
 
@@ -164,19 +175,19 @@ static BOOL fastpath_write_update_pdu_header(wStream* s,
 		WINPR_ASSERT(rdp->settings);
 		if (rdp->settings->EncryptionMethods == ENCRYPTION_METHOD_FIPS)
 		{
-			if (Stream_GetRemainingCapacity(s) < 4)
+			if (!Stream_CheckAndLogRequiredCapacity(TAG, s, 4))
 				return FALSE;
 
 			Stream_Write(s, fpUpdatePduHeader->fipsInformation, 4);
 		}
 
-		if (Stream_GetRemainingCapacity(s) < 8)
+		if (!Stream_CheckAndLogRequiredCapacity(TAG, s, 8))
 			return FALSE;
 
 		Stream_Write(s, fpUpdatePduHeader->dataSignature, 8);
 	}
 
-	return FALSE;
+	return TRUE;
 }
 
 static UINT32 fastpath_get_update_pdu_header_size(FASTPATH_UPDATE_PDU_HEADER* fpUpdatePduHeader,
@@ -323,8 +334,9 @@ static BOOL fastpath_recv_update_synchronize(rdpFastPath* fastpath, wStream* s)
 	WINPR_ASSERT(fastpath);
 	WINPR_ASSERT(s);
 
-	Stream_SafeSeek(s, 2); /* size (2 bytes), MUST be set to zero */
-	return TRUE;
+	const size_t len = Stream_GetRemainingLength(s);
+	const size_t skip = MIN(2, len);
+	return Stream_SafeSeek(s, skip); /* size (2 bytes), MUST be set to zero */
 }
 
 static int fastpath_recv_update(rdpFastPath* fastpath, BYTE updateCode, wStream* s)
@@ -936,7 +948,7 @@ BOOL fastpath_send_multiple_input_pdu(rdpFastPath* fastpath, wStream* s, size_t 
 	state = rdp_get_state(rdp);
 	if (!rdp_is_active_state(rdp))
 	{
-		WLog_WARN(TAG, "[%s] called before activation [%s]", __FUNCTION__, rdp_state_string(state));
+		WLog_WARN(TAG, "called before activation [%s]", rdp_state_string(state));
 		goto fail;
 	}
 
@@ -972,6 +984,10 @@ BOOL fastpath_send_multiple_input_pdu(rdpFastPath* fastpath, wStream* s, size_t 
 
 	if (rdp->sec_flags & SEC_ENCRYPT)
 	{
+		BOOL status = FALSE;
+		if (!security_lock(rdp))
+			goto fail;
+
 		int sec_bytes = fastpath_get_sec_bytes(fastpath->rdp);
 		BYTE* fpInputEvents = Stream_Pointer(s) + sec_bytes;
 		UINT16 fpInputEvents_length = length - 3 - sec_bytes;
@@ -988,32 +1004,43 @@ BOOL fastpath_send_multiple_input_pdu(rdpFastPath* fastpath, wStream* s, size_t 
 			Stream_Write_UINT8(s, 0x1);   /* TSFIPS_VERSION 1*/
 			Stream_Write_UINT8(s, pad);   /* padding */
 
-			if (!security_hmac_signature(fpInputEvents, fpInputEvents_length, Stream_Pointer(s),
+			if (!Stream_CheckAndLogRequiredCapacity(TAG, s, 8))
+				goto unlock;
+
+			if (!security_hmac_signature(fpInputEvents, fpInputEvents_length, Stream_Pointer(s), 8,
 			                             rdp))
-				goto fail;
+				goto unlock;
 
 			if (pad)
 				memset(fpInputEvents + fpInputEvents_length, 0, pad);
 
 			if (!security_fips_encrypt(fpInputEvents, fpInputEvents_length + pad, rdp))
-				goto fail;
+				goto unlock;
 
 			length += pad;
 		}
 		else
 		{
-			BOOL status;
-
+			BOOL res;
+			if (!Stream_CheckAndLogRequiredCapacity(TAG, s, 8))
+				goto unlock;
 			if (rdp->sec_flags & SEC_SECURE_CHECKSUM)
-				status = security_salted_mac_signature(rdp, fpInputEvents, fpInputEvents_length,
-				                                       TRUE, Stream_Pointer(s));
+				res = security_salted_mac_signature(rdp, fpInputEvents, fpInputEvents_length, TRUE,
+				                                    Stream_Pointer(s), 8);
 			else
-				status = security_mac_signature(rdp, fpInputEvents, fpInputEvents_length,
-				                                Stream_Pointer(s));
+				res = security_mac_signature(rdp, fpInputEvents, fpInputEvents_length,
+				                             Stream_Pointer(s), 8);
 
-			if (!status || !security_encrypt(fpInputEvents, fpInputEvents_length, rdp))
-				goto fail;
+			if (!res || !security_encrypt(fpInputEvents, fpInputEvents_length, rdp))
+				goto unlock;
 		}
+
+		status = TRUE;
+	unlock:
+		if (!security_unlock(rdp))
+			goto fail;
+		if (!status)
+			goto fail;
 	}
 
 	rdp->sec_flags = 0;
@@ -1195,10 +1222,12 @@ BOOL fastpath_send_update_pdu(rdpFastPath* fastpath, BYTE updateCode, wStream* s
 
 		fpUpdatePduHeader.length = fpUpdateHeader.size + fpHeaderSize + pad;
 		Stream_SetPosition(fs, 0);
-		fastpath_write_update_pdu_header(fs, &fpUpdatePduHeader, rdp);
-		fastpath_write_update_header(fs, &fpUpdateHeader);
+		if (!fastpath_write_update_pdu_header(fs, &fpUpdatePduHeader, rdp))
+			return FALSE;
+		if (!fastpath_write_update_header(fs, &fpUpdateHeader))
+			return FALSE;
 
-		if (Stream_GetRemainingCapacity(fs) < (size_t)DstSize + pad)
+		if (!Stream_CheckAndLogRequiredCapacity(TAG, (fs), (size_t)DstSize + pad))
 			return FALSE;
 		Stream_Write(fs, pDstData, DstSize);
 
@@ -1207,26 +1236,40 @@ BOOL fastpath_send_update_pdu(rdpFastPath* fastpath, BYTE updateCode, wStream* s
 
 		if (rdp->sec_flags & SEC_ENCRYPT)
 		{
+			BOOL res = FALSE;
+			if (!security_lock(rdp))
+				return FALSE;
 			UINT32 dataSize = fpUpdateHeaderSize + DstSize + pad;
 			BYTE* data = Stream_Pointer(fs) - dataSize;
 
 			if (rdp->settings->EncryptionMethods == ENCRYPTION_METHOD_FIPS)
 			{
-				if (!security_hmac_signature(data, dataSize - pad, pSignature, rdp))
-					return FALSE;
+				// TODO: Ensure stream capacity
+				if (!security_hmac_signature(data, dataSize - pad, pSignature, 8, rdp))
+					goto unlock;
 
-				security_fips_encrypt(data, dataSize, rdp);
+				if (!security_fips_encrypt(data, dataSize, rdp))
+					goto unlock;
 			}
 			else
 			{
+				// TODO: Ensure stream capacity
 				if (rdp->sec_flags & SEC_SECURE_CHECKSUM)
-					status = security_salted_mac_signature(rdp, data, dataSize, TRUE, pSignature);
+					status =
+					    security_salted_mac_signature(rdp, data, dataSize, TRUE, pSignature, 8);
 				else
-					status = security_mac_signature(rdp, data, dataSize, pSignature);
+					status = security_mac_signature(rdp, data, dataSize, pSignature, 8);
 
 				if (!status || !security_encrypt(data, dataSize, rdp))
-					return FALSE;
+					goto unlock;
 			}
+			res = TRUE;
+
+		unlock:
+			if (!security_unlock(rdp))
+				return FALSE;
+			if (!res)
+				return FALSE;
 		}
 
 		Stream_SealLength(fs);
@@ -1283,4 +1326,21 @@ BYTE fastpath_get_encryption_flags(rdpFastPath* fastpath)
 {
 	WINPR_ASSERT(fastpath);
 	return fastpath->encryptionFlags;
+}
+
+BOOL fastpath_decrypt(rdpFastPath* fastpath, wStream* s, UINT16* length)
+{
+	WINPR_ASSERT(fastpath);
+	if (fastpath_get_encryption_flags(fastpath) & FASTPATH_OUTPUT_ENCRYPTED)
+	{
+		const UINT16 flags =
+		    (fastpath_get_encryption_flags(fastpath) & FASTPATH_OUTPUT_SECURE_CHECKSUM)
+		        ? SEC_SECURE_CHECKSUM
+		        : 0;
+
+		if (!rdp_decrypt(fastpath->rdp, s, length, flags))
+			return FALSE;
+	}
+
+	return TRUE;
 }

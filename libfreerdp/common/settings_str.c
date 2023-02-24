@@ -52,8 +52,6 @@ static const struct settings_str_entry settings_map[] = {
 	  "FreeRDP_BitmapCompressionDisabled" },
 	{ FreeRDP_CertificateCallbackPreferPEM, FREERDP_SETTINGS_TYPE_BOOL,
 	  "FreeRDP_CertificateCallbackPreferPEM" },
-	{ FreeRDP_CertificateUseKnownHosts, FREERDP_SETTINGS_TYPE_BOOL,
-	  "FreeRDP_CertificateUseKnownHosts" },
 	{ FreeRDP_CompressionEnabled, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_CompressionEnabled" },
 	{ FreeRDP_ConsoleSession, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_ConsoleSession" },
 	{ FreeRDP_CredentialsFromStdin, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_CredentialsFromStdin" },
@@ -206,6 +204,8 @@ static const struct settings_str_entry settings_map[] = {
 	{ FreeRDP_SupportDynamicTimeZone, FREERDP_SETTINGS_TYPE_BOOL,
 	  "FreeRDP_SupportDynamicTimeZone" },
 	{ FreeRDP_SupportEchoChannel, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_SupportEchoChannel" },
+	{ FreeRDP_SupportEdgeActionV1, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_SupportEdgeActionV1" },
+	{ FreeRDP_SupportEdgeActionV2, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_SupportEdgeActionV2" },
 	{ FreeRDP_SupportErrorInfoPdu, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_SupportErrorInfoPdu" },
 	{ FreeRDP_SupportGeometryTracking, FREERDP_SETTINGS_TYPE_BOOL,
 	  "FreeRDP_SupportGeometryTracking" },
@@ -217,6 +217,8 @@ static const struct settings_str_entry settings_map[] = {
 	{ FreeRDP_SupportMultitransport, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_SupportMultitransport" },
 	{ FreeRDP_SupportSSHAgentChannel, FREERDP_SETTINGS_TYPE_BOOL,
 	  "FreeRDP_SupportSSHAgentChannel" },
+	{ FreeRDP_SupportSkipChannelJoin, FREERDP_SETTINGS_TYPE_BOOL,
+	  "FreeRDP_SupportSkipChannelJoin" },
 	{ FreeRDP_SupportStatusInfoPdu, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_SupportStatusInfoPdu" },
 	{ FreeRDP_SupportVideoOptimized, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_SupportVideoOptimized" },
 	{ FreeRDP_SuppressOutput, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_SuppressOutput" },
@@ -358,10 +360,14 @@ static const struct settings_str_entry settings_map[] = {
 	{ FreeRDP_RedirectionAcceptedCertLength, FREERDP_SETTINGS_TYPE_UINT32,
 	  "FreeRDP_RedirectionAcceptedCertLength" },
 	{ FreeRDP_RedirectionFlags, FREERDP_SETTINGS_TYPE_UINT32, "FreeRDP_RedirectionFlags" },
+	{ FreeRDP_RedirectionGuidLength, FREERDP_SETTINGS_TYPE_UINT32,
+	  "FreeRDP_RedirectionGuidLength" },
 	{ FreeRDP_RedirectionPasswordLength, FREERDP_SETTINGS_TYPE_UINT32,
 	  "FreeRDP_RedirectionPasswordLength" },
 	{ FreeRDP_RedirectionPreferType, FREERDP_SETTINGS_TYPE_UINT32,
 	  "FreeRDP_RedirectionPreferType" },
+	{ FreeRDP_RedirectionTargetCertificateLength, FREERDP_SETTINGS_TYPE_UINT32,
+	  "FreeRDP_RedirectionTargetCertificateLength" },
 	{ FreeRDP_RedirectionTsvUrlLength, FREERDP_SETTINGS_TYPE_UINT32,
 	  "FreeRDP_RedirectionTsvUrlLength" },
 	{ FreeRDP_RemoteAppNumIconCacheEntries, FREERDP_SETTINGS_TYPE_UINT32,
@@ -427,8 +433,6 @@ static const struct settings_str_entry settings_map[] = {
 	{ FreeRDP_CardName, FREERDP_SETTINGS_TYPE_STRING, "FreeRDP_CardName" },
 	{ FreeRDP_CertificateAcceptedFingerprints, FREERDP_SETTINGS_TYPE_STRING,
 	  "FreeRDP_CertificateAcceptedFingerprints" },
-	{ FreeRDP_CertificateContent, FREERDP_SETTINGS_TYPE_STRING, "FreeRDP_CertificateContent" },
-	{ FreeRDP_CertificateFile, FREERDP_SETTINGS_TYPE_STRING, "FreeRDP_CertificateFile" },
 	{ FreeRDP_CertificateName, FREERDP_SETTINGS_TYPE_STRING, "FreeRDP_CertificateName" },
 	{ FreeRDP_ClientAddress, FREERDP_SETTINGS_TYPE_STRING, "FreeRDP_ClientAddress" },
 	{ FreeRDP_ClientDir, FREERDP_SETTINGS_TYPE_STRING, "FreeRDP_ClientDir" },
@@ -471,8 +475,6 @@ static const struct settings_str_entry settings_map[] = {
 	{ FreeRDP_PkinitAnchors, FREERDP_SETTINGS_TYPE_STRING, "FreeRDP_PkinitAnchors" },
 	{ FreeRDP_PlayRemoteFxFile, FREERDP_SETTINGS_TYPE_STRING, "FreeRDP_PlayRemoteFxFile" },
 	{ FreeRDP_PreconnectionBlob, FREERDP_SETTINGS_TYPE_STRING, "FreeRDP_PreconnectionBlob" },
-	{ FreeRDP_PrivateKeyContent, FREERDP_SETTINGS_TYPE_STRING, "FreeRDP_PrivateKeyContent" },
-	{ FreeRDP_PrivateKeyFile, FREERDP_SETTINGS_TYPE_STRING, "FreeRDP_PrivateKeyFile" },
 	{ FreeRDP_ProxyHostname, FREERDP_SETTINGS_TYPE_STRING, "FreeRDP_ProxyHostname" },
 	{ FreeRDP_ProxyPassword, FREERDP_SETTINGS_TYPE_STRING, "FreeRDP_ProxyPassword" },
 	{ FreeRDP_ProxyUsername, FREERDP_SETTINGS_TYPE_STRING, "FreeRDP_ProxyUsername" },
@@ -550,7 +552,10 @@ static const struct settings_str_entry settings_map[] = {
 	  "FreeRDP_ReceivedCapabilityData" },
 	{ FreeRDP_ReceivedCapabilityDataSizes, FREERDP_SETTINGS_TYPE_POINTER,
 	  "FreeRDP_ReceivedCapabilityDataSizes" },
+	{ FreeRDP_RedirectionGuid, FREERDP_SETTINGS_TYPE_POINTER, "FreeRDP_RedirectionGuid" },
 	{ FreeRDP_RedirectionPassword, FREERDP_SETTINGS_TYPE_POINTER, "FreeRDP_RedirectionPassword" },
+	{ FreeRDP_RedirectionTargetCertificate, FREERDP_SETTINGS_TYPE_POINTER,
+	  "FreeRDP_RedirectionTargetCertificate" },
 	{ FreeRDP_RedirectionTsvUrl, FREERDP_SETTINGS_TYPE_POINTER, "FreeRDP_RedirectionTsvUrl" },
 	{ FreeRDP_ServerAutoReconnectCookie, FREERDP_SETTINGS_TYPE_POINTER,
 	  "FreeRDP_ServerAutoReconnectCookie" },
@@ -632,7 +637,7 @@ BOOL freerdp_settings_clone_keys(rdpSettings* dst, const rdpSettings* src)
 				size_t len = 0;
 				if (sval)
 					len = strlen(sval);
-				if (!freerdp_settings_set_string_(dst, cur->id, sval, len, TRUE, FALSE))
+				if (!freerdp_settings_set_string_copy_(dst, cur->id, sval, len, FALSE))
 					return FALSE;
 			}
 			break;
@@ -854,7 +859,7 @@ void freerdp_settings_free_keys(rdpSettings* dst, BOOL cleanup)
 		switch(cur->type)
 		{
 			case 7: /* strings */
-				freerdp_settings_set_string_(dst, cur->id, NULL, 0, TRUE, cleanup);
+				freerdp_settings_set_string_copy_(dst, cur->id, NULL, 0, cleanup);
 				break;
 			case 8: /* pointer */
 				freerdp_settings_set_pointer_len(dst, cur->id, NULL, 0);

@@ -3,7 +3,8 @@
  * Virtual GIDS implementation
  *
  * Copyright 2021 Martin Fleisz <martin.fleisz@thincast.com>
- * Copyright 2021 Thincast Technologies GmbH
+ * Copyright 2023 Armin Novak <anovak@thincast.com>
+ * Copyright 2021,2023 Thincast Technologies GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,13 +25,12 @@
 #include <winpr/stream.h>
 #include <winpr/collections.h>
 
-#include <openssl/bn.h>
-#include <openssl/pem.h>
-#include <openssl/rsa.h>
-#include <openssl/rand.h>
+#include <freerdp/crypto/crypto.h>
 
 #include <zlib.h>
 
+#include "../../crypto/certificate.h"
+#include "../../crypto/privatekey.h"
 #include "smartcard_virtual_gids.h"
 
 #define TAG CHANNELS_TAG("smartcard.vgids")
@@ -140,10 +140,8 @@ struct vgids_context
 	BOOL pinVerified;
 	vgidsSE currentSE;
 
-	X509* certificate;
-
-	RSA* publicKey;
-	RSA* privateKey;
+	rdpCertificate* certificate;
+	rdpPrivateKey* privateKey;
 
 	wArrayList* files;
 };
@@ -444,38 +442,31 @@ static BOOL vgids_prepare_fstable(const vgidsFilesysTableEntry* fstable, DWORD n
 	return TRUE;
 }
 
-static BOOL vgids_prepare_certificate(X509* cert, BYTE** kxc, DWORD* kxcSize)
+static BOOL vgids_prepare_certificate(const rdpCertificate* cert, BYTE** kxc, DWORD* kxcSize)
 {
 	/* Key exchange container:
 	    UINT16 compression version: 0001
 	    UINT16 source size
 	    ZLIB compressed cert
 	*/
-	BYTE* i2dParam;
 	uLongf destSize;
 	wStream* s = NULL;
-	BYTE* certData = NULL;
 	BYTE* comprData = NULL;
-	int certSize = i2d_X509(cert, NULL);
-	if (certSize < 0)
+
+	WINPR_ASSERT(cert);
+
+	size_t certSize = 0;
+	BYTE* certData = freerdp_certificate_get_der(cert, &certSize);
+	if (!certData || (certSize == 0))
 	{
 		WLog_ERR(TAG, "Failed to get certificate size");
 		goto handle_error;
 	}
 
-	certData = malloc(certSize);
 	comprData = malloc(certSize);
-	if (!certData || !comprData)
+	if (!comprData)
 	{
 		WLog_ERR(TAG, "Failed to allocate certificate buffer");
-		goto handle_error;
-	}
-
-	/* serialize certificate to buffer (out buffer pointer is modified so pass a copy!) */
-	i2dParam = certData;
-	if (i2d_X509(cert, &i2dParam) < 0)
-	{
-		WLog_ERR(TAG, "Failed to encode X509 certificate to DER");
 		goto handle_error;
 	}
 
@@ -509,10 +500,23 @@ handle_error:
 	return FALSE;
 }
 
+static int get_rsa_key_size(const rdpPrivateKey* privateKey)
+{
+	WINPR_ASSERT(privateKey);
+	RSA* rsa = freerdp_key_get_RSA(privateKey);
+	if (!rsa)
+		return -1;
+
+	const int size = RSA_size(rsa);
+	RSA_free(rsa);
+	return size;
+}
+
 static BYTE vgids_get_algid(vgidsContext* p_Ctx)
 {
-	int modulusSize = RSA_size(p_Ctx->privateKey);
-	switch (modulusSize)
+	WINPR_ASSERT(p_Ctx);
+
+	switch (get_rsa_key_size(p_Ctx->privateKey))
 	{
 		case (1024 / 8):
 			return VGIDS_ALGID_RSA_1024;
@@ -796,16 +800,22 @@ static UINT16 vgids_handle_chained_response(vgidsContext* context, const BYTE** 
 
 static BOOL vgids_get_public_key(vgidsContext* context, UINT16 doTag)
 {
+	BOOL rc = FALSE;
 	BYTE* buf = NULL;
 	wStream* pubKey = NULL;
 	wStream* response = NULL;
-	const BIGNUM *n, *e;
-	int nSize, eSize;
+
+	WINPR_ASSERT(context);
 
 	/* Get key components */
-	RSA_get0_key(context->publicKey, &n, &e, NULL);
-	nSize = BN_num_bytes(n);
-	eSize = BN_num_bytes(e);
+	RSA* rsa = freerdp_certificate_get_RSA(context->certificate);
+	if (!rsa)
+		return FALSE;
+	const BIGNUM *n, *e;
+	RSA_get0_key(rsa, &n, &e, NULL);
+
+	const size_t nSize = BN_num_bytes(n);
+	const size_t eSize = BN_num_bytes(e);
 
 	buf = malloc(nSize > eSize ? nSize : eSize);
 	if (!buf)
@@ -845,15 +855,14 @@ static BOOL vgids_get_public_key(vgidsContext* context, UINT16 doTag)
 	Stream_SetPosition(response, 0);
 	context->responseData = response;
 
-	free(buf);
-	Stream_Free(pubKey, TRUE);
-	return TRUE;
-
+	rc = TRUE;
 handle_error:
 	free(buf);
+	RSA_free(rsa);
 	Stream_Free(pubKey, TRUE);
-	Stream_Free(response, TRUE);
-	return FALSE;
+	if (!rc)
+		Stream_Free(response, TRUE);
+	return rc;
 }
 
 static BOOL vgids_ins_getdata(vgidsContext* context, wStream* s, BYTE** response,
@@ -1035,7 +1044,7 @@ static BOOL vgids_perform_digital_signature(vgidsContext* context)
 	size_t sigSize, msgSize;
 	EVP_PKEY_CTX* ctx = NULL;
 	EVP_PKEY* pk = EVP_PKEY_new();
-	vgidsDigestInfoMap gidsDigestInfo[VGIDS_MAX_DIGEST_INFO] = {
+	const vgidsDigestInfoMap gidsDigestInfo[VGIDS_MAX_DIGEST_INFO] = {
 		{ g_PKCS1_SHA1, sizeof(g_PKCS1_SHA1), EVP_sha1() },
 		{ g_PKCS1_SHA224, sizeof(g_PKCS1_SHA224), EVP_sha224() },
 		{ g_PKCS1_SHA256, sizeof(g_PKCS1_SHA256), EVP_sha256() },
@@ -1051,7 +1060,11 @@ static BOOL vgids_perform_digital_signature(vgidsContext* context)
 		return FALSE;
 	}
 
-	EVP_PKEY_set1_RSA(pk, context->privateKey);
+	RSA* rsa = freerdp_key_get_RSA(context->privateKey);
+	if (!rsa)
+		return FALSE;
+
+	EVP_PKEY_set1_RSA(pk, rsa);
 	vgids_reset_context_response(context);
 
 	/* for each digest info */
@@ -1129,6 +1142,7 @@ static BOOL vgids_perform_digital_signature(vgidsContext* context)
 	}
 
 	EVP_PKEY_free(pk);
+	RSA_free(rsa);
 	vgids_reset_context_command_data(context);
 	return TRUE;
 
@@ -1137,11 +1151,13 @@ sign_failed:
 	vgids_reset_context_response(context);
 	EVP_PKEY_CTX_free(ctx);
 	EVP_PKEY_free(pk);
+	RSA_free(rsa);
 	return FALSE;
 }
 
 static BOOL vgids_perform_decrypt(vgidsContext* context)
 {
+	BOOL rc = FALSE;
 	int res;
 	int padding = RSA_NO_PADDING;
 
@@ -1154,7 +1170,11 @@ static BOOL vgids_perform_decrypt(vgidsContext* context)
 		padding = RSA_PKCS1_OAEP_PADDING;
 
 	/* init response buffer */
-	context->responseData = Stream_New(NULL, RSA_size(context->privateKey));
+	RSA* rsa = freerdp_key_get_RSA(context->privateKey);
+	if (!rsa)
+		goto decrypt_failed;
+
+	context->responseData = Stream_New(NULL, RSA_size(rsa));
 	if (!context->responseData)
 	{
 		WLog_ERR(TAG, "Failed to create decryption buffer");
@@ -1164,7 +1184,8 @@ static BOOL vgids_perform_decrypt(vgidsContext* context)
 	/* Determine buffer length */
 	res = RSA_private_decrypt((int)Stream_Length(context->commandData),
 	                          Stream_Buffer(context->commandData),
-	                          Stream_Buffer(context->responseData), context->privateKey, padding);
+	                          Stream_Buffer(context->responseData), rsa, padding);
+
 	if (res < 0)
 	{
 		WLog_ERR(TAG, "Failed to decrypt data");
@@ -1172,13 +1193,14 @@ static BOOL vgids_perform_decrypt(vgidsContext* context)
 	}
 
 	Stream_SetLength(context->responseData, res);
-	vgids_reset_context_command_data(context);
-	return TRUE;
+	rc = TRUE;
 
 decrypt_failed:
+	RSA_free(rsa);
 	vgids_reset_context_command_data(context);
-	vgids_reset_context_response(context);
-	return FALSE;
+	if (!rc)
+		vgids_reset_context_response(context);
+	return rc;
 }
 
 static BOOL vgids_ins_perform_security_operation(vgidsContext* context, wStream* s, BYTE** response,
@@ -1417,12 +1439,9 @@ BOOL vgids_init(vgidsContext* ctx, const char* cert, const char* privateKey, con
 	DWORD keymapSize;
 	DWORD fsTableSize;
 	BOOL rc = FALSE;
-	BIO* certBio = NULL;
-	BIO* privateKeyBio = NULL;
 	BYTE* kxc = NULL;
 	BYTE* keymap = NULL;
 	BYTE* fsTable = NULL;
-	EVP_PKEY* pubKey = NULL;
 	vgidsEF* masterEF = NULL;
 	vgidsEF* cardidEF = NULL;
 	vgidsEF* commonEF = NULL;
@@ -1452,23 +1471,11 @@ BOOL vgids_init(vgidsContext* ctx, const char* cert, const char* privateKey, con
 	}
 
 	/* Convert PEM input to DER certificate/public key/private key */
-	certBio = BIO_new_mem_buf((const void*)cert, (int)strlen(cert));
-	if (!certBio)
-		goto init_failed;
-	ctx->certificate = PEM_read_bio_X509(certBio, NULL, NULL, NULL);
+	ctx->certificate = freerdp_certificate_new_from_pem(cert);
 	if (!ctx->certificate)
 		goto init_failed;
-	pubKey = X509_get_pubkey(ctx->certificate);
-	if (!pubKey)
-		goto init_failed;
-	ctx->publicKey = EVP_PKEY_get1_RSA(pubKey);
-	if (!ctx->publicKey)
-		goto init_failed;
 
-	privateKeyBio = BIO_new_mem_buf((const void*)privateKey, (int)strlen(privateKey));
-	if (!privateKeyBio)
-		goto init_failed;
-	ctx->privateKey = PEM_read_bio_RSAPrivateKey(privateKeyBio, NULL, NULL, NULL);
+	ctx->privateKey = freerdp_key_new_from_pem(privateKey);
 	if (!ctx->privateKey)
 		goto init_failed;
 
@@ -1481,7 +1488,7 @@ BOOL vgids_init(vgidsContext* ctx, const char* cert, const char* privateKey, con
 	cardidEF = vgids_ef_new(ctx, VGIDS_EFID_CARDID);
 	if (!cardidEF)
 		goto init_failed;
-	RAND_bytes(cardid, sizeof(cardid));
+	winpr_RAND(cardid, sizeof(cardid));
 	if (!vgids_ef_write_do(cardidEF, VGIDS_DO_CARDID, cardid, sizeof(cardid)))
 		goto init_failed;
 
@@ -1495,7 +1502,14 @@ BOOL vgids_init(vgidsContext* ctx, const char* cert, const char* privateKey, con
 		goto init_failed;
 
 	/* write container map DO */
-	cmrec.wKeyExchangeKeySizeBits = (WORD)(RSA_size(ctx->privateKey) * 8);
+	const int size = get_rsa_key_size(ctx->privateKey);
+	if (size <= 0)
+		goto init_failed;
+
+	if (size <= 0)
+		goto init_failed;
+
+	cmrec.wKeyExchangeKeySizeBits = (WORD)size * 8;
 	if (!vgids_ef_write_do(commonEF, VGIDS_DO_CMAPFILE, (BYTE*)&cmrec, sizeof(cmrec)))
 		goto init_failed;
 
@@ -1531,9 +1545,6 @@ BOOL vgids_init(vgidsContext* ctx, const char* cert, const char* privateKey, con
 	rc = TRUE;
 
 init_failed:
-	EVP_PKEY_free(pubKey);
-	BIO_free_all(certBio);
-	BIO_free_all(privateKeyBio);
 	free(kxc);
 	free(keymap);
 	free(fsTable);
@@ -1589,9 +1600,8 @@ void vgids_free(vgidsContext* context)
 {
 	if (context)
 	{
-		RSA_free(context->privateKey);
-		RSA_free(context->publicKey);
-		X509_free(context->certificate);
+		freerdp_key_free(context->privateKey);
+		freerdp_certificate_free(context->certificate);
 		Stream_Free(context->commandData, TRUE);
 		Stream_Free(context->responseData, TRUE);
 		free(context->pin);

@@ -136,8 +136,8 @@ extern "C"
 	                              char** domain);
 	typedef BOOL (*pAuthenticateEx)(freerdp* instance, char** username, char** password,
 	                                char** domain, rdp_auth_reason reason);
-	typedef BOOL (*pChooseSmartcard)(SmartcardCertInfo** cert_list, DWORD count, DWORD* choice,
-	                                 BOOL gateway);
+	typedef BOOL (*pChooseSmartcard)(freerdp* instance, SmartcardCertInfo** cert_list, DWORD count,
+	                                 DWORD* choice, BOOL gateway);
 
 	/** @brief Callback used if user interaction is required to accept
 	 *         an unknown certificate.
@@ -542,6 +542,7 @@ owned by rdpRdp */
 
 	FREERDP_API BOOL freerdp_context_new(freerdp* instance);
 	FREERDP_API BOOL freerdp_context_new_ex(freerdp* instance, rdpSettings* settings);
+	FREERDP_API BOOL freerdp_context_reset(freerdp* instance);
 	FREERDP_API void freerdp_context_free(freerdp* instance);
 
 	FREERDP_API BOOL freerdp_connect(freerdp* instance);

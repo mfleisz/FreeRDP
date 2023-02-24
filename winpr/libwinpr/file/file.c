@@ -207,7 +207,7 @@ static BOOL FileRead(PVOID Object, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 
 	if (lpOverlapped)
 	{
-		WLog_ERR(TAG, "WinPR %s does not support the lpOverlapped parameter", __FUNCTION__);
+		WLog_ERR(TAG, "WinPR does not support the lpOverlapped parameter");
 		SetLastError(ERROR_NOT_SUPPORTED);
 		return FALSE;
 	}
@@ -247,7 +247,7 @@ static BOOL FileWrite(PVOID Object, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrit
 
 	if (lpOverlapped)
 	{
-		WLog_ERR(TAG, "WinPR %s does not support the lpOverlapped parameter", __FUNCTION__);
+		WLog_ERR(TAG, "WinPR does not support the lpOverlapped parameter");
 		SetLastError(ERROR_NOT_SUPPORTED);
 		return FALSE;
 	}
@@ -394,7 +394,7 @@ static BOOL FileLockFileEx(HANDLE hFile, DWORD dwFlags, DWORD dwReserved,
 
 	if (lpOverlapped)
 	{
-		WLog_ERR(TAG, "WinPR %s does not support the lpOverlapped parameter", __FUNCTION__);
+		WLog_ERR(TAG, "WinPR does not support the lpOverlapped parameter");
 		SetLastError(ERROR_NOT_SUPPORTED);
 		return FALSE;
 	}
@@ -500,7 +500,7 @@ static BOOL FileUnlockFileEx(HANDLE hFile, DWORD dwReserved, DWORD nNumberOfByte
 
 	if (lpOverlapped)
 	{
-		WLog_ERR(TAG, "WinPR %s does not support the lpOverlapped parameter", __FUNCTION__);
+		WLog_ERR(TAG, "WinPR does not support the lpOverlapped parameter");
 		SetLastError(ERROR_NOT_SUPPORTED);
 		return FALSE;
 	}
@@ -761,6 +761,10 @@ UINT32 map_posix_err(int fs_errno)
 			rc = STATUS_DIRECTORY_NOT_EMPTY;
 			break;
 
+		case EMFILE:
+			rc = STATUS_TOO_MANY_OPENED_FILES;
+			break;
+
 		default:
 			WLog_ERR(TAG, "Missing ERRNO mapping %s [%d]", strerror(fs_errno), fs_errno);
 			rc = STATUS_UNSUCCESSFUL;
@@ -788,7 +792,7 @@ static HANDLE FileCreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dw
 
 	if (dwFlagsAndAttributes & FILE_FLAG_OVERLAPPED)
 	{
-		WLog_ERR(TAG, "WinPR %s does not support the FILE_FLAG_OVERLAPPED flag", __FUNCTION__);
+		WLog_ERR(TAG, "WinPR does not support the FILE_FLAG_OVERLAPPED flag");
 		SetLastError(ERROR_NOT_SUPPORTED);
 		return INVALID_HANDLE_VALUE;
 	}

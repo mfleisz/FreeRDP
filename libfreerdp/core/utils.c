@@ -44,6 +44,21 @@ BOOL utils_str_copy(const char* value, char** dst)
 	return (*dst) != NULL;
 }
 
+static BOOL utils_copy_smartcard_settings(const rdpSettings* settings, rdpSettings* origSettings)
+{
+	/* update original settings with provided smart card settings */
+	origSettings->SmartcardLogon = settings->SmartcardLogon;
+	origSettings->PasswordIsSmartcardPin = settings->PasswordIsSmartcardPin;
+	if (!utils_str_copy(settings->ReaderName, &origSettings->ReaderName))
+		return FALSE;
+	if (!utils_str_copy(settings->CspName, &origSettings->CspName))
+		return FALSE;
+	if (!utils_str_copy(settings->ContainerName, &origSettings->ContainerName))
+		return FALSE;
+
+	return TRUE;
+}
+
 auth_status utils_authenticate_gateway(freerdp* instance, rdp_auth_reason reason)
 {
 	rdpSettings* settings;
@@ -84,6 +99,10 @@ auth_status utils_authenticate_gateway(freerdp* instance, rdp_auth_reason reason
 		                                  &settings->GatewayPassword, &settings->GatewayDomain);
 
 	if (!proceed)
+		return AUTH_CANCELLED;
+
+	if (utils_str_is_empty(settings->GatewayUsername) ||
+	    utils_str_is_empty(settings->GatewayPassword))
 		return AUTH_NO_CREDENTIALS;
 
 	if (!utils_sync_credentials(settings, FALSE))
@@ -97,6 +116,9 @@ auth_status utils_authenticate_gateway(freerdp* instance, rdp_auth_reason reason
 	if (!utils_str_copy(settings->GatewayPassword, &origSettings->GatewayPassword))
 		return AUTH_FAILED;
 	if (!utils_sync_credentials(origSettings, FALSE))
+		return AUTH_FAILED;
+
+	if (!utils_copy_smartcard_settings(settings, origSettings))
 		return AUTH_FAILED;
 
 	return AUTH_SUCCESS;
@@ -163,6 +185,9 @@ auth_status utils_authenticate(freerdp* instance, rdp_auth_reason reason, BOOL o
 		                                 &settings->Domain);
 
 	if (!proceed)
+		return AUTH_CANCELLED;
+
+	if (utils_str_is_empty(settings->Username) || utils_str_is_empty(settings->Password))
 		return AUTH_NO_CREDENTIALS;
 
 	if (!utils_sync_credentials(settings, TRUE))
@@ -176,6 +201,9 @@ auth_status utils_authenticate(freerdp* instance, rdp_auth_reason reason, BOOL o
 	if (!utils_str_copy(settings->Password, &origSettings->Password))
 		return AUTH_FAILED;
 	if (!utils_sync_credentials(origSettings, TRUE))
+		return AUTH_FAILED;
+
+	if (!utils_copy_smartcard_settings(settings, origSettings))
 		return AUTH_FAILED;
 
 	return AUTH_SUCCESS;

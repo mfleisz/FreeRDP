@@ -133,22 +133,24 @@ typedef struct
 	} while (0)
 
 #define Stream_CheckAndLogRequiredLengthSrv(log, s, len)                                       \
-	Stream_CheckAndLogRequiredLengthWLogEx(log, WLOG_WARN, s, len,                             \
+	Stream_CheckAndLogRequiredLengthWLogEx(log, WLOG_WARN, s, len, 1,                          \
 	                                       proxy_client_rx " %s(%s:%" PRIuz ")", __FUNCTION__, \
-	                                       __FILE__, __LINE__)
+	                                       __FILE__, (size_t)__LINE__)
 #define Stream_CheckAndLogRequiredLengthClient(log, s, len)                                    \
-	Stream_CheckAndLogRequiredLengthWLogEx(log, WLOG_WARN, s, len,                             \
+	Stream_CheckAndLogRequiredLengthWLogEx(log, WLOG_WARN, s, len, 1,                          \
 	                                       proxy_server_rx " %s(%s:%" PRIuz ")", __FUNCTION__, \
-	                                       __FILE__, __LINE__)
+	                                       __FILE__, (size_t)__LINE__)
 #define Stream_CheckAndLogRequiredLengthRx(srv, log, s, len) \
-	Stream_CheckAndLogRequiredLengthRx_(srv, log, s, len, __FUNCTION__, __FILE__, __LINE__)
-static BOOL Stream_CheckAndLogRequiredLengthRx_(BOOL srv, wLog* log, wStream* s, size_t len,
-                                                const char* fkt, const char* file, size_t line)
+	Stream_CheckAndLogRequiredLengthRx_(srv, log, s, len, 1, __FUNCTION__, __FILE__, __LINE__)
+static BOOL Stream_CheckAndLogRequiredLengthRx_(BOOL srv, wLog* log, wStream* s, size_t nmemb,
+                                                size_t size, const char* fkt, const char* file,
+                                                size_t line)
 {
 	const char* fmt =
 	    srv ? proxy_server_rx " %s(%s:%" PRIuz ")" : proxy_client_rx " %s(%s:%" PRIuz ")";
 
-	return Stream_CheckAndLogRequiredLengthWLogEx(log, WLOG_WARN, s, len, fmt, fkt, file, line);
+	return Stream_CheckAndLogRequiredLengthWLogEx(log, WLOG_WARN, s, nmemb, size, fmt, fkt, file,
+	                                              line);
 }
 
 static const char* rdpdr_server_state_to_string(pf_channel_server_state state)
@@ -591,8 +593,8 @@ static UINT rdpdr_process_server_core_capability_request(pf_channel_client_conte
 				rdpdr->common.capabilityVersions[header.CapabilityType] = header.Version;
 
 			WLog_Print(rdpdr->log, WLOG_TRACE,
-			           "[%s] capability %s got version %" PRIu32 ", will use version %" PRIu32,
-			           __FUNCTION__, rdpdr_cap_type_string(header.CapabilityType), header.Version,
+			           "capability %s got version %" PRIu32 ", will use version %" PRIu32,
+			           rdpdr_cap_type_string(header.CapabilityType), header.Version,
 			           rdpdr->common.capabilityVersions[header.CapabilityType]);
 		}
 
@@ -619,10 +621,10 @@ static UINT rdpdr_process_server_core_capability_request(pf_channel_client_conte
 				break;
 
 			default:
-				WLog_Print(
-				    rdpdr->log, WLOG_WARN,
-				    "[%s] unknown capability 0x%04" PRIx16 ", length %" PRIu16 ", version %" PRIu32,
-				    __FUNCTION__, header.CapabilityType, header.CapabilityLength, header.Version);
+				WLog_Print(rdpdr->log, WLOG_WARN,
+				           "unknown capability 0x%04" PRIx16 ", length %" PRIu16
+				           ", version %" PRIu32,
+				           header.CapabilityType, header.CapabilityLength, header.Version);
 				Stream_Seek(s, header.CapabilityLength);
 				break;
 		}
@@ -753,8 +755,8 @@ static UINT rdpdr_process_client_capability_response(pf_channel_server_context* 
 				rdpdr->common.capabilityVersions[header.CapabilityType] = header.Version;
 
 			WLog_Print(rdpdr->log, WLOG_TRACE,
-			           "[%s] capability %s got version %" PRIu32 ", will use version %" PRIu32,
-			           __FUNCTION__, rdpdr_cap_type_string(header.CapabilityType), header.Version,
+			           "capability %s got version %" PRIu32 ", will use version %" PRIu32,
+			           rdpdr_cap_type_string(header.CapabilityType), header.Version,
 			           rdpdr->common.capabilityVersions[header.CapabilityType]);
 		}
 
@@ -896,7 +898,7 @@ rdpdr_process_server_capability_request_or_clientid_confirm(pf_channel_client_co
 
 	if ((rdpdr->flags & mask) == mask)
 	{
-		CLIENT_RX_LOG(rdpdr->log, WLOG_WARN, "[%s]: already past this state, abort!", __FUNCTION__);
+		CLIENT_RX_LOG(rdpdr->log, WLOG_WARN, "already past this state, abort!");
 		return FALSE;
 	}
 
@@ -906,7 +908,7 @@ rdpdr_process_server_capability_request_or_clientid_confirm(pf_channel_client_co
 	Stream_Read_UINT16(s, component);
 	if (rcomponent != component)
 	{
-		CLIENT_RX_LOG(rdpdr->log, WLOG_WARN, "[%s]: got component %s, expected %s", __FUNCTION__,
+		CLIENT_RX_LOG(rdpdr->log, WLOG_WARN, "got component %s, expected %s",
 		              rdpdr_component_string(component), rdpdr_component_string(rcomponent));
 		return FALSE;
 	}
@@ -918,8 +920,8 @@ rdpdr_process_server_capability_request_or_clientid_confirm(pf_channel_client_co
 		case PAKID_CORE_SERVER_CAPABILITY:
 			if (rdpdr->flags & STATE_CLIENT_EXPECT_SERVER_CORE_CAPABILITY_REQUEST)
 			{
-				CLIENT_RX_LOG(rdpdr->log, WLOG_WARN, "[%s]: got duplicate packetid %s",
-				              __FUNCTION__, rdpdr_packetid_string(packetid));
+				CLIENT_RX_LOG(rdpdr->log, WLOG_WARN, "got duplicate packetid %s",
+				              rdpdr_packetid_string(packetid));
 				return FALSE;
 			}
 			rdpdr->flags |= STATE_CLIENT_EXPECT_SERVER_CORE_CAPABILITY_REQUEST;
@@ -928,8 +930,8 @@ rdpdr_process_server_capability_request_or_clientid_confirm(pf_channel_client_co
 		default:
 			if (rdpdr->flags & STATE_CLIENT_EXPECT_SERVER_CLIENT_ID_CONFIRM)
 			{
-				CLIENT_RX_LOG(rdpdr->log, WLOG_WARN, "[%s]: got duplicate packetid %s",
-				              __FUNCTION__, rdpdr_packetid_string(packetid));
+				CLIENT_RX_LOG(rdpdr->log, WLOG_WARN, "got duplicate packetid %s",
+				              rdpdr_packetid_string(packetid));
 				return FALSE;
 			}
 			rdpdr->flags |= STATE_CLIENT_EXPECT_SERVER_CLIENT_ID_CONFIRM;
@@ -1078,9 +1080,9 @@ static BOOL pf_channel_rdpdr_rewrite_device_list_to(wStream* s, UINT32 fromVersi
 					goto fail;
 				Stream_Write_UINT32(s, datalen);
 
-				const SSIZE_T rc = Stream_Write_UTF16_String_From_UTF8(
+				const SSIZE_T rcw = Stream_Write_UTF16_String_From_UTF8(
 				    s, charCount, device.PreferredDosName, charCount - 1, TRUE);
-				if (rc < 0)
+				if (rcw < 0)
 					goto fail;
 			}
 		}
@@ -1268,7 +1270,6 @@ BOOL pf_channel_send_client_queue(pClientContext* pc, pf_channel_client_context*
 		{
 			CLIENT_TX_LOG(rdpdr->log, WLOG_ERROR, "xxxxxx TODO: Failed to send data!");
 		}
-	skip:
 		Stream_Free(s, TRUE);
 	}
 	Queue_Unlock(rdpdr->queue);
@@ -1313,8 +1314,8 @@ BOOL pf_channel_rdpdr_client_handle(pClientContext* pc, UINT16 channelId, const 
 	rdpdr = HashTable_GetItemValue(pc->interceptContextMap, channel_name);
 	if (!rdpdr)
 	{
-		WLog_ERR(TAG, "[%s]: Channel %s [0x%04" PRIx16 "] missing context in interceptContextMap",
-		         __FUNCTION__, channel_name, channelId);
+		WLog_ERR(TAG, "Channel %s [0x%04" PRIx16 "] missing context in interceptContextMap",
+		         channel_name, channelId);
 		return FALSE;
 	}
 	s = rdpdr->common.buffer;
@@ -1323,8 +1324,8 @@ BOOL pf_channel_rdpdr_client_handle(pClientContext* pc, UINT16 channelId, const 
 	if (!Stream_EnsureRemainingCapacity(s, xsize))
 	{
 		CLIENT_RX_LOG(rdpdr->log, WLOG_ERROR,
-		              "[%s]: Channel %s [0x%04" PRIx16 "] not enough memory [need %" PRIuz "]",
-		              __FUNCTION__, channel_name, channelId, xsize);
+		              "Channel %s [0x%04" PRIx16 "] not enough memory [need %" PRIuz "]",
+		              channel_name, channelId, xsize);
 		return FALSE;
 	}
 	Stream_Write(s, xdata, xsize);
@@ -1417,10 +1418,9 @@ BOOL pf_channel_rdpdr_client_handle(pClientContext* pc, UINT16 channelId, const 
 					default:
 						CLIENT_RX_LOG(
 						    rdpdr->log, WLOG_ERROR,
-						    "[%s]: Channel %s [0x%04" PRIx16
+						    "Channel %s [0x%04" PRIx16
 						    "] we´ve reached an impossible state %s! [%s] aliens invaded!",
-						    __FUNCTION__, channel_name, channelId,
-						    rdpdr_client_state_to_string(rdpdr->state),
+						    channel_name, channelId, rdpdr_client_state_to_string(rdpdr->state),
 						    rdpdr_packetid_string(packetid));
 						return FALSE;
 				}
@@ -1431,10 +1431,9 @@ BOOL pf_channel_rdpdr_client_handle(pClientContext* pc, UINT16 channelId, const 
 #endif
 		default:
 			CLIENT_RX_LOG(rdpdr->log, WLOG_ERROR,
-			              "[%s]: Channel %s [0x%04" PRIx16
+			              "Channel %s [0x%04" PRIx16
 			              "] we´ve reached an impossible state %s! aliens invaded!",
-			              __FUNCTION__, channel_name, channelId,
-			              rdpdr_client_state_to_string(rdpdr->state));
+			              channel_name, channelId, rdpdr_client_state_to_string(rdpdr->state));
 			return FALSE;
 	}
 
@@ -1526,7 +1525,7 @@ static BOOL filter_smartcard_device_list_remove(pf_channel_server_context* rdpdr
 	if (count == 0)
 		return TRUE;
 
-	if (!Stream_CheckAndLogRequiredLength(TAG, s, count * sizeof(UINT32)))
+	if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, count, sizeof(UINT32)))
 		return TRUE;
 
 	for (x = 0; x < count; x++)
@@ -1788,7 +1787,7 @@ static pf_channel_server_context* get_channel(pServerContext* ps, BOOL send)
 	if (!rdpdr)
 	{
 		SERVER_RXTX_LOG(send, rdpdr->log, WLOG_ERROR,
-		                "[%s]: Channel %s missing context in interceptContextMap", __FUNCTION__,
+		                "Channel %s missing context in interceptContextMap",
 		                RDPDR_SVC_CHANNEL_NAME);
 		return NULL;
 	}

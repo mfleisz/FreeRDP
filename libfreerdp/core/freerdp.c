@@ -51,11 +51,21 @@
 #include <freerdp/version.h>
 #include <freerdp/log.h>
 #include <freerdp/cache/pointer.h>
+#include <freerdp/utils/signal.h>
 
 #include "settings.h"
 #include "utils.h"
 
 #define TAG FREERDP_TAG("core")
+
+static void sig_abort_connect(int signum, const char* signame, void* ctx)
+{
+	rdpContext* context = (rdpContext*)ctx;
+
+	WLog_INFO(TAG, "Signal %s [%d], terminating session %p", signame, signum, context);
+	if (context)
+		freerdp_abort_connect_context(context);
+}
 
 /** Creates a new connection based on the settings found in the "instance" parameter
  *  It will use the callbacks registered on the structure to process the pre/post connect operations
@@ -100,14 +110,14 @@ static int freerdp_connect_begin(freerdp* instance)
 	if (!freerdp_settings_set_default_order_support(settings))
 		return -1;
 
+	freerdp_add_signal_cleanup_handler(instance->context, sig_abort_connect);
+
 	IFCALLRET(instance->PreConnect, status, instance);
 	instance->ConnectionCallbackState = CLIENT_STATE_PRECONNECT_PASSED;
 
 	if (status)
 	{
-		freerdp_settings_free(rdp->originalSettings);
-		rdp->originalSettings = freerdp_settings_clone(settings);
-		if (!rdp->originalSettings)
+		if (!rdp_set_backup_settings(rdp))
 			return 0;
 
 		WINPR_ASSERT(instance->LoadChannels);
@@ -552,6 +562,7 @@ BOOL freerdp_disconnect(freerdp* instance)
 
 	IFCALL(instance->PostFinalDisconnect, instance);
 
+	freerdp_del_signal_cleanup_handler(instance->context, sig_abort_connect);
 	return rc;
 }
 
@@ -782,6 +793,17 @@ fail:
 	return FALSE;
 }
 
+BOOL freerdp_context_reset(freerdp* instance)
+{
+	if (!instance)
+		return FALSE;
+
+	WINPR_ASSERT(instance->context);
+	rdpRdp* rdp = instance->context->rdp;
+
+	return rdp_reset_runtime_settings(rdp);
+}
+
 /** Deallocator function for a rdp context.
  *  The function will deallocate the resources from the 'instance' parameter that were allocated
  * from a call to freerdp_context_new(). If the ContextFree callback is set in the 'instance'
@@ -976,12 +998,12 @@ void freerdp_set_last_error_ex(rdpContext* context, UINT32 lastError, const char
 	WINPR_ASSERT(context);
 
 	if (lastError)
-		WLog_ERR(TAG, "%s:%s %s [0x%08" PRIX32 "]", fkt, __FUNCTION__,
-		         freerdp_get_last_error_name(lastError), lastError);
+		WLog_ERR(TAG, "%s %s [0x%08" PRIX32 "]", fkt, freerdp_get_last_error_name(lastError),
+		         lastError);
 
 	if (lastError == FREERDP_ERROR_SUCCESS)
 	{
-		WLog_DBG(TAG, "%s:%s resetting error state", fkt, __FUNCTION__);
+		WLog_DBG(TAG, "%s resetting error state", fkt);
 	}
 	else if (context->LastError != FREERDP_ERROR_SUCCESS)
 	{
