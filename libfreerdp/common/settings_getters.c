@@ -57,6 +57,9 @@ BOOL freerdp_settings_get_bool(const rdpSettings* settings, size_t id)
 
 	switch (id)
 	{
+		case FreeRDP_AadSecurity:
+			return settings->AadSecurity;
+
 		case FreeRDP_AllowCacheWaitingList:
 			return settings->AllowCacheWaitingList;
 
@@ -399,6 +402,9 @@ BOOL freerdp_settings_get_bool(const rdpSettings* settings, size_t id)
 		case FreeRDP_RdpSecurity:
 			return settings->RdpSecurity;
 
+		case FreeRDP_RdstlsSecurity:
+			return settings->RdstlsSecurity;
+
 		case FreeRDP_RedirectClipboard:
 			return settings->RedirectClipboard;
 
@@ -611,6 +617,10 @@ BOOL freerdp_settings_set_bool(rdpSettings* settings, size_t id, BOOL val)
 
 	switch (id)
 	{
+		case FreeRDP_AadSecurity:
+			settings->AadSecurity = cnv.c;
+			break;
+
 		case FreeRDP_AllowCacheWaitingList:
 			settings->AllowCacheWaitingList = cnv.c;
 			break;
@@ -1065,6 +1075,10 @@ BOOL freerdp_settings_set_bool(rdpSettings* settings, size_t id, BOOL val)
 
 		case FreeRDP_RdpSecurity:
 			settings->RdpSecurity = cnv.c;
+			break;
+
+		case FreeRDP_RdstlsSecurity:
+			settings->RdstlsSecurity = cnv.c;
 			break;
 
 		case FreeRDP_RedirectClipboard:
@@ -1758,9 +1772,6 @@ UINT32 freerdp_settings_get_uint32(const rdpSettings* settings, size_t id)
 		case FreeRDP_RedirectionPreferType:
 			return settings->RedirectionPreferType;
 
-		case FreeRDP_RedirectionTargetCertificateLength:
-			return settings->RedirectionTargetCertificateLength;
-
 		case FreeRDP_RedirectionTsvUrlLength:
 			return settings->RedirectionTsvUrlLength;
 
@@ -2233,10 +2244,6 @@ BOOL freerdp_settings_set_uint32(rdpSettings* settings, size_t id, UINT32 val)
 
 		case FreeRDP_RedirectionPreferType:
 			settings->RedirectionPreferType = cnv.c;
-			break;
-
-		case FreeRDP_RedirectionTargetCertificateLength:
-			settings->RedirectionTargetCertificateLength = cnv.c;
 			break;
 
 		case FreeRDP_RedirectionTsvUrlLength:

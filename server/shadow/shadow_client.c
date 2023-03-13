@@ -223,7 +223,7 @@ static BOOL shadow_client_context_new(freerdp_peer* peer, rdpContext* context)
 	settings->DrawAllowSkipAlpha = TRUE;
 	settings->DrawAllowColorSubsampling = TRUE;
 	settings->DrawAllowDynamicColorFidelity = TRUE;
-	settings->CompressionLevel = PACKET_COMPR_TYPE_RDP6;
+	settings->CompressionLevel = PACKET_COMPR_TYPE_RDP8;
 
 	if (server->ipcSocket && (strncmp(bind_address, server->ipcSocket,
 	                                  strnlen(bind_address, sizeof(bind_address))) != 0))
@@ -1056,6 +1056,7 @@ static BOOL shadow_client_send_surface_gfx(rdpShadowClient* client, const BYTE* 
 	cmd.height = nHeight;
 
 	id = freerdp_settings_get_uint32(settings, FreeRDP_RemoteFxCodecId);
+#ifdef WITH_GFX_H264
 	if (settings->GfxAVC444 || settings->GfxAVC444v2)
 	{
 		INT32 rc;
@@ -1151,7 +1152,9 @@ static BOOL shadow_client_send_surface_gfx(rdpShadowClient* client, const BYTE* 
 			return FALSE;
 		}
 	}
-	else if (freerdp_settings_get_bool(settings, FreeRDP_RemoteFxCodec) && (id != 0))
+	else
+#endif
+	    if (freerdp_settings_get_bool(settings, FreeRDP_RemoteFxCodec) && (id != 0))
 	{
 		BOOL rc;
 		wStream* s;
@@ -1792,31 +1795,38 @@ static BOOL shadow_client_send_surface_update(rdpShadowClient* client, SHADOW_GF
 	// PRId64 " height: %" PRId64 " right: %" PRId64 " bottom: %" PRId64, 	nXSrc, nYSrc, nWidth,
 	// nHeight, nXSrc + nWidth, nYSrc + nHeight);
 
-	if (settings->SupportGraphicsPipeline && pStatus->gfxOpened)
+	if (settings->SupportGraphicsPipeline)
 	{
-		/* GFX/h264 always full screen encoded */
-		nWidth = settings->DesktopWidth;
-		nHeight = settings->DesktopHeight;
-
-		/* Create primary surface if have not */
-		if (!pStatus->gfxSurfaceCreated)
+		if (pStatus->gfxOpened)
 		{
-			/* Only init surface when we have h264 supported */
-			if (!(ret = shadow_client_rdpgfx_reset_graphic(client)))
-				goto out;
+			/* GFX/h264 always full screen encoded */
+			nWidth = settings->DesktopWidth;
+			nHeight = settings->DesktopHeight;
 
-			if (!(ret = shadow_client_rdpgfx_new_surface(client)))
-				goto out;
+			/* Create primary surface if have not */
+			if (!pStatus->gfxSurfaceCreated)
+			{
+				/* Only init surface when we have h264 supported */
+				if (!(ret = shadow_client_rdpgfx_reset_graphic(client)))
+					goto out;
 
-			pStatus->gfxSurfaceCreated = TRUE;
+				if (!(ret = shadow_client_rdpgfx_new_surface(client)))
+					goto out;
+
+				pStatus->gfxSurfaceCreated = TRUE;
+			}
+
+			WINPR_ASSERT(nWidth >= 0);
+			WINPR_ASSERT(nWidth <= UINT16_MAX);
+			WINPR_ASSERT(nHeight >= 0);
+			WINPR_ASSERT(nHeight <= UINT16_MAX);
+			ret = shadow_client_send_surface_gfx(client, pSrcData, nSrcStep, SrcFormat, 0, 0,
+			                                     (UINT16)nWidth, (UINT16)nHeight);
 		}
-
-		WINPR_ASSERT(nWidth >= 0);
-		WINPR_ASSERT(nWidth <= UINT16_MAX);
-		WINPR_ASSERT(nHeight >= 0);
-		WINPR_ASSERT(nHeight <= UINT16_MAX);
-		ret = shadow_client_send_surface_gfx(client, pSrcData, nSrcStep, SrcFormat, 0, 0,
-		                                     (UINT16)nWidth, (UINT16)nHeight);
+		else
+		{
+			ret = TRUE;
+		}
 	}
 	else if (settings->RemoteFxCodec || freerdp_settings_get_bool(settings, FreeRDP_NSCodec))
 	{
@@ -2223,6 +2233,7 @@ static DWORD WINAPI shadow_client_thread(LPVOID arg)
 					break;
 
 				case DRDYNVC_STATE_READY:
+#if defined(CHANNEL_AUDIN_SERVER)
 					if (client->audin && !IFCALLRESULT(TRUE, client->audin->IsOpen, client->audin))
 					{
 						if (!IFCALLRESULT(FALSE, client->audin->Open, client->audin))
@@ -2231,6 +2242,7 @@ static DWORD WINAPI shadow_client_thread(LPVOID arg)
 							goto fail;
 						}
 					}
+#endif
 
 					/* Init RDPGFX dynamic channel */
 					if (settings->SupportGraphicsPipeline && client->rdpgfx && !gfxstatus.gfxOpened)
@@ -2341,6 +2353,7 @@ static DWORD WINAPI shadow_client_thread(LPVOID arg)
 fail:
 
 	/* Free channels early because we establish channels in post connect */
+#if defined(CHANNEL_AUDIN_SERVER)
 	if (client->audin && !IFCALLRESULT(TRUE, client->audin->IsOpen, client->audin))
 	{
 		if (!IFCALLRESULT(FALSE, client->audin->Close, client->audin))
@@ -2348,6 +2361,7 @@ fail:
 			WLog_WARN(TAG, "AUDIN shutdown failure!");
 		}
 	}
+#endif
 
 	if (gfxstatus.gfxOpened)
 	{

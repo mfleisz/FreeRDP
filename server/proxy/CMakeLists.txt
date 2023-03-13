@@ -63,18 +63,25 @@ if (WIN32)
   list(APPEND PROXY_APP_SRCS ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
 endif()
 
-add_library(${MODULE_NAME} ${${MODULE_PREFIX}_SRCS} $<TARGET_OBJECTS:pf_channels>)
+add_library(${MODULE_NAME} ${${MODULE_PREFIX}_SRCS})
 set_target_properties(${MODULE_NAME} PROPERTIES OUTPUT_NAME ${MODULE_NAME}${FREERDP_API_VERSION})
 
 if (WITH_LIBRARY_VERSIONING)
   set_target_properties(${MODULE_NAME} PROPERTIES VERSION ${FREERDP_VERSION} SOVERSION ${FREERDP_API_VERSION})
 endif()
 
-set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} freerdp-server)
-set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} freerdp-client)
-set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} winpr freerdp)
+set(PRIVATE_LIBS
+    freerdp-client
+    freerdp-server
+    pf_channels
+)
 
-target_link_libraries(${MODULE_NAME} ${${MODULE_PREFIX}_LIBS})
+set(PUBLIC_LIBS
+	winpr
+	freerdp
+)
+
+target_link_libraries(${MODULE_NAME} PRIVATE ${PRIVATE_LIBS} PUBLIC ${PUBLIC_LIBS})
 install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT server EXPORT FreeRDP-ProxyTargets)
 if (WITH_DEBUG_SYMBOLS AND MSVC)
     install(FILES ${CMAKE_PDB_BINARY_DIR}/${MODULE_NAME}${FREERDP_VERSION_MAJOR}.pdb DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT symbols)
@@ -96,7 +103,9 @@ write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/FreeRDP-ProxyConfig
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/FreeRDP-ProxyConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/FreeRDP-ProxyConfigVersion.cmake
 	DESTINATION ${FREERDP_PROXY_CMAKE_INSTALL_DIR})
-install(EXPORT FreeRDP-ProxyTargets DESTINATION ${FREERDP_PROXY_CMAKE_INSTALL_DIR})
+if (BUILD_SHARED_LIBS)
+    install(EXPORT FreeRDP-ProxyTargets DESTINATION ${FREERDP_PROXY_CMAKE_INSTALL_DIR})
+endif()
 
 set_property(TARGET ${MODULE_NAME} PROPERTY FOLDER "Server/proxy")
 

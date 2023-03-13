@@ -52,11 +52,6 @@ BOOL freerdp_del_signal_cleanup_handler(void* context, void (*fkt)(void*))
 #include <pthread.h>
 #include <winpr/debug.h>
 
-volatile sig_atomic_t terminal_needs_reset = 0;
-int terminal_fildes = 0;
-struct termios orig_flags = { 0 };
-struct termios new_flags = { 0 };
-
 static BOOL handlers_registered = FALSE;
 static pthread_mutex_t signal_handler_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -85,8 +80,6 @@ static void unlock(void)
 
 static void term_handler(int signum)
 {
-	struct sigaction default_sigaction;
-	sigset_t this_mask;
 	static BOOL recursive = FALSE;
 
 	if (!recursive)
@@ -94,9 +87,6 @@ static void term_handler(int signum)
 		recursive = TRUE;
 		WLog_ERR(TAG, "Caught signal '%s' [%d]", strsignal(signum), signum);
 	}
-
-	if (terminal_needs_reset)
-		tcsetattr(terminal_fildes, TCSAFLUSH, &orig_flags);
 
 	lock();
 	for (size_t x = 0; x < cleanup_handler_count; x++)
@@ -124,8 +114,6 @@ static void fatal_handler(int signum)
 
 		winpr_log_backtrace(TAG, WLOG_ERROR, 20);
 	}
-	if (terminal_needs_reset)
-		tcsetattr(terminal_fildes, TCSAFLUSH, &orig_flags);
 
 	default_sigaction.sa_handler = SIG_DFL;
 	sigfillset(&(default_sigaction.sa_mask));

@@ -429,17 +429,6 @@ static BOOL wf_post_connect(freerdp* instance)
 	context->update->EndPaint = wf_end_paint;
 	wf_register_pointer(context->graphics);
 
-	if (!settings->SoftwareGdi)
-	{
-		wf_register_graphics(context->graphics);
-		wf_gdi_register_update_callbacks(context->update);
-		brush_cache_register_callbacks(context->update);
-		glyph_cache_register_callbacks(context->update);
-		bitmap_cache_register_callbacks(context->update);
-		offscreen_cache_register_callbacks(context->update);
-		palette_cache_register_callbacks(context->update);
-	}
-
 	wfc->floatbar = wf_floatbar_new(wfc, wfc->hInstance, settings->Floatbar);
 	return TRUE;
 }
@@ -661,7 +650,7 @@ static void wf_report_error(char* wszMessage, DWORD dwErrCode)
 static DWORD wf_is_x509_certificate_trusted(const char* common_name, const char* subject,
                                             const char* issuer, const char* fingerprint)
 {
-	size_t derPubKeyLen;
+	DWORD derPubKeyLen;
 	char* derPubKey;
 
 	HRESULT hr = CRYPT_E_NOT_FOUND;

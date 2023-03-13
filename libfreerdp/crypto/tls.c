@@ -1050,7 +1050,7 @@ TlsHandshakeResult freerdp_tls_accept_ex(rdpTls* tls, BIO* underlying, rdpSettin
 	if (!tls_prepare(tls, underlying, methods, options, FALSE))
 		return TLS_HANDSHAKE_ERROR;
 
-	rdpPrivateKey* key = freerdp_settings_get_pointer(settings, FreeRDP_RdpServerRsaKey);
+	const rdpPrivateKey* key = freerdp_settings_get_pointer(settings, FreeRDP_RdpServerRsaKey);
 	if (!key)
 	{
 		WLog_ERR(TAG, "invalid private key");
@@ -1077,7 +1077,8 @@ TlsHandshakeResult freerdp_tls_accept_ex(rdpTls* tls, BIO* underlying, rdpSettin
 		return TLS_HANDSHAKE_ERROR;
 	}
 
-	rdpCertificate* cert = freerdp_settings_get_pointer(settings, FreeRDP_RdpServerCertificate);
+	rdpCertificate* cert =
+	    freerdp_settings_get_pointer_writable(settings, FreeRDP_RdpServerCertificate);
 	if (!cert)
 	{
 		WLog_ERR(TAG, "invalid certificate");
@@ -1348,36 +1349,34 @@ static BOOL is_accepted_fingerprint(const rdpCertificate* cert,
 
 static BOOL accept_cert(rdpTls* tls, const BYTE* pem, UINT32 length)
 {
-	rdpSettings* settings = tls->settings;
-	char* dupPem = _strdup((const char*)pem);
+	WINPR_ASSERT(tls);
+	size_t id = FreeRDP_AcceptedCert;
+	size_t lid = FreeRDP_AcceptedCertLength;
 
-	if (!dupPem)
-		return FALSE;
+	rdpSettings* settings = tls->settings;
 
 	if (tls->isGatewayTransport)
 	{
-		settings->GatewayAcceptedCert = dupPem;
-		settings->GatewayAcceptedCertLength = length;
+		id = FreeRDP_GatewayAcceptedCert;
+		lid = FreeRDP_GatewayAcceptedCertLength;
 	}
 	else if (is_redirected(tls))
 	{
-		settings->RedirectionAcceptedCert = dupPem;
-		settings->RedirectionAcceptedCertLength = length;
-	}
-	else
-	{
-		settings->AcceptedCert = dupPem;
-		settings->AcceptedCertLength = length;
+		id = FreeRDP_RedirectionAcceptedCert;
+		lid = FreeRDP_RedirectionAcceptedCertLength;
 	}
 
-	return TRUE;
+	if (!freerdp_settings_set_string_len(settings, id, pem, length))
+		return FALSE;
+
+	return freerdp_settings_set_uint32(settings, lid, length);
 }
 
 static BOOL tls_extract_pem(const rdpCertificate* cert, BYTE** PublicKey, size_t* PublicKeyLength)
 {
 	if (!cert || !PublicKey)
 		return FALSE;
-	*PublicKey = freerdp_certificate_get_pem(cert, PublicKeyLength);
+	*PublicKey = (BYTE*)freerdp_certificate_get_pem(cert, PublicKeyLength);
 	return *PublicKey != NULL;
 }
 

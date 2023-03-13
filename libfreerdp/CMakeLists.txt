@@ -219,6 +219,11 @@ if(FAAC_FOUND)
     include_directories(${FAAC_INCLUDE_DIRS})
 endif()
 
+if(WITH_CJSON)
+    freerdp_library_add(${CJSON_LIBRARIES})
+    include_directories(${CJSON_INCLUDE_DIRS})
+endif()
+
 if(WITH_NEON)
     check_symbol_exists("_M_AMD64"     ""  MSVC_ARM64)
     check_symbol_exists("__aarch64__"  ""  ARCH_ARM64)

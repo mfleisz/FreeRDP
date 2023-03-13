@@ -17,10 +17,8 @@
 
 define_channel_client_subsystem("tsmf" "gstreamer" "decoder")
 
-if(NOT GSTREAMER_0_10_FOUND AND NOT GSTREAMER_1_0_FOUND)
+if(NOT GSTREAMER_1_0_FOUND)
 	message(FATAL_ERROR "GStreamer library not found, but required for TSMF module.")
-elseif (GSTREAMER_0_10_FOUND AND GSTREAMER_1_0_FOUND)
-	message(FATAL_ERROR "GStreamer 0.10 and GStreamer 1.0 support are mutually exclusive!")
 endif()
 
 set(SRC "tsmf_gstreamer.c")
@@ -28,9 +26,6 @@ set(SRC "tsmf_gstreamer.c")
 if (GSTREAMER_1_0_FOUND)
 	set(LIBS ${GSTREAMER_1_0_LIBRARIES})
 	include_directories(${GSTREAMER_1_0_INCLUDE_DIRS})
-elseif (GSTREAMER_0_10_FOUND)
-	set(LIBS ${GSTREAMER_0_10_LIBRARIES})
-	include_directories(${GSTREAMER_0_10_INCLUDE_DIRS})
 endif()
 
 if(ANDROID)
@@ -57,9 +52,15 @@ else()
 
 endif()
 
-set(${MODULE_PREFIX}_SRCS "${SRC}")
+set(${MODULE_PREFIX}_SRCS
+    "${SRC}"
+)
+
+set(${MODULE_PREFIX}_LIBS
+    ${LIBS}
+    winpr
+)
 
 include_directories(..)
 
 add_channel_client_subsystem_library(${MODULE_PREFIX} ${MODULE_NAME} ${CHANNEL_NAME} "" TRUE "")
-target_link_libraries(${MODULE_NAME} ${LIBS} winpr)

@@ -24,6 +24,7 @@
 #include <freerdp/config.h>
 
 #include "nla.h"
+#include "aad.h"
 #include "mcs.h"
 #include "tpkt.h"
 #include "../codec/bulk.h"
@@ -146,6 +147,7 @@ struct rdp_rdp
 	CONNECTION_STATE state;
 	rdpContext* context;
 	rdpNla* nla;
+	rdpAad* aad;
 	rdpMcs* mcs;
 	rdpNego* nego;
 	rdpBulk* bulk;
@@ -162,11 +164,11 @@ struct rdp_rdp
 	rdpHeartbeat* heartbeat;
 	rdpMultitransport* multitransport;
 	WINPR_RC4_CTX* rc4_decrypt_key;
-	int decrypt_use_count;
-	int decrypt_checksum_use_count;
+	UINT32 decrypt_use_count;
+	UINT32 decrypt_checksum_use_count;
 	WINPR_RC4_CTX* rc4_encrypt_key;
-	int encrypt_use_count;
-	int encrypt_checksum_use_count;
+	UINT32 encrypt_use_count;
+	UINT32 encrypt_checksum_use_count;
 	WINPR_CIPHER_CTX* fips_encrypt;
 	WINPR_CIPHER_CTX* fips_decrypt;
 	UINT32 sec_flags;
@@ -288,5 +290,7 @@ const char* rdp_security_flag_string(UINT32 securityFlags, char* buffer, size_t 
 
 BOOL rdp_set_backup_settings(rdpRdp* rdp);
 BOOL rdp_reset_runtime_settings(rdpRdp* rdp);
+
+void rdp_log_build_warnings(void);
 
 #endif /* FREERDP_LIB_CORE_RDP_H */

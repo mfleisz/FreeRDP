@@ -336,9 +336,8 @@ static BOOL nla_client_setup_identity(rdpNla* nla)
 				freerdp_set_last_error_log(instance->context, FREERDP_ERROR_CONNECT_CANCELLED);
 				return FALSE;
 			case AUTH_NO_CREDENTIALS:
-				freerdp_set_last_error_log(instance->context,
-				                           FREERDP_ERROR_CONNECT_NO_OR_MISSING_CREDENTIALS);
-				return FALSE;
+				WLog_INFO(TAG, "No credentials provided - using NULL identity");
+				break;
 			default:
 				return FALSE;
 		}
@@ -391,6 +390,8 @@ static BOOL nla_client_setup_identity(rdpNla* nla)
 			        (const WCHAR*)settings->RedirectionPassword,
 			        settings->RedirectionPasswordLength / sizeof(WCHAR) - 1) < 0)
 				return FALSE;
+
+			usePassword = FALSE;
 		}
 
 		if (settings->RestrictedAdminModeRequired)
@@ -1789,4 +1790,10 @@ DWORD nla_get_error(rdpNla* nla)
 	if (!nla)
 		return ERROR_INTERNAL_ERROR;
 	return nla->errorCode;
+}
+
+UINT32 nla_get_sspi_error(rdpNla* nla)
+{
+	WINPR_ASSERT(nla);
+	return credssp_auth_sspi_error(nla->auth);
 }

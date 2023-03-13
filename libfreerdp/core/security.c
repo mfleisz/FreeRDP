@@ -106,13 +106,16 @@ static BOOL security_salted_hash(const BYTE* salt, size_t salt_len, const BYTE* 
 	if (!winpr_Digest_Update(sha1, input, length)) /* Input */
 		goto out;
 
-	if (!winpr_Digest_Update(sha1, salt, 48)) /* Salt (48 bytes) */
+	WINPR_ASSERT(salt_len == 48);
+	if (!winpr_Digest_Update(sha1, salt, salt_len)) /* Salt (48 bytes) */
 		goto out;
 
-	if (!winpr_Digest_Update(sha1, salt1, 32)) /* Salt1 (32 bytes) */
+	WINPR_ASSERT(salt1_len == 32);
+	if (!winpr_Digest_Update(sha1, salt1, salt1_len)) /* Salt1 (32 bytes) */
 		goto out;
 
-	if (!winpr_Digest_Update(sha1, salt2, 32)) /* Salt2 (32 bytes) */
+	WINPR_ASSERT(salt2_len == 32);
+	if (!winpr_Digest_Update(sha1, salt2, salt2_len)) /* Salt2 (32 bytes) */
 		goto out;
 
 	if (!winpr_Digest_Final(sha1, sha1_digest, sizeof(sha1_digest)))
@@ -203,6 +206,11 @@ void security_mac_salt_key(const BYTE* session_key_blob, size_t session_len,
 {
 	/* MacSaltKey = First128Bits(SessionKeyBlob) */
 	WINPR_ASSERT(out_len >= 16);
+	WINPR_ASSERT(session_len >= 16);
+	WINPR_UNUSED(client_random);
+	WINPR_UNUSED(client_len);
+	WINPR_UNUSED(server_random);
+	WINPR_UNUSED(server_len);
 	memcpy(output, session_key_blob, 16);
 }
 
@@ -270,6 +278,12 @@ BOOL security_licensing_encryption_key(const BYTE* session_key_blob, size_t sess
                                        const BYTE* server_random, size_t server_len, BYTE* output,
                                        size_t out_len)
 {
+	if (session_len < 16)
+		return FALSE;
+	if (client_len < 32)
+		return FALSE;
+	if (server_len < 32)
+		return FALSE;
 	/* LicensingEncryptionKey = MD5(Second128Bits(SessionKeyBlob) + ClientRandom + ServerRandom))
 	 * Allow FIPS use of MD5 here, this is just used for creating the licensing encryption key as
 	 * described in MS-RDPELE. This is for RDP licensing packets which will already be encrypted
@@ -453,7 +467,8 @@ BOOL security_salted_mac_signature(rdpRdp* rdp, const BYTE* data, UINT32 length,
 		 * We calculate checksum on plain text, so we must have already
 		 * decrypt it, which means decrypt_checksum_use_count is off by one.
 		 */
-		security_UINT32_le(use_count_le, sizeof(use_count_le), rdp->decrypt_checksum_use_count - 1);
+		security_UINT32_le(use_count_le, sizeof(use_count_le),
+		                   rdp->decrypt_checksum_use_count - 1u);
 	}
 
 	/* SHA1_Digest = SHA1(MACKeyN + pad1 + length + data) */
@@ -574,7 +589,7 @@ static void fips_expand_key_bits(const BYTE* in, size_t in_len, BYTE* out, size_
 		else
 		{
 			/* c is accumulator */
-			BYTE c = buf[p] << r;
+			BYTE c = (BYTE)(buf[p] << r) & 0xFF;
 			c |= buf[p + 1] >> (8 - r);
 			out[i] = c & 0xfe;
 		}
@@ -602,8 +617,13 @@ BOOL security_establish_keys(rdpRdp* rdp)
 	const BYTE* client_random = freerdp_settings_get_pointer(settings, FreeRDP_ClientRandom);
 	WINPR_ASSERT(client_random);
 	WINPR_ASSERT(server_random);
-	WINPR_ASSERT(freerdp_settings_get_uint32(settings, FreeRDP_ClientRandomLength) == 32);
-	WINPR_ASSERT(freerdp_settings_get_uint32(settings, FreeRDP_ServerRandomLength) == 32);
+
+	const UINT32 ClientRandomLength =
+	    freerdp_settings_get_uint32(settings, FreeRDP_ClientRandomLength);
+	const UINT32 ServerRandomLength =
+	    freerdp_settings_get_uint32(settings, FreeRDP_ServerRandomLength);
+	WINPR_ASSERT(ClientRandomLength == 32);
+	WINPR_ASSERT(ServerRandomLength == 32);
 
 	if (settings->EncryptionMethods == ENCRYPTION_METHOD_FIPS)
 	{
@@ -665,12 +685,10 @@ BOOL security_establish_keys(rdpRdp* rdp)
 	memcpy(pre_master_secret, client_random, 24);
 	memcpy(pre_master_secret + 24, server_random, 24);
 
-	if (!security_A(pre_master_secret, sizeof(pre_master_secret), client_random,
-	                sizeof(client_random), server_random, sizeof(server_random), master_secret,
-	                sizeof(master_secret)) ||
-	    !security_X(master_secret, sizeof(master_secret), client_random, sizeof(client_random),
-	                server_random, sizeof(server_random), session_key_blob,
-	                sizeof(session_key_blob)))
+	if (!security_A(pre_master_secret, sizeof(pre_master_secret), client_random, ClientRandomLength,
+	                server_random, ServerRandomLength, master_secret, sizeof(master_secret)) ||
+	    !security_X(master_secret, sizeof(master_secret), client_random, ClientRandomLength,
+	                server_random, ServerRandomLength, session_key_blob, sizeof(session_key_blob)))
 	{
 		return FALSE;
 	}
@@ -918,7 +936,7 @@ BOOL security_fips_decrypt(BYTE* data, size_t length, rdpRdp* rdp)
 
 	if (!rdp || !rdp->fips_decrypt)
 	{
-		WLog_ERR(TAG, "rdp=%p, rdp->fips_decrypt=%p", rdp, rdp->fips_decrypt);
+		WLog_ERR(TAG, "rdp=%p, rdp->fips_decrypt=%p", rdp, rdp ? rdp->fips_decrypt : NULL);
 		return FALSE;
 	}
 
@@ -953,7 +971,7 @@ BOOL security_fips_check_signature(const BYTE* data, size_t length, const BYTE* 
 	if (!winpr_HMAC_Final(hmac, buf, WINPR_SHA1_DIGEST_LENGTH))
 		goto out;
 
-	if (!memcmp(sig, buf, 8))
+	if ((sig_len >= 8) && (memcmp(sig, buf, 8) == 0))
 		result = TRUE;
 
 out:

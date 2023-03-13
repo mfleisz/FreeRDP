@@ -104,6 +104,7 @@
 #include "xf_input.h"
 #include "xf_channels.h"
 #include "xfreerdp.h"
+#include "xf_utils.h"
 
 #include <freerdp/log.h>
 #define TAG CLIENT_TAG("x11")
@@ -161,8 +162,8 @@ static int xf_map_error_to_exit_code(DWORD error)
 
 	return XF_EXIT_CONN_FAILED;
 }
-static int (*_def_error_handler)(Display*, XErrorEvent*);
-static int _xf_error_handler(Display* d, XErrorEvent* ev);
+static int (*def_error_handler)(Display*, XErrorEvent*);
+static int xf_error_handler_ex(Display* d, XErrorEvent* ev);
 static void xf_check_extensions(xfContext* context);
 static void xf_window_free(xfContext* xfc);
 static BOOL xf_get_pixmap_info(xfContext* xfc);
@@ -868,19 +869,24 @@ static BOOL xf_get_pixmap_info(xfContext* xfc)
 
 static int xf_error_handler(Display* d, XErrorEvent* ev)
 {
-	char buf[256];
-	int do_abort = TRUE;
+	char buf[256] = { 0 };
 	XGetErrorText(d, ev->error_code, buf, sizeof(buf));
 	WLog_ERR(TAG, "%s", buf);
+	winpr_log_backtrace(TAG, WLOG_ERROR, 20);
 
+#if 0
+	const BOOL do_abort = TRUE;
 	if (do_abort)
 		abort();
+#endif
 
-	_def_error_handler(d, ev);
-	return FALSE;
+	if (def_error_handler)
+		return def_error_handler(d, ev);
+
+	return 0;
 }
 
-static int _xf_error_handler(Display* d, XErrorEvent* ev)
+static int xf_error_handler_ex(Display* d, XErrorEvent* ev)
 {
 	/*
 	 * ungrab the keyboard, in case a debugger is running in
@@ -1260,11 +1266,6 @@ static BOOL xf_post_connect(freerdp* instance)
 		}
 
 		xf_gdi_register_update_callbacks(update);
-		brush_cache_register_callbacks(context->update);
-		glyph_cache_register_callbacks(context->update);
-		bitmap_cache_register_callbacks(context->update);
-		offscreen_cache_register_callbacks(context->update);
-		palette_cache_register_callbacks(context->update);
 	}
 
 #ifdef WITH_XRENDER
@@ -1652,7 +1653,7 @@ static void xf_PanningChangeEventHandler(void* context, const PanningChangeEvent
  * Client Interface
  */
 
-static BOOL xfreerdp_client_global_init()
+static BOOL xfreerdp_client_global_init(void)
 {
 	setlocale(LC_ALL, "");
 
@@ -1662,7 +1663,7 @@ static BOOL xfreerdp_client_global_init()
 	return TRUE;
 }
 
-static void xfreerdp_client_global_uninit()
+static void xfreerdp_client_global_uninit(void)
 {
 }
 
@@ -1739,8 +1740,11 @@ BOOL xf_setup_x11(xfContext* xfc)
 
 	WINPR_ASSERT(xfc);
 	xfc->UseXThreads = TRUE;
+
+#if !defined(NDEBUG)
 	/* uncomment below if debugging to prevent keyboard grap */
-	/* xfc->debug = TRUE; */
+	xfc->debug = TRUE;
+#endif
 
 	if (xfc->UseXThreads)
 	{
@@ -1759,6 +1763,12 @@ BOOL xf_setup_x11(xfContext* xfc)
 		WLog_ERR(TAG, "Please check that the $DISPLAY environment variable is properly set.");
 		goto fail;
 	}
+	if (xfc->debug)
+	{
+		WLog_INFO(TAG, "Enabling X11 debug mode.");
+		XSynchronize(xfc->display, TRUE);
+	}
+	def_error_handler = XSetErrorHandler(xf_error_handler_ex);
 
 	xfc->mutex = CreateMutex(NULL, FALSE, NULL);
 
@@ -1783,9 +1793,9 @@ BOOL xf_setup_x11(xfContext* xfc)
 		int actual_format = 0;
 		unsigned long nitems = 0, after = 0;
 		unsigned char* data = NULL;
-		int status = XGetWindowProperty(xfc->display, RootWindowOfScreen(xfc->screen),
-		                                xfc->_NET_SUPPORTED, 0, 1024, False, XA_ATOM, &actual_type,
-		                                &actual_format, &nitems, &after, &data);
+		int status = LogTagAndXGetWindowProperty(
+		    TAG, xfc->display, RootWindowOfScreen(xfc->screen), xfc->_NET_SUPPORTED, 0, 1024, False,
+		    XA_ATOM, &actual_type, &actual_format, &nitems, &after, &data);
 
 		if ((status == Success) && (actual_type == XA_ATOM) && (actual_format == 32))
 		{
@@ -1841,13 +1851,6 @@ BOOL xf_setup_x11(xfContext* xfc)
 	{
 		WLog_ERR(TAG, "Could not create xfds event");
 		goto fail;
-	}
-
-	if (xfc->debug)
-	{
-		WLog_INFO(TAG, "Enabling X11 debug mode.");
-		XSynchronize(xfc->display, TRUE);
-		_def_error_handler = XSetErrorHandler(_xf_error_handler);
 	}
 
 	xf_check_extensions(xfc);

@@ -21,6 +21,7 @@
 
 #include <freerdp/config.h>
 
+#include <string.h>
 #include <stdarg.h>
 
 #include "rdp.h"
@@ -50,9 +51,9 @@
 #include <freerdp/channels/channels.h>
 #include <freerdp/version.h>
 #include <freerdp/log.h>
-#include <freerdp/cache/pointer.h>
 #include <freerdp/utils/signal.h>
 
+#include "../cache/pointer.h"
 #include "settings.h"
 #include "utils.h"
 
@@ -715,6 +716,8 @@ BOOL freerdp_context_new_ex(freerdp* instance, rdpSettings* settings)
 
 	WINPR_ASSERT(instance);
 
+	rdp_log_build_warnings();
+
 	instance->context = context = (rdpContext*)calloc(1, instance->ContextSize);
 
 	if (!context)
@@ -987,31 +990,41 @@ const char* freerdp_get_last_error_category(UINT32 code)
 	return string;
 }
 
-void freerdp_set_last_error(rdpContext* context, UINT32 lastError)
-{
-	freerdp_set_last_error_ex(context, lastError, NULL, NULL, -1);
-}
-
 void freerdp_set_last_error_ex(rdpContext* context, UINT32 lastError, const char* fkt,
                                const char* file, int line)
 {
+	static wLog* _log = NULL;
+	if (_log)
+		_log = WLog_Get(TAG);
+
 	WINPR_ASSERT(context);
 
 	if (lastError)
-		WLog_ERR(TAG, "%s %s [0x%08" PRIX32 "]", fkt, freerdp_get_last_error_name(lastError),
-		         lastError);
+	{
+		if (WLog_IsLevelActive(_log, WLOG_ERROR))
+		{
+			WLog_PrintMessage(_log, WLOG_MESSAGE_TEXT, WLOG_ERROR, line, file, fkt,
+			                  "%s [0x%08" PRIX32 "]", freerdp_get_last_error_name(lastError),
+			                  lastError);
+		}
+	}
 
 	if (lastError == FREERDP_ERROR_SUCCESS)
 	{
-		WLog_DBG(TAG, "%s resetting error state", fkt);
+		if (WLog_IsLevelActive(_log, WLOG_DEBUG))
+			WLog_PrintMessage(_log, WLOG_MESSAGE_TEXT, WLOG_DEBUG, line, file, fkt,
+			                  "resetting error state");
 	}
 	else if (context->LastError != FREERDP_ERROR_SUCCESS)
 	{
-		WLog_ERR(TAG, "%s: TODO: Trying to set error code %s, but %s already set!", fkt,
-		         freerdp_get_last_error_name(lastError),
-		         freerdp_get_last_error_name(context->LastError));
+		if (WLog_IsLevelActive(_log, WLOG_ERROR))
+		{
+			WLog_PrintMessage(_log, WLOG_MESSAGE_TEXT, WLOG_ERROR, line, file, fkt,
+			                  "TODO: Trying to set error code %s, but %s already set!",
+			                  freerdp_get_last_error_name(lastError),
+			                  freerdp_get_last_error_name(context->LastError));
+		}
 	}
-
 	context->LastError = lastError;
 }
 
@@ -1129,6 +1142,19 @@ BOOL freerdp_nla_revert_to_self(rdpContext* context)
 
 	nla = transport_get_nla(context->rdp->transport);
 	return nla_revert_to_self(nla);
+}
+
+UINT32 freerdp_get_nla_sspi_error(rdpContext* context)
+{
+	rdpNla* nla;
+
+	WINPR_ASSERT(context);
+	WINPR_ASSERT(context->rdp);
+	WINPR_ASSERT(context->rdp->transport);
+
+	nla = transport_get_nla(context->rdp->transport);
+
+	return nla_get_sspi_error(nla);
 }
 
 HANDLE getChannelErrorEventHandle(rdpContext* context)

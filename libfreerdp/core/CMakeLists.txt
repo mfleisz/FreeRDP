@@ -132,7 +132,12 @@ set(${MODULE_PREFIX}_SRCS
 	display.c
 	display.h
 	credssp_auth.c
-	credssp_auth.h)
+	credssp_auth.h
+	rdstls.c
+	rdstls.h
+	aad.c
+	aad.h
+)
 
 set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS} ${${MODULE_PREFIX}_GATEWAY_SRCS})
 

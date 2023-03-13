@@ -36,6 +36,7 @@
 #include <freerdp/codec/bulk.h>
 #include <freerdp/crypto/per.h>
 #include <freerdp/log.h>
+#include <freerdp/buildflags.h>
 
 #define TAG FREERDP_TAG("core.rdp")
 
@@ -1782,6 +1783,25 @@ static state_run_t rdp_recv_callback_int(rdpTransport* transport, wStream* s, vo
 			}
 			break;
 
+		case CONNECTION_STATE_AAD:
+			if (aad_recv(rdp->aad, s) < 1)
+			{
+				WLog_ERR(TAG, "%s - aad_recv() fail", rdp_get_state_string(rdp));
+				status = STATE_RUN_FAILED;
+			}
+			if (state_run_success(status))
+			{
+				if (aad_get_state(rdp->aad) == AAD_STATE_FINAL)
+				{
+					transport_set_aad_mode(rdp->transport, FALSE);
+					if (!rdp_client_transition_to_state(rdp, CONNECTION_STATE_MCS_CREATE_REQUEST))
+						status = STATE_RUN_FAILED;
+					else
+						status = STATE_RUN_CONTINUE;
+				}
+			}
+			break;
+
 		case CONNECTION_STATE_MCS_CREATE_REQUEST:
 			if (!mcs_client_begin(rdp->mcs))
 			{
@@ -2144,6 +2164,10 @@ rdpRdp* rdp_new(rdpContext* context)
 		*rdp->io = *io;
 	}
 
+	rdp->aad = aad_new(context, rdp->transport);
+	if (!rdp->aad)
+		goto fail;
+
 	rdp->license = license_new(rdp);
 
 	if (!rdp->license)
@@ -2280,6 +2304,11 @@ BOOL rdp_reset(rdpRdp* rdp)
 			goto fail;
 	}
 
+	aad_free(rdp->aad);
+	rdp->aad = aad_new(context, rdp->transport);
+	if (!rdp->aad)
+		goto fail;
+
 	rdp->nego = nego_new(rdp->transport);
 	if (!rdp->nego)
 		goto fail;
@@ -2334,6 +2363,7 @@ void rdp_free(rdpRdp* rdp)
 		PubSub_Free(rdp->pubSub);
 		if (rdp->abortEvent)
 			CloseHandle(rdp->abortEvent);
+		aad_free(rdp->aad);
 		free(rdp);
 	}
 }
@@ -2558,4 +2588,168 @@ BOOL rdp_reset_runtime_settings(rdpRdp* rdp)
 	if (!rdp->settings)
 		return FALSE;
 	return rdp_reset_remote_settings(rdp);
+}
+
+static BOOL starts_with(const char* tok, const char* val)
+{
+	const size_t len = strlen(val);
+	if (strncmp(tok, val, len) != 0)
+		return FALSE;
+	if (tok[len] != '=')
+		return FALSE;
+	return TRUE;
+}
+
+static BOOL option_equals(const char* what, const char* val)
+{
+	return _stricmp(what, val) == 0;
+}
+
+static BOOL parse_on_off_option(const char* value)
+{
+	WINPR_ASSERT(value);
+	const char* sep = strchr(value, '=');
+	if (!sep)
+		return TRUE;
+	if (option_equals("on", &sep[1]))
+		return TRUE;
+	if (option_equals("true", &sep[1]))
+		return TRUE;
+	if (option_equals("off", &sep[1]))
+		return FALSE;
+	if (option_equals("false", &sep[1]))
+		return FALSE;
+
+	errno = 0;
+	long val = strtol(value, NULL, 0);
+	if (errno == 0)
+		return val == 0 ? FALSE : TRUE;
+
+	return FALSE;
+}
+
+#define STR(x) #x
+
+static BOOL option_is_experimental(const char* tok)
+{
+	const char* experimental[] = { STR(WITH_DSP_EXPERIMENTAL), STR(WITH_VAAPI) };
+	for (size_t x = 0; x < ARRAYSIZE(experimental); x++)
+	{
+		const char* opt = experimental[x];
+		if (starts_with(tok, opt))
+		{
+			return parse_on_off_option(tok);
+		}
+	}
+	return FALSE;
+}
+
+static BOOL option_is_debug(const char* tok)
+{
+	const char* debug[] = { STR(WITH_DEBUG_ALL),
+		                    STR(WITH_DEBUG_CERTIFICATE),
+		                    STR(WITH_DEBUG_CAPABILITIES),
+		                    STR(WITH_DEBUG_CHANNELS),
+		                    STR(WITH_DEBUG_CLIPRDR),
+		                    STR(WITH_DEBUG_CODECS),
+		                    STR(WITH_DEBUG_RDPGFX),
+		                    STR(WITH_DEBUG_DVC),
+		                    STR(WITH_DEBUG_TSMF),
+		                    STR(WITH_DEBUG_KBD),
+		                    STR(WITH_DEBUG_LICENSE),
+		                    STR(WITH_DEBUG_NEGO),
+		                    STR(WITH_DEBUG_NLA),
+		                    STR(WITH_DEBUG_TSG),
+		                    STR(WITH_DEBUG_RAIL),
+		                    STR(WITH_DEBUG_RDP),
+		                    STR(WITH_DEBUG_RDPEI),
+		                    STR(WITH_DEBUG_REDIR),
+		                    STR(WITH_DEBUG_RDPDR),
+		                    STR(WITH_DEBUG_RFX),
+		                    STR(WITH_DEBUG_SCARD),
+		                    STR(WITH_DEBUG_SND),
+		                    STR(WITH_DEBUG_SVC),
+		                    STR(WITH_DEBUG_TRANSPORT),
+		                    STR(WITH_DEBUG_TIMEZONE),
+		                    STR(WITH_DEBUG_WND),
+		                    STR(WITH_DEBUG_X11_CLIPRDR),
+		                    STR(WITH_DEBUG_X11_LOCAL_MOVESIZE),
+		                    STR(WITH_DEBUG_X11),
+		                    STR(WITH_DEBUG_XV),
+		                    STR(WITH_DEBUG_RINGBUFFER),
+		                    STR(WITH_DEBUG_SYMBOLS),
+		                    STR(WITH_DEBUG_EVENTS),
+		                    STR(WITH_DEBUG_MUTEX),
+		                    STR(WITH_DEBUG_NTLM),
+		                    STR(WITH_DEBUG_SDL_EVENTS),
+		                    STR(WITH_DEBUG_SDL_KBD_EVENTS),
+		                    STR(WITH_DEBUG_THREADS),
+		                    STR(WITH_DEBUG_URBDRC) };
+
+	for (size_t x = 0; x < ARRAYSIZE(debug); x++)
+	{
+		const char* opt = debug[x];
+		if (starts_with(tok, opt))
+			return parse_on_off_option(tok);
+	}
+
+	if (starts_with(tok, "WITH_DEBUG"))
+	{
+		WLog_WARN(TAG, "[BUG] Unmapped Debug-Build option '%s'.", tok);
+		return parse_on_off_option(tok);
+	}
+
+	return FALSE;
+}
+
+static void log_build_warn(const char* what, const char* msg, BOOL (*cmp)(const char* tok))
+{
+	size_t len = sizeof(FREERDP_BUILD_CONFIG);
+	char* list = calloc(len, sizeof(char));
+	char* config = _strdup(FREERDP_BUILD_CONFIG);
+	if (config && list)
+	{
+		char* tok = strtok(config, " ");
+		while (tok)
+		{
+			if (cmp(tok))
+				winpr_str_append(tok, list, len, " ");
+
+			tok = strtok(NULL, " ");
+		}
+	}
+	free(config);
+
+	if (list)
+	{
+		if (strlen(list) > 0)
+		{
+			WLog_WARN(TAG, "*************************************************");
+			WLog_WARN(TAG, "This build is using [%s] build options:", what);
+			char* tok = strtok(list, " ");
+			while (tok)
+			{
+				WLog_WARN(TAG, "* '%s'", tok);
+				tok = strtok(NULL, " ");
+			}
+			WLog_WARN(TAG, "");
+			WLog_WARN(TAG, "[%s] build options %s", what, msg);
+			WLog_WARN(TAG, "*************************************************");
+		}
+	}
+	free(list);
+}
+
+void rdp_log_build_warnings(void)
+{
+	static unsigned count = 0;
+
+	/* Since this function is called in context creation routines stop logging
+	 * this issue repetedly. This is required for proxy, which would otherwise
+	 * spam the log with these. */
+	if (count > 0)
+		return;
+	count++;
+	log_build_warn("experimental", "might crash the application", option_is_experimental);
+	log_build_warn("debug", "might leak sensitive information (credentials, ...)", option_is_debug);
 }

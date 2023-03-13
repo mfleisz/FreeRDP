@@ -631,6 +631,8 @@ typedef struct
 #define FreeRDP_TLSMaxVersion (1108)
 #define FreeRDP_TlsSecretsFile (1109)
 #define FreeRDP_AuthenticationPackageList (1110)
+#define FreeRDP_RdstlsSecurity (1111)
+#define FreeRDP_AadSecurity (1112)
 #define FreeRDP_MstscCookieMode (1152)
 #define FreeRDP_CookieMaxLength (1153)
 #define FreeRDP_PreconnectionId (1154)
@@ -657,7 +659,6 @@ typedef struct
 #define FreeRDP_RedirectionGuid (1234)
 #define FreeRDP_RedirectionGuidLength (1235)
 #define FreeRDP_RedirectionTargetCertificate (1236)
-#define FreeRDP_RedirectionTargetCertificateLength (1237)
 #define FreeRDP_Password51 (1280)
 #define FreeRDP_Password51Length (1281)
 #define FreeRDP_SmartcardLogon (1282)
@@ -1143,7 +1144,9 @@ struct rdp_settings
 	ALIGN64 UINT16 TLSMaxVersion;              /* 1108 */
 	ALIGN64 char* TlsSecretsFile;              /* 1109 */
 	ALIGN64 char* AuthenticationPackageList;   /* 1110 */
-	UINT64 padding1152[1152 - 1111];           /* 1111 */
+	ALIGN64 BOOL RdstlsSecurity;               /* 1111 */
+	ALIGN64 BOOL AadSecurity;                  /* 1112 */
+	UINT64 padding1152[1152 - 1113];           /* 1113 */
 
 	/* Connection Cookie */
 	ALIGN64 BOOL MstscCookieMode;      /* 1152 */
@@ -1174,9 +1177,8 @@ struct rdp_settings
 	ALIGN64 UINT32 RedirectionPreferType;         /* 1233 */
 	ALIGN64 BYTE* RedirectionGuid;                /* 1234 */
 	ALIGN64 UINT32 RedirectionGuidLength;         /* 1235 */
-	ALIGN64 BYTE* RedirectionTargetCertificate;   /* 1236 */
-	ALIGN64 UINT32 RedirectionTargetCertificateLength; /* 1237 */
-	UINT64 padding1280[1280 - 1238];                   /* 1238 */
+	ALIGN64 rdpCertificate* RedirectionTargetCertificate; /* 1236 */
+	UINT64 padding1280[1280 - 1237];                      /* 1237 */
 
 	/**
 	 * Security

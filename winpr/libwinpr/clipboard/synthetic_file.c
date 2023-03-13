@@ -543,7 +543,11 @@ static BOOL process_uri_list(wClipboard* clipboard, const char* data, size_t len
 		}
 
 		if (stop == lim)
+		{
+			if (strnlen(start, stop - start) < 1)
+				return TRUE;
 			cur = lim;
+		}
 
 		if (comment)
 			continue;
@@ -702,6 +706,17 @@ static BOOL process_nautilus_clipboard(wClipboard* clipboard, const char* data, 
 	return process_files(clipboard, data, pSize, "x-special/nautilus-clipboard\ncopy\n");
 }
 
+static void* convert_nautilus_clipboard_to_filedescriptors(wClipboard* clipboard, UINT32 formatId,
+                                                           const void* data, UINT32* pSize)
+{
+	const UINT32 expected = ClipboardGetFormatId(clipboard, mime_gnome_copied_files);
+	if (formatId != expected)
+		return NULL;
+	if (!process_nautilus_clipboard(clipboard, (const char*)data, *pSize))
+		return NULL;
+	return convert_any_uri_list_to_filedescriptors(clipboard, formatId, pSize);
+}
+
 static void* convert_gnome_copied_files_to_filedescriptors(wClipboard* clipboard, UINT32 formatId,
                                                            const void* data, UINT32* pSize)
 {
@@ -776,7 +791,6 @@ static void* convert_filedescriptors_to_file_list(wClipboard* clipboard, UINT32 
 	const FILEDESCRIPTORW* descriptors = NULL;
 	UINT32 nrDescriptors = 0;
 	size_t count, x, alloc, pos, baseLength = 0;
-	const char* src = (const char*)data;
 	char* dst;
 	size_t header_len = strlen(header);
 	size_t lineprefix_len = strlen(lineprefix);
@@ -795,16 +809,19 @@ static void* convert_filedescriptors_to_file_list(wClipboard* clipboard, UINT32 
 	if (baseLength < 1)
 		return NULL;
 
-	if (clipboard->delegate.ClientRequestFileSize)
-		nrDescriptors = (UINT32)(src[3] << 24) | (UINT32)(src[2] << 16) | (UINT32)(src[1] << 8) |
-		                (src[0] & 0xFF);
+	wStream sbuffer = { 0 };
+	wStream* s = Stream_StaticConstInit(&sbuffer, data, *pSize);
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
+		return NULL;
+
+	Stream_Read_UINT32(s, nrDescriptors);
 
 	count = (*pSize - 4) / sizeof(FILEDESCRIPTORW);
 
 	if ((count < 1) || (count != nrDescriptors))
 		return NULL;
 
-	descriptors = (const FILEDESCRIPTORW*)&src[4];
+	descriptors = (const FILEDESCRIPTORW*)Stream_Pointer(s);
 
 	if (formatId != ClipboardGetFormatId(clipboard, mime_FileGroupDescriptorW))
 		return NULL;
@@ -917,7 +934,8 @@ static void* convert_filedescriptors_to_file_list(wClipboard* clipboard, UINT32 
 			}
 		}
 	}
-	winpr_HexDump(TAG, WLOG_DEBUG, (const BYTE*)dst, alloc);
+
+	alloc = strnlen(dst, alloc) + 1;
 	*pSize = (UINT32)alloc;
 	clipboard->fileListSequenceNumber = clipboard->sequenceNumber;
 	return dst;
@@ -973,7 +991,7 @@ static void* convert_filedescriptors_to_mate_copied_files(wClipboard* clipboard,
 {
 
 	char* pDstData = convert_filedescriptors_to_file_list(clipboard, formatId, data, pSize,
-	                                                      "copy\n", "file://", "\n", FALSE);
+	                                                      "copy\n", "file://", "\n", TRUE);
 	if (!pDstData)
 	{
 		return pDstData;
@@ -997,10 +1015,6 @@ static void array_free_synthetic_file(void* the_file)
 static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 {
 	wObject* obj;
-	UINT32 file_group_format_id;
-	UINT32 local_file_format_id;
-	UINT32 local_gnome_file_format_id;
-	UINT32 local_mate_file_format_id;
 
 	/*
 	    1. Gnome Nautilus based file manager (Nautilus only with version >= 3.30 AND < 40):
@@ -1023,10 +1037,13 @@ static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 	    TODO: other file managers do not use previous targets and formats.
 	*/
 
-	local_gnome_file_format_id = ClipboardRegisterFormat(clipboard, mime_gnome_copied_files);
-	local_mate_file_format_id = ClipboardRegisterFormat(clipboard, mime_mate_copied_files);
-	file_group_format_id = ClipboardRegisterFormat(clipboard, mime_FileGroupDescriptorW);
-	local_file_format_id = ClipboardRegisterFormat(clipboard, mime_uri_list);
+	const UINT32 local_gnome_file_format_id =
+	    ClipboardRegisterFormat(clipboard, mime_gnome_copied_files);
+	const UINT32 local_mate_file_format_id =
+	    ClipboardRegisterFormat(clipboard, mime_mate_copied_files);
+	const UINT32 file_group_format_id =
+	    ClipboardRegisterFormat(clipboard, mime_FileGroupDescriptorW);
+	const UINT32 local_file_format_id = ClipboardRegisterFormat(clipboard, mime_uri_list);
 
 	if (!file_group_format_id || !local_file_format_id || !local_gnome_file_format_id ||
 	    !local_mate_file_format_id)

@@ -23,4 +23,5 @@ set(SRCS
     msusb.h
     msusb.c)
 
-add_library(urbdrc-common OBJECT ${SRCS})
+add_library(urbdrc-common STATIC ${SRCS})
+

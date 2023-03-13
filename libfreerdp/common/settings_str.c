@@ -25,6 +25,7 @@ struct settings_str_entry {
 	const char* str;
 };
 static const struct settings_str_entry settings_map[] = {
+	{ FreeRDP_AadSecurity, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_AadSecurity" },
 	{ FreeRDP_AllowCacheWaitingList, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_AllowCacheWaitingList" },
 	{ FreeRDP_AllowDesktopComposition, FREERDP_SETTINGS_TYPE_BOOL,
 	  "FreeRDP_AllowDesktopComposition" },
@@ -166,6 +167,7 @@ static const struct settings_str_entry settings_map[] = {
 	{ FreeRDP_PrintReconnectCookie, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_PrintReconnectCookie" },
 	{ FreeRDP_PromptForCredentials, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_PromptForCredentials" },
 	{ FreeRDP_RdpSecurity, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_RdpSecurity" },
+	{ FreeRDP_RdstlsSecurity, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_RdstlsSecurity" },
 	{ FreeRDP_RedirectClipboard, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_RedirectClipboard" },
 	{ FreeRDP_RedirectDrives, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_RedirectDrives" },
 	{ FreeRDP_RedirectHomeDrive, FREERDP_SETTINGS_TYPE_BOOL, "FreeRDP_RedirectHomeDrive" },
@@ -366,8 +368,6 @@ static const struct settings_str_entry settings_map[] = {
 	  "FreeRDP_RedirectionPasswordLength" },
 	{ FreeRDP_RedirectionPreferType, FREERDP_SETTINGS_TYPE_UINT32,
 	  "FreeRDP_RedirectionPreferType" },
-	{ FreeRDP_RedirectionTargetCertificateLength, FREERDP_SETTINGS_TYPE_UINT32,
-	  "FreeRDP_RedirectionTargetCertificateLength" },
 	{ FreeRDP_RedirectionTsvUrlLength, FREERDP_SETTINGS_TYPE_UINT32,
 	  "FreeRDP_RedirectionTsvUrlLength" },
 	{ FreeRDP_RemoteAppNumIconCacheEntries, FREERDP_SETTINGS_TYPE_UINT32,

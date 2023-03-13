@@ -822,6 +822,7 @@ static state_run_t peer_recv_callback_internal(rdpTransport* transport, wStream*
 			else
 			{
 				SelectedProtocol = nego_get_selected_protocol(rdp->nego);
+				settings->RdstlsSecurity = (SelectedProtocol & PROTOCOL_RDSTLS) ? TRUE : FALSE;
 				settings->NlaSecurity = (SelectedProtocol & PROTOCOL_HYBRID) ? TRUE : FALSE;
 				settings->TlsSecurity = (SelectedProtocol & PROTOCOL_SSL) ? TRUE : FALSE;
 				settings->RdpSecurity = (SelectedProtocol == PROTOCOL_RDP) ? TRUE : FALSE;
@@ -949,7 +950,8 @@ static state_run_t peer_recv_callback_internal(rdpTransport* transport, wStream*
 			break;
 
 		case CONNECTION_STATE_MULTITRANSPORT_BOOTSTRAPPING_REQUEST:
-			if (settings->SupportMultitransport)
+			if (settings->SupportMultitransport &&
+			    ((settings->MultitransportFlags & INITIATE_REQUEST_PROTOCOL_UDPFECR) != 0))
 			{
 				/* only UDP reliable for now, nobody does lossy UDP (MS-RDPUDP only) these days */
 				ret = multitransport_server_request(rdp->multitransport,
@@ -1319,6 +1321,8 @@ void freerdp_peer_context_free(freerdp_peer* client)
 	{
 		rdpContext* ctx = client->context;
 
+		CloseHandle(ctx->channelErrorEvent);
+		ctx->channelErrorEvent = NULL;
 		free(ctx->errorDescription);
 		ctx->errorDescription = NULL;
 		rdp_free(ctx->rdp);
@@ -1504,6 +1508,8 @@ BOOL freerdp_peer_context_new_ex(freerdp_peer* client, const rdpSettings* settin
 	rdpContext* context;
 	BOOL ret = TRUE;
 
+	rdp_log_build_warnings();
+
 	if (!client)
 		return FALSE;
 
@@ -1542,6 +1548,12 @@ BOOL freerdp_peer_context_new_ex(freerdp_peer* client, const rdpSettings* settin
 	context->autodetect = rdp->autodetect;
 	update_register_server_callbacks(rdp->update);
 	autodetect_register_server_callbacks(rdp->autodetect);
+
+	if (!(context->channelErrorEvent = CreateEvent(NULL, TRUE, FALSE, NULL)))
+	{
+		WLog_ERR(TAG, "CreateEvent failed!");
+		goto fail;
+	}
 
 	if (!(context->errorDescription = calloc(1, 500)))
 	{

@@ -38,8 +38,8 @@
 #include <freerdp/log.h>
 #include <freerdp/error.h>
 #include <freerdp/listener.h>
-#include <freerdp/cache/pointer.h>
 
+#include "../cache/pointer.h"
 #include "../crypto/crypto.h"
 #include "../crypto/privatekey.h"
 #include "../crypto/certificate.h"
@@ -327,7 +327,11 @@ BOOL rdp_client_connect(rdpRdp* rdp)
 	}
 
 	const char* hostname = freerdp_settings_get_server_name(settings);
-
+	if (!hostname)
+	{
+		WLog_ERR(TAG, "Missing hostname, can not connect to NULL target");
+		return FALSE;
+	}
 	nego_init(rdp->nego);
 	nego_set_target(rdp->nego, hostname, settings->ServerPort);
 
@@ -388,6 +392,8 @@ BOOL rdp_client_connect(rdpRdp* rdp)
 	nego_enable_tls(rdp->nego, settings->TlsSecurity);
 	nego_enable_nla(rdp->nego, settings->NlaSecurity);
 	nego_enable_ext(rdp->nego, settings->ExtSecurity);
+	nego_enable_rdstls(rdp->nego, settings->RdstlsSecurity);
+	nego_enable_aad(rdp->nego, settings->AadSecurity);
 
 	if (settings->MstscCookieMode)
 		settings->CookieMaxLength = MSTSC_COOKIE_MAX_LENGTH;
@@ -420,7 +426,8 @@ BOOL rdp_client_connect(rdpRdp* rdp)
 
 		SelectedProtocol = nego_get_selected_protocol(rdp->nego);
 
-		if ((SelectedProtocol & PROTOCOL_SSL) || (SelectedProtocol == PROTOCOL_RDP))
+		if ((SelectedProtocol & PROTOCOL_SSL) || (SelectedProtocol == PROTOCOL_RDP) ||
+		    (SelectedProtocol == PROTOCOL_RDSTLS))
 		{
 			wStream s = { 0 };
 
@@ -614,16 +621,7 @@ BOOL rdp_client_redirect(rdpRdp* rdp)
 	settings = rdp->settings;
 	WINPR_ASSERT(settings);
 
-	if (settings->RedirectionFlags & LB_LOAD_BALANCE_INFO)
-	{
-		if (settings->LoadBalanceInfo && (settings->LoadBalanceInfoLength > 0))
-		{
-			if (!nego_set_routing_token(rdp->nego, settings->LoadBalanceInfo,
-			                            settings->LoadBalanceInfoLength))
-				return FALSE;
-		}
-	}
-	else
+	if ((settings->RedirectionFlags & LB_LOAD_BALANCE_INFO) == 0)
 	{
 		BOOL haveRedirectAddress = FALSE;
 		UINT32 redirectionMask = settings->RedirectionPreferType;
@@ -662,6 +660,8 @@ BOOL rdp_client_redirect(rdpRdp* rdp)
 		        freerdp_settings_get_string(settings, FreeRDP_RedirectionDomain)))
 			return FALSE;
 	}
+
+	settings->RdstlsSecurity = settings->RedirectionFlags & LB_PASSWORD_IS_PK_ENCRYPTED;
 
 	WINPR_ASSERT(rdp->context);
 	WINPR_ASSERT(rdp->context->instance);
@@ -703,11 +703,7 @@ static const BYTE fips_ivec[8] = { 0x12, 0x34, 0x56, 0x78, 0x90, 0xAB, 0xCD, 0xE
 
 static BOOL rdp_client_establish_keys(rdpRdp* rdp)
 {
-	BYTE* mod = NULL;
-	BYTE* exp = NULL;
 	wStream* s = NULL;
-	UINT32 length = 0;
-	UINT32 key_len = 0;
 	int status = 0;
 	BOOL ret = FALSE;
 	rdpSettings* settings = rdp->settings;
@@ -730,21 +726,25 @@ static BOOL rdp_client_establish_keys(rdpRdp* rdp)
 
 	const rdpCertInfo* info = freerdp_certificate_get_info(settings->RdpServerCertificate);
 	if (!info)
+	{
+		WLog_ERR(TAG, "Failed to get rdpCertInfo from RdpServerCertificate");
 		return FALSE;
+	}
 
 	/*
 	 * client random must be (bitlen / 8) + 8 - see [MS-RDPBCGR] 5.3.4.1
 	 * for details
 	 */
-	crypt_client_random = calloc(info->ModulusLength + 8, 1);
+	crypt_client_random = calloc(info->ModulusLength, 1);
 
 	if (!crypt_client_random)
 		return FALSE;
 
 	crypto_rsa_public_encrypt(settings->ClientRandom, settings->ClientRandomLength, info,
-	                          crypt_client_random, info->ModulusLength + 8);
+	                          crypt_client_random, info->ModulusLength);
 	/* send crypt client random to server */
-	length = RDP_PACKET_HEADER_MAX_LENGTH + RDP_SECURITY_HEADER_LENGTH + 4 + key_len + 8;
+	const size_t length =
+	    RDP_PACKET_HEADER_MAX_LENGTH + RDP_SECURITY_HEADER_LENGTH + 4 + info->ModulusLength + 8;
 	s = Stream_New(NULL, length);
 
 	if (!s)
@@ -757,9 +757,10 @@ static BOOL rdp_client_establish_keys(rdpRdp* rdp)
 		goto end;
 	if (!rdp_write_security_header(s, SEC_EXCHANGE_PKT | SEC_LICENSE_ENCRYPT_SC))
 		goto end;
-	length = key_len + 8;
-	Stream_Write_UINT32(s, length);
-	Stream_Write(s, crypt_client_random, length);
+
+	Stream_Write_UINT32(s, info->ModulusLength + 8);
+	Stream_Write(s, crypt_client_random, info->ModulusLength);
+	Stream_Zero(s, 8);
 	Stream_SealLength(s);
 	status = transport_write(rdp->mcs->transport, s);
 	Stream_Free(s, TRUE);
@@ -1004,6 +1005,8 @@ BOOL rdp_client_connect_mcs_channel_join_confirm(rdpRdp* rdp, wStream* s)
 	UINT32 i;
 	UINT16 channelId;
 	BOOL allJoined = TRUE;
+
+	WINPR_ASSERT(rdp);
 	rdpMcs* mcs = rdp->mcs;
 
 	if (!mcs_recv_channel_join_confirm(mcs, s, &channelId))
@@ -1012,7 +1015,11 @@ BOOL rdp_client_connect_mcs_channel_join_confirm(rdpRdp* rdp, wStream* s)
 	if (!mcs->userChannelJoined)
 	{
 		if (channelId != mcs->userId)
+		{
+			WLog_ERR(TAG, "expected user channel id %" PRIu16 ", but received %" PRIu16,
+			         mcs->userId, channelId);
 			return FALSE;
+		}
 
 		mcs->userChannelJoined = TRUE;
 		if (!rdp_client_join_channel(rdp, MCS_GLOBAL_CHANNEL_ID))
@@ -1021,8 +1028,11 @@ BOOL rdp_client_connect_mcs_channel_join_confirm(rdpRdp* rdp, wStream* s)
 	else if (!mcs->globalChannelJoined)
 	{
 		if (channelId != MCS_GLOBAL_CHANNEL_ID)
+		{
+			WLog_ERR(TAG, "expected uglobalser channel id %" PRIu16 ", but received %" PRIu16,
+			         MCS_GLOBAL_CHANNEL_ID, channelId);
 			return FALSE;
-
+		}
 		mcs->globalChannelJoined = TRUE;
 
 		if (mcs->messageChannelId != 0)
@@ -1070,8 +1080,11 @@ BOOL rdp_client_connect_mcs_channel_join_confirm(rdpRdp* rdp, wStream* s)
 				continue;
 
 			if (cur->ChannelId != channelId)
+			{
+				WLog_ERR(TAG, "expected channel id %" PRIu16 ", but received %" PRIu16,
+				         MCS_GLOBAL_CHANNEL_ID, channelId);
 				return FALSE;
-
+			}
 			cur->joined = TRUE;
 			break;
 		}
@@ -1355,14 +1368,21 @@ BOOL rdp_server_accept_nego(rdpRdp* rdp, wStream* s)
 		return FALSE;
 
 	RequestedProtocols = nego_get_requested_protocols(nego);
-	WLog_INFO(TAG, "Client Security: NLA:%d TLS:%d RDP:%d",
+	WLog_INFO(TAG, "Client Security: RDSTLS:%d NLA:%d TLS:%d RDP:%d",
+	          (RequestedProtocols & PROTOCOL_RDSTLS) ? 1 : 0,
 	          (RequestedProtocols & PROTOCOL_HYBRID) ? 1 : 0,
 	          (RequestedProtocols & PROTOCOL_SSL) ? 1 : 0,
 	          (RequestedProtocols == PROTOCOL_RDP) ? 1 : 0);
-	WLog_INFO(TAG, "Server Security: NLA:%" PRId32 " TLS:%" PRId32 " RDP:%" PRId32 "",
-	          settings->NlaSecurity, settings->TlsSecurity, settings->RdpSecurity);
+	WLog_INFO(TAG,
+	          "Server Security: RDSTLS:%" PRId32 " NLA:%" PRId32 " TLS:%" PRId32 " RDP:%" PRId32 "",
+	          settings->RdstlsSecurity, settings->NlaSecurity, settings->TlsSecurity,
+	          settings->RdpSecurity);
 
-	if ((settings->NlaSecurity) && (RequestedProtocols & PROTOCOL_HYBRID))
+	if ((settings->RdstlsSecurity) && (RequestedProtocols & PROTOCOL_RDSTLS))
+	{
+		SelectedProtocol = PROTOCOL_RDSTLS;
+	}
+	else if ((settings->NlaSecurity) && (RequestedProtocols & PROTOCOL_HYBRID))
 	{
 		SelectedProtocol = PROTOCOL_HYBRID;
 	}
@@ -1406,7 +1426,8 @@ BOOL rdp_server_accept_nego(rdpRdp* rdp, wStream* s)
 
 	if (!(SelectedProtocol & PROTOCOL_FAILED_NEGO))
 	{
-		WLog_INFO(TAG, "Negotiated Security: NLA:%d TLS:%d RDP:%d",
+		WLog_INFO(TAG, "Negotiated Security: RDSTLS:%d NLA:%d TLS:%d RDP:%d",
+		          (SelectedProtocol & PROTOCOL_RDSTLS) ? 1 : 0,
 		          (SelectedProtocol & PROTOCOL_HYBRID) ? 1 : 0,
 		          (SelectedProtocol & PROTOCOL_SSL) ? 1 : 0,
 		          (SelectedProtocol == PROTOCOL_RDP) ? 1 : 0);
@@ -1421,7 +1442,9 @@ BOOL rdp_server_accept_nego(rdpRdp* rdp, wStream* s)
 	SelectedProtocol = nego_get_selected_protocol(nego);
 	status = FALSE;
 
-	if (SelectedProtocol & PROTOCOL_HYBRID)
+	if (SelectedProtocol & PROTOCOL_RDSTLS)
+		status = transport_accept_rdstls(rdp->transport);
+	else if (SelectedProtocol & PROTOCOL_HYBRID)
 		status = transport_accept_nla(rdp->transport);
 	else if (SelectedProtocol & PROTOCOL_SSL)
 		status = transport_accept_tls(rdp->transport);
@@ -1744,6 +1767,8 @@ const char* rdp_state_string(CONNECTION_STATE state)
 			return "CONNECTION_STATE_NEGO";
 		case CONNECTION_STATE_NLA:
 			return "CONNECTION_STATE_NLA";
+		case CONNECTION_STATE_AAD:
+			return "CONNECTION_STATE_AAD";
 		case CONNECTION_STATE_MCS_CREATE_REQUEST:
 			return "CONNECTION_STATE_MCS_CREATE_REQUEST";
 		case CONNECTION_STATE_MCS_CREATE_RESPONSE:
