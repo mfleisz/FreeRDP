@@ -163,6 +163,8 @@ extern "C"
 }
 #endif
 
+#else
+#define winpr_aligned_calloc(count, size, alignment) _aligned_recalloc(NULL, count, size, alignment)
 #endif /* _WIN32 */
 
 #if !defined(_WIN32) || (defined(__MINGW32__) && !defined(_UCRT))
@@ -188,6 +190,8 @@ extern "C"
 #endif
 
 	WINPR_API void* winpr_aligned_malloc(size_t size, size_t alignment);
+
+	WINPR_API void* winpr_aligned_calloc(size_t count, size_t size, size_t alignment);
 
 	WINPR_API void* winpr_aligned_realloc(void* memblock, size_t size, size_t alignment);
 

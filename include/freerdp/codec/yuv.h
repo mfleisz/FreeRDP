@@ -20,17 +20,16 @@
 #ifndef FREERDP_CODEC_YUV_H
 #define FREERDP_CODEC_YUV_H
 
-typedef struct S_YUV_CONTEXT YUV_CONTEXT;
-
 #include <freerdp/api.h>
 #include <freerdp/types.h>
-#include <freerdp/freerdp.h>
 #include <freerdp/constants.h>
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+
+	typedef struct S_YUV_CONTEXT YUV_CONTEXT;
 
 	FREERDP_API BOOL yuv420_context_decode(YUV_CONTEXT* context, const BYTE* pYUVData[3],
 	                                       const UINT32 iStride[3], UINT32 yuvHeight,

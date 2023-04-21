@@ -1,8 +1,8 @@
 /**
  * FreeRDP: A Remote Desktop Protocol Implementation
- * SDL Client Channels
+ * SDL Monitor Handling
  *
- * Copyright 2022 Armin Novak <armin.novak@thincast.com>
+ * Copyright 2023 Armin Novak <anovak@thincast.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,12 @@
  * limitations under the License.
  */
 
-#ifndef FREERDP_CLIENT_SDL_CHANNELS_H
-#define FREERDP_CLIENT_SDL_CHANNELS_H
+#pragma once
 
+#include <freerdp/api.h>
 #include <freerdp/freerdp.h>
-#include <freerdp/client/channels.h>
 
-int sdl_on_channel_connected(freerdp* instance, const char* name, void* pInterface);
-int sdl_on_channel_disconnected(freerdp* instance, const char* name, void* pInterface);
+#include "sdl_types.hpp"
 
-void sdl_OnChannelConnectedEventHandler(void* context, const ChannelConnectedEventArgs* e);
-void sdl_OnChannelDisconnectedEventHandler(void* context, const ChannelDisconnectedEventArgs* e);
-
-#endif /* FREERDP_CLIENT_SDL_CHANNELS_H */
+int sdl_list_monitors(sdlContext* sdl);
+BOOL sdl_detect_monitors(sdlContext* sdl, UINT32* pWidth, UINT32* pHeight);

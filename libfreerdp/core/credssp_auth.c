@@ -67,9 +67,7 @@ struct rdp_credssp_auth
 	SecPkgContext_Sizes sizes;
 	SECURITY_STATUS sspi_error;
 	enum AUTH_STATE state;
-#ifdef UNICODE
 	char* pkgNameA;
-#endif
 };
 
 static const char* credssp_auth_state_string(const rdpCredsspAuth* auth)
@@ -93,6 +91,20 @@ static BOOL parseKerberosDeltat(const char* value, INT32* dest, const char* mess
 static BOOL credssp_auth_setup_identity(rdpCredsspAuth* auth);
 static SecurityFunctionTable* auth_resolve_sspi_table(const rdpSettings* settings);
 
+static BOOL credssp_auth_update_name_cache(rdpCredsspAuth* auth, TCHAR* name)
+{
+	WINPR_ASSERT(auth);
+
+	free(auth->pkgNameA);
+	auth->pkgNameA = NULL;
+	if (name)
+#if defined(UNICODE)
+		auth->pkgNameA = ConvertWCharToUtf8Alloc(name, NULL);
+#else
+		auth->pkgNameA = _strdup(name);
+#endif
+	return TRUE;
+}
 rdpCredsspAuth* credssp_auth_new(const rdpContext* rdp_ctx)
 {
 	rdpCredsspAuth* auth = calloc(1, sizeof(rdpCredsspAuth));
@@ -111,6 +123,9 @@ BOOL credssp_auth_init(rdpCredsspAuth* auth, TCHAR* pkg_name, SecPkgContext_Bind
 	const rdpSettings* settings = auth->rdp_ctx->settings;
 	WINPR_ASSERT(settings);
 
+	if (!credssp_auth_update_name_cache(auth, pkg_name))
+		return FALSE;
+
 	auth->table = auth_resolve_sspi_table(settings);
 	if (!auth->table)
 	{
@@ -123,12 +138,16 @@ BOOL credssp_auth_init(rdpCredsspAuth* auth, TCHAR* pkg_name, SecPkgContext_Bind
 	const SECURITY_STATUS status = auth->table->QuerySecurityPackageInfo(pkg_name, &auth->info);
 	if (status != SEC_E_OK)
 	{
-		WLog_ERR(TAG, "QuerySecurityPackageInfo (%s) failed with %s [0x%08X]", pkg_name,
-		         GetSecurityStatusString(status), status);
+		WLog_ERR(TAG, "QuerySecurityPackageInfo (%s) failed with %s [0x%08X]",
+		         credssp_auth_pkg_name(auth), GetSecurityStatusString(status), status);
 		return FALSE;
 	}
 
-	WLog_DBG(TAG, "Using package: %s (cbMaxToken: %u bytes)", pkg_name, auth->info->cbMaxToken);
+	if (!credssp_auth_update_name_cache(auth, auth->info->Name))
+		return FALSE;
+
+	WLog_DBG(TAG, "Using package: %s (cbMaxToken: %u bytes)", credssp_auth_pkg_name(auth),
+	         auth->info->cbMaxToken);
 
 	/* Setup common identity settings */
 	if (!credssp_auth_setup_identity(auth))
@@ -416,7 +435,7 @@ int credssp_auth_authenticate(rdpCredsspAuth* auth)
 
 	if (status == SEC_E_OK)
 	{
-		WLog_DBG(TAG, "Authentication complete (output token size: %lu bytes)",
+		WLog_DBG(TAG, "Authentication complete (output token size: %" PRIu32 " bytes)",
 		         auth->output_buffer.cbBuffer);
 		auth->state = AUTH_STATE_FINAL;
 
@@ -432,7 +451,7 @@ int credssp_auth_authenticate(rdpCredsspAuth* auth)
 	}
 	else if (status == SEC_I_CONTINUE_NEEDED)
 	{
-		WLog_DBG(TAG, "Authentication in progress... (output token size: %lu)",
+		WLog_DBG(TAG, "Authentication in progress... (output token size: %" PRIu32 ")",
 		         auth->output_buffer.cbBuffer);
 		auth->state = AUTH_STATE_IN_PROGRESS;
 		return 0;
@@ -479,6 +498,8 @@ BOOL credssp_auth_encrypt(rdpCredsspAuth* auth, const SecBuffer* plaintext, SecB
 	buffers[0].pvBuffer = buf;
 
 	buffers[1].BufferType = SECBUFFER_DATA;
+	if (plaintext->BufferType & SECBUFFER_READONLY)
+		buffers[1].BufferType |= SECBUFFER_READONLY;
 	buffers[1].pvBuffer = buf + auth->sizes.cbSecurityTrailer;
 	buffers[1].cbBuffer = plaintext->cbBuffer;
 	CopyMemory(buffers[1].pvBuffer, plaintext->pvBuffer, plaintext->cbBuffer);
@@ -643,16 +664,7 @@ size_t credssp_auth_trailer_size(rdpCredsspAuth* auth)
 const char* credssp_auth_pkg_name(rdpCredsspAuth* auth)
 {
 	WINPR_ASSERT(auth && auth->info);
-#ifdef UNICODE
-	if (!auth->pkgNameA)
-	{
-		WINPR_ASSERT(auth->info->Name);
-		auth->pkgNameA = ConvertWCharToUtf8Alloc(auth->info->Name, NULL);
-	}
 	return auth->pkgNameA;
-#else
-	return auth->info->Name;
-#endif
 }
 
 UINT32 credssp_auth_sspi_error(rdpCredsspAuth* auth)
@@ -711,10 +723,7 @@ void credssp_auth_free(rdpCredsspAuth* auth)
 	free(auth->spn);
 	sspi_SecBufferFree(&auth->input_buffer);
 	sspi_SecBufferFree(&auth->output_buffer);
-#ifdef UNICODE
-	free(auth->pkgNameA);
-#endif
-
+	credssp_auth_update_name_cache(auth, NULL);
 	free(auth);
 }
 

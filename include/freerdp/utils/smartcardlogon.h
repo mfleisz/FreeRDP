@@ -16,10 +16,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef LIBFREERDP_CORE_SMARTCARDLOGON_H
-#define LIBFREERDP_CORE_SMARTCARDLOGON_H
+#ifndef FREERDP_UTILS_SMARTCARDLOGON_H
+#define FREERDP_UTILS_SMARTCARDLOGON_H
 
-#include <freerdp/freerdp.h>
+#include <freerdp/types.h>
 #include <freerdp/settings.h>
 #include <freerdp/crypto/certificate.h>
 
@@ -59,4 +59,4 @@ extern "C"
 #ifdef __cplusplus
 }
 #endif
-#endif /* LIBFREERDP_CORE_SMARTCARDLOGON_H */
+#endif /* FREERDP_UTILS_SMARTCARDLOGON_H */

@@ -30,6 +30,7 @@
 
 #include "rpc_bind.h"
 #include "../utils.h"
+#include "../settings.h"
 
 #define TAG FREERDP_TAG("core.gateway.rpc")
 
@@ -150,8 +151,8 @@ static int rpc_bind_setup(rdpRpc* rpc)
 	if (!credssp_auth_init(rpc->auth, AUTH_PKG, NULL))
 		return -1;
 
-	if (sspi_SetAuthIdentityA(&identity, settings->GatewayUsername, settings->GatewayDomain,
-	                          settings->GatewayPassword) < 0)
+	if (!identity_set_from_settings(&identity, settings, FreeRDP_GatewayUsername,
+	                                FreeRDP_GatewayDomain, FreeRDP_GatewayPassword))
 		return -1;
 
 	if (!credssp_auth_setup_client(rpc->auth, NULL, settings->GatewayHostname, &identity, NULL))
@@ -345,8 +346,11 @@ BOOL rpc_recv_bind_ack_pdu(rdpRpc* rpc, wStream* s)
 	auth_data = Stream_Pointer(s);
 	Stream_SetPosition(s, end);
 
-	buffer.pvBuffer = auth_data;
 	buffer.cbBuffer = header.common.auth_length;
+	buffer.pvBuffer = malloc(buffer.cbBuffer);
+	if (!buffer.pvBuffer)
+		goto fail;
+	memcpy(buffer.pvBuffer, auth_data, buffer.cbBuffer);
 	credssp_auth_take_input_buffer(rpc->auth, &buffer);
 
 	if (credssp_auth_authenticate(rpc->auth) < 0)

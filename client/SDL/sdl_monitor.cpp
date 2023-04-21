@@ -34,7 +34,8 @@
 
 #define TAG CLIENT_TAG("sdl")
 
-#include "sdl_monitor.h"
+#include "sdl_monitor.hpp"
+#include "sdl_freerdp.hpp"
 
 typedef struct
 {
@@ -62,7 +63,7 @@ int sdl_list_monitors(sdlContext* sdl)
 	printf("listing %d monitors:\n", nmonitors);
 	for (int i = 0; i < nmonitors; i++)
 	{
-		SDL_Rect rect = { 0 };
+		SDL_Rect rect = {};
 		const int brc = SDL_GetDisplayBounds(i, &rect);
 		const char* name = SDL_GetDisplayName(i);
 
@@ -175,14 +176,15 @@ static BOOL sdl_apply_display_properties(sdlContext* sdl)
 	WINPR_ASSERT(settings);
 
 	const UINT32 numIds = freerdp_settings_get_uint32(settings, FreeRDP_NumMonitorIds);
-	if (!freerdp_settings_set_pointer_len(settings, FreeRDP_MonitorDefArray, NULL, numIds))
+	if (!freerdp_settings_set_pointer_len(settings, FreeRDP_MonitorDefArray, nullptr, numIds))
 		return FALSE;
 	if (!freerdp_settings_set_uint32(settings, FreeRDP_MonitorCount, numIds))
 		return FALSE;
 
 	for (UINT32 x = 0; x < numIds; x++)
 	{
-		const UINT32* id = freerdp_settings_get_pointer_array(settings, FreeRDP_MonitorIds, x);
+		auto id = static_cast<const UINT32*>(
+		    freerdp_settings_get_pointer_array(settings, FreeRDP_MonitorIds, x));
 		WINPR_ASSERT(id);
 
 		float hdpi;
@@ -190,7 +192,7 @@ static BOOL sdl_apply_display_properties(sdlContext* sdl)
 		SDL_Rect rect = { 0 };
 
 		SDL_GetDisplayBounds(*id, &rect);
-		SDL_GetDisplayDPI(*id, NULL, &hdpi, &vdpi);
+		SDL_GetDisplayDPI(*id, nullptr, &hdpi, &vdpi);
 		if (sdl->highDpi)
 		{
 			// HighDPI is problematic with SDL: We can only get native resolution by creating a
@@ -230,9 +232,10 @@ static BOOL sdl_apply_display_properties(sdlContext* sdl)
 		const UINT32 rdp_orientation = ORIENTATION_LANDSCAPE;
 #endif
 
-		rdpMonitor* monitor =
-		    freerdp_settings_get_pointer_array_writable(settings, FreeRDP_MonitorDefArray, x);
+		auto monitor = static_cast<rdpMonitor*>(
+		    freerdp_settings_get_pointer_array_writable(settings, FreeRDP_MonitorDefArray, x));
 		WINPR_ASSERT(monitor);
+
 		monitor->orig_screen = x;
 		monitor->x = rect.x;
 		monitor->y = rect.y;
@@ -297,7 +300,7 @@ BOOL sdl_detect_monitors(sdlContext* sdl, UINT32* pMaxWidth, UINT32* pMaxHeight)
 	WINPR_ASSERT(settings);
 
 	const int numDisplays = SDL_GetNumVideoDisplays();
-	if (!freerdp_settings_set_pointer_len(settings, FreeRDP_MonitorIds, NULL, numDisplays))
+	if (!freerdp_settings_set_pointer_len(settings, FreeRDP_MonitorIds, nullptr, numDisplays))
 		return FALSE;
 
 	for (size_t x = 0; x < numDisplays; x++)

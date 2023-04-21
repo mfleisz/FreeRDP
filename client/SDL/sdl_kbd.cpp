@@ -17,9 +17,10 @@
  * limitations under the License.
  */
 
-#include "sdl_kbd.h"
-#include "sdl_disp.h"
-#include "sdl_freerdp.h"
+#include "sdl_kbd.hpp"
+#include "sdl_disp.hpp"
+#include "sdl_freerdp.hpp"
+#include "sdl_utils.hpp"
 
 #include <freerdp/scancode.h>
 
@@ -307,25 +308,18 @@ static UINT32 sdl_get_kbd_flags(void)
 	return flags;
 }
 
-BOOL sdl_sync_kbd_state(rdpContext* context)
+BOOL sdlInput::keyboard_sync_state()
 {
 	const UINT32 syncFlags = sdl_get_kbd_flags();
-
-	WINPR_ASSERT(context);
-	return freerdp_input_send_synchronize_event(context->input, syncFlags);
+	return freerdp_input_send_synchronize_event(_sdl->common.context.input, syncFlags);
 }
 
-BOOL sdl_keyboard_focus_in(rdpContext* context)
+BOOL sdlInput::keyboard_focus_in()
 {
-	rdpInput* input;
-	UINT32 syncFlags;
-
-	WINPR_ASSERT(context);
-
-	input = context->input;
+	auto input = _sdl->common.context.input;
 	WINPR_ASSERT(input);
 
-	syncFlags = sdl_get_kbd_flags();
+	auto syncFlags = sdl_get_kbd_flags();
 	freerdp_input_send_focus_in_event(input, syncFlags);
 
 	/* finish with a mouse pointer position like mstsc.exe if required */
@@ -346,11 +340,11 @@ BOOL sdl_keyboard_focus_in(rdpContext* context)
 }
 
 /* This function is called to update the keyboard indocator LED */
-BOOL sdl_keyboard_set_indicators(rdpContext* context, UINT16 led_flags)
+BOOL sdlInput::keyboard_set_indicators(rdpContext* context, UINT16 led_flags)
 {
 	WINPR_UNUSED(context);
 
-	SDL_Keymod state = KMOD_NONE;
+	int state = KMOD_NONE;
 
 	if ((led_flags & KBD_SYNC_NUM_LOCK) != 0)
 		state |= KMOD_NUM;
@@ -363,14 +357,14 @@ BOOL sdl_keyboard_set_indicators(rdpContext* context, UINT16 led_flags)
 
 	// TODO: KBD_SYNC_KANA_LOCK
 
-	SDL_SetModState(state);
+	SDL_SetModState(static_cast<SDL_Keymod>(state));
 
 	return TRUE;
 }
 
 /* This function is called to set the IME state */
-BOOL sdl_keyboard_set_ime_status(rdpContext* context, UINT16 imeId, UINT32 imeState,
-                                 UINT32 imeConvMode)
+BOOL sdlInput::keyboard_set_ime_status(rdpContext* context, UINT16 imeId, UINT32 imeState,
+                                       UINT32 imeConvMode)
 {
 	if (!context)
 		return FALSE;
@@ -421,15 +415,15 @@ static UINT32 sdl_scancode_to_rdp(Uint32 scancode)
 	}
 
 #if defined(WITH_DEBUG_SDL_KBD_EVENTS)
-	WLog_DBG(TAG, "got %s [%s] -> [%s]", SDL_GetScancodeName(scancode), sdl_scancode_name(scancode),
+	auto code = static_cast<SDL_Scancode>(scancode);
+	WLog_DBG(TAG, "got %s [%s] -> [%s]", SDL_GetScancodeName(code), sdl_scancode_name(scancode),
 	         sdl_rdp_scancode_name(rdp));
 #endif
 	return rdp;
 }
 
-BOOL sdl_handle_keyboard_event(sdlContext* sdl, const SDL_KeyboardEvent* ev)
+BOOL sdlInput::keyboard_handle_event(const SDL_KeyboardEvent* ev)
 {
-	WINPR_ASSERT(sdl);
 	WINPR_ASSERT(ev);
 	const UINT32 rdp_scancode = sdl_scancode_to_rdp(ev->keysym.scancode);
 	const SDL_Keymod mods = SDL_GetModState();
@@ -441,25 +435,65 @@ BOOL sdl_handle_keyboard_event(sdlContext* sdl, const SDL_KeyboardEvent* ev)
 			case SDL_SCANCODE_RETURN:
 				if (ev->type == SDL_KEYDOWN)
 				{
-					update_fullscreen(sdl, !sdl->fullscreen);
+					_sdl->update_fullscreen(!_sdl->fullscreen);
 				}
 				return TRUE;
 			case SDL_SCANCODE_R:
 				if (ev->type == SDL_KEYDOWN)
 				{
-					update_resizeable(sdl, !sdl->resizeable);
+					_sdl->update_resizeable(!_sdl->resizeable);
 				}
 				return TRUE;
 			case SDL_SCANCODE_G:
 				if (ev->type == SDL_KEYDOWN)
 				{
-					sdl_grab_keyboard(sdl, ev->windowID, !sdl->grab_kbd);
+					keyboard_grab(ev->windowID, _sdl->grab_kbd ? SDL_FALSE : SDL_TRUE);
 				}
 				return TRUE;
 			default:
 				break;
 		}
 	}
-	return freerdp_input_send_keyboard_event_ex(sdl->common.context.input, ev->type == SDL_KEYDOWN,
+	return freerdp_input_send_keyboard_event_ex(_sdl->common.context.input, ev->type == SDL_KEYDOWN,
 	                                            ev->repeat, rdp_scancode);
+}
+
+BOOL sdlInput::keyboard_grab(Uint32 windowID, SDL_bool enable)
+{
+	SDL_Window* window = SDL_GetWindowFromID(windowID);
+	if (!window)
+		return FALSE;
+#if SDL_VERSION_ATLEAST(2, 0, 16)
+	_sdl->grab_kbd = enable;
+	SDL_SetWindowKeyboardGrab(window, enable);
+	return TRUE;
+#else
+	WLog_WARN(TAG, "Keyboard grabbing not supported by SDL2 < 2.0.16");
+	return FALSE;
+#endif
+}
+
+BOOL sdlInput::mouse_grab(Uint32 windowID, SDL_bool enable)
+{
+	SDL_Window* window = SDL_GetWindowFromID(windowID);
+	if (!window)
+		return FALSE;
+#if SDL_VERSION_ATLEAST(2, 0, 16)
+	_sdl->grab_mouse = enable;
+	SDL_SetWindowMouseGrab(window, enable);
+	return TRUE;
+#else
+	_sdl->grab_mouse = enable;
+	SDL_SetWindowGrab(window, enable);
+	return TRUE;
+#endif
+}
+
+sdlInput::sdlInput(sdlContext* sdl) : _sdl(sdl)
+{
+	WINPR_ASSERT(_sdl);
+}
+
+sdlInput::~sdlInput()
+{
 }

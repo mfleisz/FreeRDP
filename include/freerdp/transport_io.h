@@ -22,18 +22,18 @@
 #ifndef FREERDP_TRANSPORT_IO_H
 #define FREERDP_TRANSPORT_IO_H
 
-typedef struct rdp_transport_io rdpTransportIo;
+#include <winpr/stream.h>
 
 #include <freerdp/api.h>
 #include <freerdp/types.h>
-
-#include <winpr/stream.h>
-#include <freerdp/freerdp.h>
+#include <freerdp/settings.h>
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+
+	typedef struct rdp_transport_io rdpTransportIo;
 
 	typedef int (*pTCPConnect)(rdpContext* context, rdpSettings* settings, const char* hostname,
 	                           int port, DWORD timeout);

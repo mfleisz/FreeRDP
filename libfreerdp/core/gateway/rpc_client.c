@@ -516,9 +516,9 @@ fail:
 	return rc;
 }
 
-static int rpc_client_default_out_channel_recv(rdpRpc* rpc)
+static SSIZE_T rpc_client_default_out_channel_recv(rdpRpc* rpc)
 {
-	int status = -1;
+	SSIZE_T status = -1;
 	UINT32 statusCode;
 	HttpResponse* response;
 	RpcInChannel* inChannel;
@@ -602,7 +602,10 @@ static int rpc_client_default_out_channel_recv(rdpRpc* rpc)
 
 		if (statusCode != HTTP_STATUS_OK)
 		{
-			WLog_ERR(TAG, "error! Status Code: %" PRIu32 "", statusCode);
+			char buffer[64] = { 0 };
+
+			WLog_ERR(TAG, "error! Status Code: %s",
+			         http_status_string_format(statusCode, buffer, ARRAYSIZE(buffer)));
 			http_response_print(response);
 
 			if (statusCode == HTTP_STATUS_DENIED)
@@ -645,7 +648,7 @@ static int rpc_client_default_out_channel_recv(rdpRpc* rpc)
 			Stream_SetPosition(fragment, 0);
 
 			/* Ignore errors, the PDU might not be complete. */
-			rts_read_common_pdu_header(fragment, &header);
+			rts_read_common_pdu_header(fragment, &header, TRUE);
 			Stream_SetPosition(fragment, pos);
 
 			if (header.frag_length > rpc->max_recv_frag)
@@ -702,9 +705,9 @@ static int rpc_client_default_out_channel_recv(rdpRpc* rpc)
 	return status;
 }
 
-static int rpc_client_nondefault_out_channel_recv(rdpRpc* rpc)
+static SSIZE_T rpc_client_nondefault_out_channel_recv(rdpRpc* rpc)
 {
-	int status = -1;
+	SSIZE_T status = -1;
 	HttpResponse* response;
 	RpcOutChannel* nextOutChannel;
 	HANDLE nextOutChannelEvent = NULL;
@@ -775,7 +778,7 @@ static int rpc_client_nondefault_out_channel_recv(rdpRpc* rpc)
 
 int rpc_client_out_channel_recv(rdpRpc* rpc)
 {
-	int status;
+	SSIZE_T status;
 	RpcVirtualConnection* connection = rpc->VirtualConnection;
 
 	if (connection->DefaultOutChannel)
@@ -945,7 +948,7 @@ int rpc_in_channel_send_pdu(RpcInChannel* inChannel, const BYTE* buffer, size_t 
 		return -1;
 
 	Stream_StaticConstInit(&s, buffer, length);
-	if (!rts_read_common_pdu_header(&s, &header))
+	if (!rts_read_common_pdu_header(&s, &header, FALSE))
 		return -1;
 
 	clientCall = rpc_client_call_find_by_id(inChannel->common.client, header.call_id);
@@ -1061,6 +1064,7 @@ BOOL rpc_client_write_call(rdpRpc* rpc, wStream* s, UINT16 opnum)
 
 	plaintext.pvBuffer = buffer;
 	plaintext.cbBuffer = offset;
+	plaintext.BufferType = SECBUFFER_READONLY;
 	if (!credssp_auth_encrypt(auth, &plaintext, &ciphertext, &size, rpc->SendSeqNum++))
 		goto fail;
 

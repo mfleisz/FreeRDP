@@ -17,8 +17,7 @@
  * limitations under the License.
  */
 
-#ifndef FREERDP_CLIENT_SDL_H
-#define FREERDP_CLIENT_SDL_H
+#pragma once
 
 #include <freerdp/freerdp.h>
 #include <freerdp/client/rdpei.h>
@@ -29,7 +28,10 @@
 #include <SDL.h>
 #include <SDL_video.h>
 
-typedef struct s_sdlDispContext sdlDispContext;
+#include "sdl_types.hpp"
+#include "sdl_disp.hpp"
+#include "sdl_kbd.hpp"
+
 typedef struct
 {
 	SDL_Window* window;
@@ -37,7 +39,7 @@ typedef struct
 	int offset_y;
 } sdl_window_t;
 
-typedef struct
+struct sdl_context
 {
 	rdpClientContext common;
 
@@ -62,12 +64,11 @@ typedef struct
 	SDL_Surface* primary;
 
 	sdlDispContext* disp;
+	sdlInput* input;
 	Uint32 sdl_pixel_format;
 
 	wLog* log;
-} sdlContext;
 
-BOOL update_resizeable(sdlContext* sdl, BOOL enable);
-BOOL update_fullscreen(sdlContext* sdl, BOOL enter);
-
-#endif /* FREERDP_CLIENT_SDL_H */
+	BOOL update_resizeable(BOOL enable);
+	BOOL update_fullscreen(BOOL enter);
+};

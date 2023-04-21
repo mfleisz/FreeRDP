@@ -25,14 +25,14 @@
 #include <winpr/wtypes.h>
 
 #include <freerdp/api.h>
-#include <freerdp/freerdp.h>
-
-typedef struct stream_dump_context rdpStreamDumpContext;
+#include <freerdp/types.h>
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+
+	typedef struct stream_dump_context rdpStreamDumpContext;
 
 	typedef enum
 	{

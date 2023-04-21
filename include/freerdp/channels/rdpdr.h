@@ -33,7 +33,14 @@
 #include <winpr/interlocked.h>
 #include <winpr/collections.h>
 
-#include <freerdp/freerdp.h>
+#include <freerdp/api.h>
+#include <freerdp/types.h>
+#include <freerdp/settings.h>
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
 #define RDPDR_SVC_CHANNEL_NAME "rdpdr"
 
@@ -376,5 +383,9 @@ typedef struct
 typedef DEVICE_SERVICE_ENTRY_POINTS* PDEVICE_SERVICE_ENTRY_POINTS;
 
 typedef UINT (*PDEVICE_SERVICE_ENTRY)(PDEVICE_SERVICE_ENTRY_POINTS);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* FREERDP_CHANNEL_RDPDR_H */

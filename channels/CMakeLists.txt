@@ -173,11 +173,11 @@ macro(add_channel_client_library _module_prefix _module_name _channel_name _dyna
 	set(${_module_prefix}_CHANNEL ${_channel_name} PARENT_SCOPE)
 	set(${_module_prefix}_ENTRY ${_entry} PARENT_SCOPE)
 
-	add_library(${_module_name} STATIC ${${_module_prefix}_SRCS})
+	add_library(${_module_name} OBJECT ${${_module_prefix}_SRCS})
     set_property(TARGET ${_module_name} PROPERTY FOLDER "Channels/${CHANNEL_NAME}/Client")
 
 	if (${_module_prefix}_LIBS)
-		target_link_libraries(${_module_name} PRIVATE ${${_module_prefix}_LIBS})
+		target_link_libraries(${_module_name} PUBLIC ${${_module_prefix}_LIBS})
 	endif()
 endmacro(add_channel_client_library)
 
@@ -191,11 +191,11 @@ macro(add_channel_client_subsystem_library _module_prefix _module_name _channel_
 	set(${_module_prefix}_NAME ${_module_name} PARENT_SCOPE)
 	set(${_module_prefix}_TYPE ${_type} PARENT_SCOPE)
 
-	add_library(${_module_name} STATIC ${${_module_prefix}_SRCS})
+	add_library(${_module_name} OBJECT ${${_module_prefix}_SRCS})
 	set_property(TARGET ${_module_name} PROPERTY FOLDER "Channels/${_channel_name}/Client/Subsystem/${CHANNEL_SUBSYSTEM}")
 
 	if (${_module_prefix}_LIBS)
-		target_link_libraries(${_module_name} PRIVATE ${${_module_prefix}_LIBS})
+		target_link_libraries(${_module_name} PUBLIC ${${_module_prefix}_LIBS})
 	endif()
 endmacro(add_channel_client_subsystem_library)
 
@@ -210,11 +210,11 @@ macro(add_channel_server_library _module_prefix _module_name _channel_name _dyna
 	set(${_module_prefix}_CHANNEL ${_channel_name} PARENT_SCOPE)
 	set(${_module_prefix}_ENTRY ${_entry} PARENT_SCOPE)
 
-	add_library(${_module_name} STATIC ${${_module_prefix}_SRCS})
+	add_library(${_module_name} OBJECT ${${_module_prefix}_SRCS})
 	set_property(TARGET ${_module_name} PROPERTY FOLDER "Channels/${CHANNEL_NAME}/Server")
 
 	if (${_module_prefix}_LIBS)
-		target_link_libraries(${_module_name} PRIVATE ${${_module_prefix}_LIBS})
+		target_link_libraries(${_module_name} PUBLIC ${${_module_prefix}_LIBS})
 	endif()
 endmacro(add_channel_server_library)
 

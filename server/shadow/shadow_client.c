@@ -165,20 +165,17 @@ static void shadow_client_context_free(freerdp_peer* peer, rdpContext* context)
 	if (server && server->clients)
 		ArrayList_Remove(server->clients, (void*)client);
 
-	if (client->encoder)
-	{
-		shadow_encoder_free(client->encoder);
-		client->encoder = NULL;
-	}
+	shadow_encoder_free(client->encoder);
 
 	/* Clear queued messages and free resource */
-	WINPR_ASSERT(client->MsgQueue);
-	MessageQueue_Clear(client->MsgQueue);
 	MessageQueue_Free(client->MsgQueue);
 	WTSCloseServer((HANDLE)client->vcm);
-	client->vcm = NULL;
 	region16_uninit(&(client->invalidRegion));
 	DeleteCriticalSection(&(client->lock));
+
+	client->MsgQueue = NULL;
+	client->encoder = NULL;
+	client->vcm = NULL;
 }
 
 static BOOL shadow_client_context_new(freerdp_peer* peer, rdpContext* context)
@@ -1326,7 +1323,6 @@ static BOOL shadow_client_send_surface_bits(rdpShadowClient* client, BYTE* pSrcD
                                             UINT16 nWidth, UINT16 nHeight)
 {
 	BOOL ret = TRUE;
-	size_t i;
 	BOOL first;
 	BOOL last;
 	wStream* s;
@@ -1356,9 +1352,7 @@ static BOOL shadow_client_send_surface_bits(rdpShadowClient* client, BYTE* pSrcD
 	rfxID = freerdp_settings_get_uint32(settings, FreeRDP_RemoteFxCodecId);
 	if (freerdp_settings_get_bool(settings, FreeRDP_RemoteFxCodec) && (rfxID != 0))
 	{
-		RFX_RECT rect;
-		RFX_MESSAGE* messages;
-		RFX_RECT* messageRects = NULL;
+		RFX_RECT rect = { 0 };
 
 		if (shadow_encoder_prepare(encoder, FREERDP_CODEC_REMOTEFX) < 0)
 		{
@@ -1372,9 +1366,10 @@ static BOOL shadow_client_send_surface_bits(rdpShadowClient* client, BYTE* pSrcD
 		rect.width = nWidth;
 		rect.height = nHeight;
 
-		if (!(messages = rfx_encode_messages(
-		          encoder->rfx, &rect, 1, pSrcData, settings->DesktopWidth, settings->DesktopHeight,
-		          nSrcStep, &numMessages, settings->MultifragMaxRequestSize)))
+		RFX_MESSAGE_LIST* messages = rfx_encode_messages(
+		    encoder->rfx, &rect, 1, pSrcData, settings->DesktopWidth, settings->DesktopHeight,
+		    nSrcStep, &numMessages, settings->MultifragMaxRequestSize);
+		if (!messages)
 		{
 			WLog_ERR(TAG, "rfx_encode_messages failed");
 			return FALSE;
@@ -1395,26 +1390,19 @@ static BOOL shadow_client_send_surface_bits(rdpShadowClient* client, BYTE* pSrcD
 		cmd.bmp.height = (UINT16)settings->DesktopHeight;
 		cmd.skipCompression = TRUE;
 
-		if (numMessages > 0)
-			messageRects = messages[0].rects;
-
-		for (i = 0; i < numMessages; i++)
+		for (size_t i = 0; i < numMessages; i++)
 		{
 			Stream_SetPosition(s, 0);
 
-			if (!rfx_write_message(encoder->rfx, s, &messages[i]))
+			const RFX_MESSAGE* msg = rfx_message_list_get(messages, i);
+			if (!rfx_write_message(encoder->rfx, s, msg))
 			{
-				while (i < numMessages)
-				{
-					rfx_message_free(encoder->rfx, &messages[i++]);
-				}
-
+				rfx_message_list_free(messages);
 				WLog_ERR(TAG, "rfx_write_message failed");
 				ret = FALSE;
 				break;
 			}
 
-			rfx_message_free(encoder->rfx, &messages[i]);
 			WINPR_ASSERT(Stream_GetPosition(s) <= UINT32_MAX);
 			cmd.bmp.bitmapDataLength = (UINT32)Stream_GetPosition(s);
 			cmd.bmp.bitmapData = Stream_Buffer(s);
@@ -1434,8 +1422,7 @@ static BOOL shadow_client_send_surface_bits(rdpShadowClient* client, BYTE* pSrcD
 			}
 		}
 
-		free(messageRects);
-		free(messages);
+		rfx_message_list_free(messages);
 	}
 	if (freerdp_settings_get_bool(settings, FreeRDP_NSCodec) && (nsID != 0))
 	{
@@ -2000,8 +1987,8 @@ static int shadow_client_subsystem_process_message(rdpShadowClient* client, wMes
 			pointerNew.xorBpp = 24;
 			pointerColor = &(pointerNew.colorPtrAttr);
 			pointerColor->cacheIndex = 0;
-			pointerColor->xPos = msg->xHot;
-			pointerColor->yPos = msg->yHot;
+			pointerColor->hotSpotX = msg->xHot;
+			pointerColor->hotSpotY = msg->yHot;
 			pointerColor->width = msg->width;
 			pointerColor->height = msg->height;
 			pointerColor->lengthAndMask = msg->lengthAndMask;

@@ -17,13 +17,29 @@
  * limitations under the License.
  */
 
-#ifndef FREERDP_CLIENT_SDL_UTILS_H
-#define FREERDP_CLIENT_SDL_UTILS_H
+#pragma once
 
+#include <winpr/synch.h>
 #include <winpr/wlog.h>
 
 #include <stdbool.h>
 #include <SDL.h>
+
+class CriticalSectionLock
+{
+  public:
+	CriticalSectionLock(CRITICAL_SECTION& section) : _section(section)
+	{
+		EnterCriticalSection(&_section);
+	}
+	~CriticalSectionLock()
+	{
+		LeaveCriticalSection(&_section);
+	}
+
+  private:
+	CRITICAL_SECTION _section;
+};
 
 enum
 {
@@ -46,5 +62,3 @@ const char* sdl_error_string(Uint32 res);
 	sdl_log_error_ex(res, log, what, __FILE__, __LINE__, __FUNCTION__)
 BOOL sdl_log_error_ex(Uint32 res, wLog* log, const char* what, const char* file, size_t line,
                       const char* fkt);
-
-#endif /* FREERDP_CLIENT_SDL_UTILS_H */

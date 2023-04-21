@@ -1,8 +1,8 @@
 /**
  * FreeRDP: A Remote Desktop Protocol Implementation
- * SDL Mouse Pointer
+ * SDL Client
  *
- * Copyright 2023 Armin Novak <armin.novak@thincast.com>
+ * Copyright 2022 Armin Novak <armin.novak@thincast.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,6 @@
  * limitations under the License.
  */
 
-#ifndef FREERDP_CLIENT_SDL_POINTER_H
-#define FREERDP_CLIENT_SDL_POINTER_H
+#pragma once
 
-#include <freerdp/graphics.h>
-#include "sdl_freerdp.h"
-
-BOOL sdl_register_pointer(rdpGraphics* graphics);
-
-BOOL sdl_Pointer_Set_Process(SDL_UserEvent* uptr);
-
-#endif /* FREERDP_CLIENT_SDL_POINTER_H */
+typedef struct sdl_context sdlContext;

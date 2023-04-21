@@ -21,12 +21,7 @@
 #define FREERDP_UTILS_SIGNAL_H
 
 #include <freerdp/api.h>
-#include <freerdp/freerdp.h>
-
-#ifndef _WIN32
-#include <signal.h>
-#include <termios.h>
-#endif
+#include <freerdp/types.h>
 
 #ifdef __cplusplus
 extern "C"

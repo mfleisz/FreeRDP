@@ -21,14 +21,15 @@
 #define FREERDP_REMOTE_ASSISTANCE_H
 
 #include <freerdp/api.h>
-#include <freerdp/freerdp.h>
-
-typedef struct rdp_assistance_file rdpAssistanceFile;
+#include <freerdp/types.h>
+#include <freerdp/settings.h>
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+
+	typedef struct rdp_assistance_file rdpAssistanceFile;
 
 	FREERDP_API BYTE* freerdp_assistance_hex_string_to_bin(const void* str, size_t* size);
 	FREERDP_API char* freerdp_assistance_bin_to_hex_string(const void* data, size_t size);

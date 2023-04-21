@@ -34,6 +34,11 @@
 #include <freerdp/crypto/certificate.h>
 #include <freerdp/crypto/privatekey.h>
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 /** \file
  * \brief This is the FreeRDP settings module.
  *
@@ -463,16 +468,6 @@ typedef struct
 #define THREADING_FLAGS_DISABLE_THREADS 0x00000001
 /* Settings */
 
-#ifdef __GNUC__
-#define ALIGN64 __attribute__((aligned(8)))
-#else
-#ifdef _WIN32
-#define ALIGN64 __declspec(align(8))
-#else
-#define ALIGN64
-#endif
-#endif
-
 /**
  * FreeRDP Settings Ids
  * This is generated with a script parsing the rdpSettings data structure
@@ -518,6 +513,7 @@ typedef struct
 #define FreeRDP_SupportEdgeActionV1 (150)
 #define FreeRDP_SupportEdgeActionV2 (151)
 #define FreeRDP_SupportSkipChannelJoin (152)
+#define FreeRDP_SupportedColorDepths (153)
 #define FreeRDP_UseRdpSecurityLayer (192)
 #define FreeRDP_EncryptionMethods (193)
 #define FreeRDP_ExtEncryptionMethods (194)
@@ -979,8 +975,8 @@ struct rdp_settings
 	ALIGN64 BOOL SupportEdgeActionV1;     /* 150 */
 	ALIGN64 BOOL SupportEdgeActionV2;     /* 151 */
 	ALIGN64 BOOL SupportSkipChannelJoin;  /* 152 */
-
-	UINT64 padding0192[192 - 153]; /* 153 */
+	ALIGN64 UINT16 SupportedColorDepths;  /* 153 */
+	UINT64 padding0192[192 - 154];        /* 154 */
 
 	/* Client/Server Security Data */
 	ALIGN64 BOOL UseRdpSecurityLayer;                /* 192 */
@@ -1671,11 +1667,6 @@ enum rdp_settings_type
 	RDP_SETTINGS_TYPE_POINTER
 };
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
 /**
  * rdpSettings creation flags
  */
@@ -2180,6 +2171,13 @@ extern "C"
 	FREERDP_API const char* freerdp_encryption_level_string(UINT32 EncryptionLevel);
 	FREERDP_API const char* freerdp_encryption_methods_string(UINT32 EncryptionLevel, char* buffer,
 	                                                          size_t size);
+
+	/** \brief returns a string representation of \b RNS_UD_XXBPP_SUPPORT values
+	 *
+	 *  return A string reprenentation of the bitmask.
+	 */
+	FREERDP_API const char* freerdp_supported_color_depths_string(UINT16 mask, char* buffer,
+	                                                              size_t size);
 
 #ifdef __cplusplus
 }

@@ -35,6 +35,65 @@
 #define PLANAR_ALIGN(val, align) \
 	((val) % (align) == 0) ? (val) : ((val) + (align) - (val) % (align))
 
+typedef struct
+{
+	/**
+	 * controlByte:
+	 * [0-3]: nRunLength
+	 * [4-7]: cRawBytes
+	 */
+	BYTE controlByte;
+	BYTE* rawValues;
+} RDP6_RLE_SEGMENT;
+
+typedef struct
+{
+	UINT32 cSegments;
+	RDP6_RLE_SEGMENT* segments;
+} RDP6_RLE_SEGMENTS;
+
+typedef struct
+{
+	/**
+	 * formatHeader:
+	 * [0-2]: Color Loss Level (CLL)
+	 *  [3] : Chroma Subsampling (CS)
+	 *  [4] : Run Length Encoding (RLE)
+	 *  [5] : No Alpha (NA)
+	 * [6-7]: Reserved
+	 */
+	BYTE formatHeader;
+} RDP6_BITMAP_STREAM;
+
+struct S_BITMAP_PLANAR_CONTEXT
+{
+	UINT32 maxWidth;
+	UINT32 maxHeight;
+	UINT32 maxPlaneSize;
+
+	BOOL AllowSkipAlpha;
+	BOOL AllowRunLengthEncoding;
+	BOOL AllowColorSubsampling;
+	BOOL AllowDynamicColorFidelity;
+
+	UINT32 ColorLossLevel;
+
+	BYTE* planes[4];
+	BYTE* planesBuffer;
+
+	BYTE* deltaPlanes[4];
+	BYTE* deltaPlanesBuffer;
+
+	BYTE* rlePlanes[4];
+	BYTE* rlePlanesBuffer;
+
+	BYTE* pTempData;
+	UINT32 nTempStep;
+
+	BOOL bgr;
+	BOOL topdown;
+};
+
 static INLINE UINT32 planar_invert_format(BITMAP_PLANAR_CONTEXT* planar, BOOL alpha,
                                           UINT32 DstFormat)
 {
@@ -1586,18 +1645,26 @@ BOOL freerdp_bitmap_planar_context_reset(BITMAP_PLANAR_CONTEXT* context, UINT32 
 	context->maxHeight = PLANAR_ALIGN(height, 4);
 	context->maxPlaneSize = context->maxWidth * context->maxHeight;
 	context->nTempStep = context->maxWidth * 4;
-	free(context->planesBuffer);
-	free(context->pTempData);
-	free(context->deltaPlanesBuffer);
-	free(context->rlePlanesBuffer);
-	context->planesBuffer = calloc(context->maxPlaneSize, 4);
-	context->pTempData = calloc(context->maxPlaneSize, 6);
-	context->deltaPlanesBuffer = calloc(context->maxPlaneSize, 4);
-	context->rlePlanesBuffer = calloc(context->maxPlaneSize, 4);
 
-	if (!context->planesBuffer || !context->pTempData || !context->deltaPlanesBuffer ||
-	    !context->rlePlanesBuffer)
+	void* tmp = winpr_aligned_recalloc(context->planesBuffer, context->maxPlaneSize, 4, 32);
+	if (!tmp)
 		return FALSE;
+	context->planesBuffer = tmp;
+
+	tmp = winpr_aligned_recalloc(context->pTempData, context->maxPlaneSize, 6, 32);
+	if (!tmp)
+		return FALSE;
+	context->pTempData = tmp;
+
+	tmp = winpr_aligned_recalloc(context->deltaPlanesBuffer, context->maxPlaneSize, 4, 32);
+	if (!tmp)
+		return FALSE;
+	context->deltaPlanesBuffer = tmp;
+
+	tmp = winpr_aligned_recalloc(context->rlePlanesBuffer, context->maxPlaneSize, 4, 32);
+	if (!tmp)
+		return FALSE;
+	context->rlePlanesBuffer = tmp;
 
 	context->planes[0] = &context->planesBuffer[context->maxPlaneSize * 0];
 	context->planes[1] = &context->planesBuffer[context->maxPlaneSize * 1];
@@ -1613,8 +1680,8 @@ BOOL freerdp_bitmap_planar_context_reset(BITMAP_PLANAR_CONTEXT* context, UINT32 
 BITMAP_PLANAR_CONTEXT* freerdp_bitmap_planar_context_new(DWORD flags, UINT32 maxWidth,
                                                          UINT32 maxHeight)
 {
-	BITMAP_PLANAR_CONTEXT* context;
-	context = (BITMAP_PLANAR_CONTEXT*)calloc(1, sizeof(BITMAP_PLANAR_CONTEXT));
+	BITMAP_PLANAR_CONTEXT* context =
+	    (BITMAP_PLANAR_CONTEXT*)winpr_aligned_calloc(1, sizeof(BITMAP_PLANAR_CONTEXT), 32);
 
 	if (!context)
 		return NULL;
@@ -1647,11 +1714,11 @@ void freerdp_bitmap_planar_context_free(BITMAP_PLANAR_CONTEXT* context)
 	if (!context)
 		return;
 
-	free(context->pTempData);
-	free(context->planesBuffer);
-	free(context->deltaPlanesBuffer);
-	free(context->rlePlanesBuffer);
-	free(context);
+	winpr_aligned_free(context->pTempData);
+	winpr_aligned_free(context->planesBuffer);
+	winpr_aligned_free(context->deltaPlanesBuffer);
+	winpr_aligned_free(context->rlePlanesBuffer);
+	winpr_aligned_free(context);
 }
 
 void freerdp_planar_switch_bgr(BITMAP_PLANAR_CONTEXT* planar, BOOL bgr)

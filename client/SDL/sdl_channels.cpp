@@ -25,13 +25,13 @@
 #include <freerdp/client/cliprdr.h>
 #include <freerdp/client/disp.h>
 
-#include "sdl_channels.h"
-#include "sdl_freerdp.h"
-#include "sdl_disp.h"
+#include "sdl_channels.hpp"
+#include "sdl_freerdp.hpp"
+#include "sdl_disp.hpp"
 
 void sdl_OnChannelConnectedEventHandler(void* context, const ChannelConnectedEventArgs* e)
 {
-	sdlContext* sdl = (sdlContext*)context;
+	auto sdl = reinterpret_cast<sdlContext*>(context);
 
 	WINPR_ASSERT(sdl);
 	WINPR_ASSERT(e);
@@ -41,13 +41,16 @@ void sdl_OnChannelConnectedEventHandler(void* context, const ChannelConnectedEve
 	}
 	else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
 	{
-		CliprdrClientContext* clip = (CliprdrClientContext*)e->pInterface;
+		auto clip = reinterpret_cast<CliprdrClientContext*>(e->pInterface);
 		WINPR_ASSERT(clip);
 		clip->custom = context;
 	}
 	else if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0)
 	{
-		sdl_disp_init(sdl->disp, (DispClientContext*)e->pInterface);
+		auto disp = reinterpret_cast<DispClientContext*>(e->pInterface);
+		WINPR_ASSERT(sdl->disp);
+		WINPR_ASSERT(disp);
+		sdl->disp->init(disp);
 	}
 	else
 		freerdp_client_OnChannelConnectedEventHandler(context, e);
@@ -55,7 +58,7 @@ void sdl_OnChannelConnectedEventHandler(void* context, const ChannelConnectedEve
 
 void sdl_OnChannelDisconnectedEventHandler(void* context, const ChannelDisconnectedEventArgs* e)
 {
-	sdlContext* sdl = (sdlContext*)context;
+	auto sdl = reinterpret_cast<sdlContext*>(context);
 
 	WINPR_ASSERT(sdl);
 	WINPR_ASSERT(e);
@@ -66,13 +69,16 @@ void sdl_OnChannelDisconnectedEventHandler(void* context, const ChannelDisconnec
 	}
 	else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
 	{
-		CliprdrClientContext* clip = (CliprdrClientContext*)e->pInterface;
+		auto clip = reinterpret_cast<CliprdrClientContext*>(e->pInterface);
 		WINPR_ASSERT(clip);
-		clip->custom = NULL;
+		clip->custom = nullptr;
 	}
 	else if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0)
 	{
-		sdl_disp_uninit(sdl->disp, (DispClientContext*)e->pInterface);
+		auto disp = reinterpret_cast<DispClientContext*>(e->pInterface);
+		WINPR_ASSERT(disp);
+		WINPR_ASSERT(sdl->disp);
+		sdl->disp->uninit(disp);
 	}
 	else
 		freerdp_client_OnChannelDisconnectedEventHandler(context, e);

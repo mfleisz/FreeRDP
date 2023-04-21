@@ -26,64 +26,34 @@
 #include <freerdp/types.h>
 #include <freerdp/channels/rdpgfx.h>
 
-typedef struct S_H264_CONTEXT_SUBSYSTEM H264_CONTEXT_SUBSYSTEM;
-typedef struct S_YUV_CONTEXT YUV_CONTEXT;
-
-typedef enum
-{
-	H264_RATECONTROL_VBR = 0,
-	H264_RATECONTROL_CQP
-} H264_RATECONTROL_MODE;
-
-typedef struct
-{
-	BOOL Compressor;
-
-	UINT32 width;
-	UINT32 height;
-
-	H264_RATECONTROL_MODE RateControlMode;
-	UINT32 BitRate;
-	UINT32 FrameRate;
-	UINT32 QP;
-	UINT32 NumberOfThreads;
-
-	UINT32 iStride[3];
-	BYTE* pOldYUVData[3];
-	BYTE* pYUVData[3];
-
-	UINT32 iYUV444Size[3];
-	UINT32 iYUV444Stride[3];
-	BYTE* pOldYUV444Data[3];
-	BYTE* pYUV444Data[3];
-
-	UINT32 numSystemData;
-	void* pSystemData;
-	const H264_CONTEXT_SUBSYSTEM* subsystem;
-	YUV_CONTEXT* yuv;
-
-	BOOL encodingBuffer;
-	BOOL firstLumaFrameDone;
-	BOOL firstChromaFrameDone;
-
-	void* lumaData;
-	wLog* log;
-} H264_CONTEXT;
-
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-	static INLINE void free_h264_metablock(RDPGFX_H264_METABLOCK* meta)
+	typedef struct S_H264_CONTEXT_SUBSYSTEM H264_CONTEXT_SUBSYSTEM;
+	typedef struct S_H264_CONTEXT H264_CONTEXT;
+	typedef struct S_YUV_CONTEXT YUV_CONTEXT;
+
+	typedef enum
 	{
-		RDPGFX_H264_METABLOCK m = { 0 };
-		if (!meta)
-			return;
-		free(meta->quantQualityVals);
-		free(meta->regionRects);
-		*meta = m;
-	}
+		H264_RATECONTROL_VBR = 0,
+		H264_RATECONTROL_CQP
+	} H264_RATECONTROL_MODE;
+
+	typedef enum
+	{
+		H264_CONTEXT_OPTION_RATECONTROL,
+		H264_CONTEXT_OPTION_BITRATE,
+		H264_CONTEXT_OPTION_FRAMERATE,
+		H264_CONTEXT_OPTION_QP
+	} H264_CONTEXT_OPTION;
+
+	FREERDP_API void free_h264_metablock(RDPGFX_H264_METABLOCK* meta);
+
+	FREERDP_API BOOL h264_context_set_option(H264_CONTEXT* h264, H264_CONTEXT_OPTION option,
+	                                         UINT32 value);
+	FREERDP_API UINT32 h264_context_get_option(H264_CONTEXT* h264, H264_CONTEXT_OPTION option);
 
 	FREERDP_API INT32 avc420_compress(H264_CONTEXT* h264, const BYTE* pSrcData, DWORD SrcFormat,
 	                                  UINT32 nSrcStep, UINT32 nSrcWidth, UINT32 nSrcHeight,

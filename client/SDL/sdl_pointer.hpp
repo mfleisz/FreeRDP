@@ -1,8 +1,8 @@
 /**
  * FreeRDP: A Remote Desktop Protocol Implementation
- * SDL Monitor Handling
+ * SDL Mouse Pointer
  *
- * Copyright 2023 Armin Novak <anovak@thincast.com>
+ * Copyright 2023 Armin Novak <armin.novak@thincast.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,11 @@
  * limitations under the License.
  */
 
-#ifndef FREERDP_CLIENT_SDL_MONITOR_H
-#define FREERDP_CLIENT_SDL_MONITOR_H
+#pragma once
 
-#include <freerdp/api.h>
-#include <freerdp/freerdp.h>
+#include <SDL.h>
+#include <freerdp/graphics.h>
 
-#include "sdl_freerdp.h"
+BOOL sdl_register_pointer(rdpGraphics* graphics);
 
-int sdl_list_monitors(sdlContext* sdl);
-BOOL sdl_detect_monitors(sdlContext* sdl, UINT32* pWidth, UINT32* pHeight);
-
-#endif /* FREERDP_CLIENT_SDL_MONITOR_H */
+BOOL sdl_Pointer_Set_Process(SDL_UserEvent* uptr);

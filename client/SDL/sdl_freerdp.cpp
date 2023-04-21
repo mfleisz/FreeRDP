@@ -17,6 +17,8 @@
  * limitations under the License.
  */
 
+#include <memory>
+
 #include <freerdp/config.h>
 
 #include <errno.h>
@@ -43,14 +45,14 @@
 #include <SDL.h>
 #include <SDL_video.h>
 
-#include "sdl_channels.h"
-#include "sdl_freerdp.h"
-#include "sdl_utils.h"
-#include "sdl_disp.h"
-#include "sdl_monitor.h"
-#include "sdl_kbd.h"
-#include "sdl_touch.h"
-#include "sdl_pointer.h"
+#include "sdl_channels.hpp"
+#include "sdl_freerdp.hpp"
+#include "sdl_utils.hpp"
+#include "sdl_disp.hpp"
+#include "sdl_monitor.hpp"
+#include "sdl_kbd.hpp"
+#include "sdl_touch.hpp"
+#include "sdl_pointer.hpp"
 
 #define SDL_TAG CLIENT_TAG("SDL")
 
@@ -208,7 +210,7 @@ static const struct sdl_exit_code_map_t* sdl_map_entry_by_code(int exit_code)
 		if (cur->code == exit_code)
 			return cur;
 	}
-	return NULL;
+	return nullptr;
 }
 
 static const struct sdl_exit_code_map_t* sdl_map_entry_by_error(DWORD error)
@@ -220,7 +222,7 @@ static const struct sdl_exit_code_map_t* sdl_map_entry_by_error(DWORD error)
 		if (cur->error == error)
 			return cur;
 	}
-	return NULL;
+	return nullptr;
 }
 
 static int sdl_map_error_to_exit_code(DWORD error)
@@ -237,7 +239,7 @@ static const char* sdl_map_error_to_code_tag(DWORD error)
 	const struct sdl_exit_code_map_t* entry = sdl_map_entry_by_error(error);
 	if (entry)
 		return entry->code_tag;
-	return NULL;
+	return nullptr;
 }
 
 static const char* sdl_map_to_code_tag(int code)
@@ -245,7 +247,7 @@ static const char* sdl_map_to_code_tag(int code)
 	const struct sdl_exit_code_map_t* entry = sdl_map_entry_by_code(code);
 	if (entry)
 		return entry->code_tag;
-	return NULL;
+	return nullptr;
 }
 
 static int error_info_to_error(freerdp* instance, DWORD* pcode)
@@ -267,7 +269,7 @@ static int error_info_to_error(freerdp* instance, DWORD* pcode)
 static BOOL sdl_begin_paint(rdpContext* context)
 {
 	rdpGdi* gdi;
-	sdlContext* sdl = (sdlContext*)context;
+	auto sdl = reinterpret_cast<sdlContext*>(context);
 
 	WINPR_ASSERT(sdl);
 
@@ -303,12 +305,28 @@ static BOOL sdl_redraw(sdlContext* sdl)
 	return gdi_send_suppress_output(gdi, FALSE);
 }
 
+class SdlEventUpdateTriggerGuard
+{
+  private:
+	sdlContext* _sdl;
+
+  public:
+	SdlEventUpdateTriggerGuard(sdlContext* sdl) : _sdl(sdl)
+	{
+	}
+	~SdlEventUpdateTriggerGuard()
+	{
+		SetEvent(_sdl->update_complete);
+	}
+};
 static BOOL sdl_end_paint_process(rdpContext* context)
 {
 	rdpGdi* gdi;
-	sdlContext* sdl = (sdlContext*)context;
+	auto sdl = reinterpret_cast<sdlContext*>(context);
 
 	WINPR_ASSERT(context);
+
+	SdlEventUpdateTriggerGuard guard(sdl);
 
 	gdi = context->gdi;
 	WINPR_ASSERT(gdi);
@@ -317,13 +335,13 @@ static BOOL sdl_end_paint_process(rdpContext* context)
 	WINPR_ASSERT(gdi->primary->hdc->hwnd);
 	WINPR_ASSERT(gdi->primary->hdc->hwnd->invalid);
 	if (gdi->suppressOutput || gdi->primary->hdc->hwnd->invalid->null)
-		goto out;
+		return TRUE;
 
 	const INT32 ninvalid = gdi->primary->hdc->hwnd->ninvalid;
 	const GDI_RGN* cinvalid = gdi->primary->hdc->hwnd->cinvalid;
 
 	if (ninvalid < 1)
-		goto out;
+		return TRUE;
 
 	// TODO: Support multiple windows
 	for (size_t x = 0; x < sdl->windowCount; x++)
@@ -375,8 +393,7 @@ static BOOL sdl_end_paint_process(rdpContext* context)
 		SDL_UpdateWindowSurface(window->window);
 	}
 
-out:
-	return SetEvent(sdl->update_complete);
+	return TRUE;
 }
 
 /* This function is called when the library completed composing a new
@@ -385,12 +402,12 @@ out:
  */
 static BOOL sdl_end_paint(rdpContext* context)
 {
-	sdlContext* sdl = (sdlContext*)context;
+	auto sdl = reinterpret_cast<sdlContext*>(context);
 	WINPR_ASSERT(sdl);
 
-	EnterCriticalSection(&sdl->critical);
+	CriticalSectionLock lock(sdl->critical);
 	const BOOL rc = sdl_push_user_event(SDL_USEREVENT_UPDATE, context);
-	LeaveCriticalSection(&sdl->critical);
+
 	return rc;
 }
 
@@ -408,14 +425,14 @@ static BOOL sdl_create_primary(sdlContext* sdl)
 	sdl->primary = SDL_CreateRGBSurfaceWithFormatFrom(
 	    gdi->primary_buffer, (int)gdi->width, (int)gdi->height,
 	    (int)FreeRDPGetBitsPerPixel(gdi->dstFormat), (int)gdi->stride, sdl->sdl_pixel_format);
-	return sdl->primary != NULL;
+	return sdl->primary != nullptr;
 }
 
 static BOOL sdl_desktop_resize(rdpContext* context)
 {
 	rdpGdi* gdi;
 	rdpSettings* settings;
-	sdlContext* sdl = (sdlContext*)context;
+	auto sdl = reinterpret_cast<sdlContext*>(context);
 
 	WINPR_ASSERT(context);
 
@@ -530,7 +547,7 @@ static const char* sdl_window_get_title(rdpSettings* settings)
 	const char* prefix = "FreeRDP:";
 
 	if (!settings)
-		return NULL;
+		return nullptr;
 
 	windowTitle = freerdp_settings_get_string(settings, FreeRDP_WindowTitle);
 	if (windowTitle)
@@ -554,7 +571,7 @@ static const char* sdl_window_get_title(rdpSettings* settings)
 
 static void sdl_cleanup_sdl(sdlContext* sdl)
 {
-	const sdl_window_t empty = { 0 };
+	const sdl_window_t empty = {};
 	if (!sdl)
 		return;
 
@@ -566,7 +583,7 @@ static void sdl_cleanup_sdl(sdlContext* sdl)
 		*window = empty;
 	}
 	SDL_FreeSurface(sdl->primary);
-	sdl->primary = NULL;
+	sdl->primary = nullptr;
 
 	sdl->windowCount = 0;
 	SDL_Quit();
@@ -587,7 +604,7 @@ static BOOL sdl_create_windows(sdlContext* sdl)
 	const UINT32 h =
 	    freerdp_settings_get_uint32(sdl->common.context.settings, FreeRDP_DesktopHeight);
 
-	sdl_window_t* window = NULL;
+	sdl_window_t* window = nullptr;
 	for (size_t x = 0; x < sdl->windowCount; x++)
 	{
 		Uint32 flags = SDL_WINDOW_SHOWN;
@@ -620,17 +637,10 @@ fail:
 
 static BOOL sdl_wait_create_windows(sdlContext* sdl)
 {
-	BOOL res = FALSE;
-	EnterCriticalSection(&sdl->critical);
-	res = ResetEvent(sdl->windows_created);
-	if (!res)
-		goto unlock;
-	res = sdl_push_user_event(SDL_USEREVENT_CREATE_WINDOWS, sdl);
-	if (!res)
-		goto unlock;
-unlock:
-	LeaveCriticalSection(&sdl->critical);
-	if (!res)
+	CriticalSectionLock lock(sdl->critical);
+	if (!ResetEvent(sdl->windows_created))
+		return FALSE;
+	if (!sdl_push_user_event(SDL_USEREVENT_CREATE_WINDOWS, sdl))
 		return FALSE;
 
 	HANDLE handles[] = { sdl->initialized, freerdp_abort_event(&sdl->common.context) };
@@ -643,45 +653,6 @@ unlock:
 		default:
 			return FALSE;
 	}
-}
-
-BOOL update_resizeable(sdlContext* sdl, BOOL enable)
-{
-	WINPR_ASSERT(sdl);
-
-	EnterCriticalSection(&sdl->critical);
-
-	const rdpSettings* settings = sdl->common.context.settings;
-	const BOOL dyn = freerdp_settings_get_bool(settings, FreeRDP_DynamicResolutionUpdate);
-	const BOOL smart = freerdp_settings_get_bool(settings, FreeRDP_SmartSizing);
-	BOOL use = (dyn && enable) || smart;
-
-	for (uint32_t x = 0; x < sdl->windowCount; x++)
-	{
-		sdl_window_t* window = &sdl->windows[x];
-		if (!sdl_push_user_event(SDL_USEREVENT_WINDOW_RESIZEABLE, window->window, use))
-			return FALSE;
-	}
-	sdl->resizeable = use;
-
-	LeaveCriticalSection(&sdl->critical);
-	return TRUE;
-}
-
-BOOL update_fullscreen(sdlContext* sdl, BOOL enter)
-{
-	WINPR_ASSERT(sdl);
-
-	EnterCriticalSection(&sdl->critical);
-	for (uint32_t x = 0; x < sdl->windowCount; x++)
-	{
-		sdl_window_t* window = &sdl->windows[x];
-		if (!sdl_push_user_event(SDL_USEREVENT_WINDOW_FULLSCREEN, window->window, enter))
-			return FALSE;
-	}
-	sdl->fullscreen = enter;
-	LeaveCriticalSection(&sdl->critical);
-	return TRUE;
 }
 
 static int sdl_run(sdlContext* sdl)
@@ -713,7 +684,7 @@ static int sdl_run(sdlContext* sdl)
 			SDL_Log("got event %s [0x%08" PRIx32 "]", sdl_event_type_str(windowEvent.type),
 			        windowEvent.type);
 #endif
-			EnterCriticalSection(&sdl->critical);
+			CriticalSectionLock lock(sdl->critical);
 			switch (windowEvent.type)
 			{
 				case SDL_QUIT:
@@ -723,7 +694,8 @@ static int sdl_run(sdlContext* sdl)
 				case SDL_KEYUP:
 				{
 					const SDL_KeyboardEvent* ev = &windowEvent.key;
-					sdl_handle_keyboard_event(sdl, ev);
+					WINPR_ASSERT(sdl->input);
+					sdl->input->keyboard_handle_event(ev);
 				}
 				break;
 				case SDL_KEYMAPCHANGED:
@@ -771,14 +743,16 @@ static int sdl_run(sdlContext* sdl)
 				case SDL_DISPLAYEVENT:
 				{
 					const SDL_DisplayEvent* ev = &windowEvent.display;
-					sdl_disp_handle_display_event(sdl->disp, ev);
+					if (sdl->disp)
+						sdl->disp->handle_display_event(ev);
 				}
 				break;
 #endif
 				case SDL_WINDOWEVENT:
 				{
 					const SDL_WindowEvent* ev = &windowEvent.window;
-					sdl_disp_handle_window_event(sdl->disp, ev);
+					if (sdl->disp)
+						sdl->disp->handle_window_event(ev);
 				}
 				break;
 
@@ -792,22 +766,28 @@ static int sdl_run(sdlContext* sdl)
 					sdl_redraw(sdl);
 					break;
 				case SDL_USEREVENT_UPDATE:
-					sdl_end_paint_process(windowEvent.user.data1);
-					break;
+				{
+					auto context = static_cast<rdpContext*>(windowEvent.user.data1);
+					sdl_end_paint_process(context);
+				}
+				break;
 				case SDL_USEREVENT_CREATE_WINDOWS:
-					sdl_create_windows(windowEvent.user.data1);
-					break;
+				{
+					auto sdl = static_cast<sdlContext*>(windowEvent.user.data1);
+					sdl_create_windows(sdl);
+				}
+				break;
 				case SDL_USEREVENT_WINDOW_RESIZEABLE:
 				{
-					SDL_Window* window = windowEvent.user.data1;
-					const SDL_bool use = windowEvent.user.code != 0;
+					auto window = static_cast<SDL_Window*>(windowEvent.user.data1);
+					const SDL_bool use = windowEvent.user.code != 0 ? SDL_TRUE : SDL_FALSE;
 					SDL_SetWindowResizable(window, use);
 				}
 				break;
 				case SDL_USEREVENT_WINDOW_FULLSCREEN:
 				{
-					SDL_Window* window = windowEvent.user.data1;
-					const SDL_bool enter = windowEvent.user.code != 0;
+					auto window = static_cast<SDL_Window*>(windowEvent.user.data1);
+					const SDL_bool enter = windowEvent.user.code != 0 ? SDL_TRUE : SDL_FALSE;
 
 					Uint32 curFlags = SDL_GetWindowFlags(window);
 					const BOOL isSet = (curFlags & SDL_WINDOW_FULLSCREEN);
@@ -853,7 +833,6 @@ static int sdl_run(sdlContext* sdl)
 				default:
 					break;
 			}
-			LeaveCriticalSection(&sdl->critical);
 		}
 	}
 
@@ -907,8 +886,12 @@ static BOOL sdl_post_connect(freerdp* instance)
 	if (!sdl_create_primary(sdl))
 		return FALSE;
 
-	sdl->disp = sdl_disp_new(sdl);
+	sdl->disp = new sdlDispContext(sdl);
 	if (!sdl->disp)
+		return FALSE;
+
+	sdl->input = new sdlInput(sdl);
+	if (!sdl->input)
 		return FALSE;
 
 	if (!sdl_register_pointer(instance->context->graphics))
@@ -920,11 +903,11 @@ static BOOL sdl_post_connect(freerdp* instance)
 	context->update->EndPaint = sdl_end_paint;
 	context->update->PlaySound = sdl_play_sound;
 	context->update->DesktopResize = sdl_desktop_resize;
-	context->update->SetKeyboardIndicators = sdl_keyboard_set_indicators;
-	context->update->SetKeyboardImeStatus = sdl_keyboard_set_ime_status;
+	context->update->SetKeyboardIndicators = sdlInput::keyboard_set_indicators;
+	context->update->SetKeyboardImeStatus = sdlInput::keyboard_set_ime_status;
 
-	update_resizeable(sdl, FALSE);
-	update_fullscreen(sdl, context->settings->Fullscreen || context->settings->UseMultimon);
+	sdl->update_resizeable(FALSE);
+	sdl->update_fullscreen(context->settings->Fullscreen || context->settings->UseMultimon);
 	return TRUE;
 }
 
@@ -963,8 +946,11 @@ static void sdl_post_final_disconnect(freerdp* instance)
 
 	context = (sdlContext*)instance->context;
 
-	sdl_disp_free(context->disp);
-	context->disp = NULL;
+	delete (context->disp);
+	context->disp = nullptr;
+
+	delete context->input;
+	context->input = nullptr;
 }
 
 /* RDP main loop.
@@ -976,7 +962,7 @@ static DWORD WINAPI sdl_client_thread_proc(void* arg)
 	DWORD nCount;
 	DWORD status;
 	int exit_code = SDL_EXIT_SUCCESS;
-	HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
+	HANDLE handles[MAXIMUM_WAIT_OBJECTS] = {};
 
 	WINPR_ASSERT(sdl);
 
@@ -1028,9 +1014,12 @@ static DWORD WINAPI sdl_client_thread_proc(void* arg)
 		 */
 		if (freerdp_focus_required(instance))
 		{
-			if (!sdl_keyboard_focus_in(context))
+			sdlContext* sdl = reinterpret_cast<sdlContext*>(context);
+			WINPR_ASSERT(sdl);
+			WINPR_ASSERT(sdl->input);
+			if (!sdl->input->keyboard_focus_in())
 				break;
-			if (!sdl_keyboard_focus_in(context))
+			if (!sdl->input->keyboard_focus_in())
 				break;
 		}
 
@@ -1132,22 +1121,21 @@ static void sdl_client_global_uninit(void)
 
 static int sdl_logon_error_info(freerdp* instance, UINT32 data, UINT32 type)
 {
-	sdlContext* tf;
 	const char* str_data = freerdp_get_logon_error_info_data(data);
 	const char* str_type = freerdp_get_logon_error_info_type(type);
 
 	if (!instance || !instance->context)
 		return -1;
 
-	tf = (sdlContext*)instance->context;
-	WLog_Print(tf->log, WLOG_INFO, "Logon Error Info %s [%s]", str_data, str_type);
+	auto sdl = reinterpret_cast<sdlContext*>(instance->context);
+	WLog_Print(sdl->log, WLOG_INFO, "Logon Error Info %s [%s]", str_data, str_type);
 
 	return 1;
 }
 
 static BOOL sdl_client_new(freerdp* instance, rdpContext* context)
 {
-	sdlContext* sdl = (sdlContext*)context;
+	auto sdl = reinterpret_cast<sdlContext*>(context);
 
 	if (!instance || !context)
 		return FALSE;
@@ -1165,16 +1153,16 @@ static BOOL sdl_client_new(freerdp* instance, rdpContext* context)
 	instance->LogonErrorInfo = sdl_logon_error_info;
 	/* TODO: Client display set up */
 
-	sdl->initialize = CreateEventA(NULL, TRUE, FALSE, NULL);
-	sdl->initialized = CreateEventA(NULL, TRUE, FALSE, NULL);
-	sdl->update_complete = CreateEventA(NULL, TRUE, TRUE, NULL);
-	sdl->windows_created = CreateEventA(NULL, TRUE, FALSE, NULL);
+	sdl->initialize = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+	sdl->initialized = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+	sdl->update_complete = CreateEventA(nullptr, TRUE, TRUE, nullptr);
+	sdl->windows_created = CreateEventA(nullptr, TRUE, FALSE, nullptr);
 	return sdl->initialize && sdl->initialized && sdl->update_complete && sdl->windows_created;
 }
 
 static void sdl_client_free(freerdp* instance, rdpContext* context)
 {
-	sdlContext* sdl = (sdlContext*)instance->context;
+	auto sdl = reinterpret_cast<sdlContext*>(instance->context);
 
 	if (!context)
 		return;
@@ -1186,19 +1174,19 @@ static void sdl_client_free(freerdp* instance, rdpContext* context)
 	CloseHandle(sdl->update_complete);
 	CloseHandle(sdl->windows_created);
 
-	sdl->thread = NULL;
-	sdl->initialize = NULL;
-	sdl->initialized = NULL;
-	sdl->update_complete = NULL;
-	sdl->windows_created = NULL;
+	sdl->thread = nullptr;
+	sdl->initialize = nullptr;
+	sdl->initialized = nullptr;
+	sdl->update_complete = nullptr;
+	sdl->windows_created = nullptr;
 }
 
 static int sdl_client_start(rdpContext* context)
 {
-	sdlContext* sdl = (sdlContext*)context;
+	auto sdl = reinterpret_cast<sdlContext*>(context);
 	WINPR_ASSERT(sdl);
 
-	sdl->thread = CreateThread(NULL, 0, sdl_client_thread_proc, sdl, 0, NULL);
+	sdl->thread = CreateThread(nullptr, 0, sdl_client_thread_proc, sdl, 0, nullptr);
 	if (!sdl->thread)
 		return -1;
 	return 0;
@@ -1206,7 +1194,7 @@ static int sdl_client_start(rdpContext* context)
 
 static int sdl_client_stop(rdpContext* context)
 {
-	sdlContext* sdl = (sdlContext*)context;
+	auto sdl = reinterpret_cast<sdlContext*>(context);
 	WINPR_ASSERT(sdl);
 
 	/* We do not want to use freerdp_abort_connect_context here.
@@ -1236,20 +1224,28 @@ static int RdpClientEntry(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 	return 0;
 }
 
+static void context_free(sdlContext* sdl)
+{
+	if (sdl)
+		freerdp_client_context_free(&sdl->common.context);
+}
+
 int main(int argc, char* argv[])
 {
 	int rc = -1;
 	int status;
-	rdpContext* context = NULL;
-	RDP_CLIENT_ENTRY_POINTS clientEntryPoints = { 0 };
+	rdpContext* context = nullptr;
+	RDP_CLIENT_ENTRY_POINTS clientEntryPoints = {};
 
 	freerdp_client_warn_experimental(argc, argv);
 
 	RdpClientEntry(&clientEntryPoints);
-	sdlContext* sdl = (sdlContext*)freerdp_client_context_new(&clientEntryPoints);
+	std::unique_ptr<sdlContext, void (*)(sdlContext*)> sdl(
+	    reinterpret_cast<sdlContext*>(freerdp_client_context_new(&clientEntryPoints)),
+	    context_free);
 
 	if (!sdl)
-		goto fail;
+		return -1;
 
 	rdpSettings* settings = sdl->common.context.settings;
 	WINPR_ASSERT(settings);
@@ -1259,26 +1255,58 @@ int main(int argc, char* argv[])
 	{
 		rc = freerdp_client_settings_command_line_status_print(settings, status, argc, argv);
 		if (settings->ListMonitors)
-			sdl_list_monitors(sdl);
-		goto fail;
+			sdl_list_monitors(sdl.get());
+		return rc;
 	}
 
 	context = &sdl->common.context;
 	WINPR_ASSERT(context);
 
 	if (!stream_dump_register_handlers(context, CONNECTION_STATE_MCS_CREATE_REQUEST, FALSE))
-		goto fail;
+		return -1;
 
 	if (freerdp_client_start(context) != 0)
-		goto fail;
+		return -1;
 
-	rc = sdl_run(sdl);
+	rc = sdl_run(sdl.get());
 
 	if (freerdp_client_stop(context) != 0)
-		rc = -1;
+		return -1;
 
 	rc = sdl->exit_code;
-fail:
-	freerdp_client_context_free(context);
+
 	return rc;
+}
+
+BOOL sdl_context::update_fullscreen(BOOL enter)
+{
+	CriticalSectionLock lock(critical);
+	for (uint32_t x = 0; x < windowCount; x++)
+	{
+		sdl_window_t* window = &windows[x];
+		if (!sdl_push_user_event(SDL_USEREVENT_WINDOW_FULLSCREEN, window->window, enter))
+			return FALSE;
+	}
+	fullscreen = enter;
+	return TRUE;
+}
+
+BOOL sdl_context::update_resizeable(BOOL enable)
+{
+	CriticalSectionLock lock(critical);
+
+	const rdpSettings* settings = common.context.settings;
+	const BOOL dyn = freerdp_settings_get_bool(settings, FreeRDP_DynamicResolutionUpdate);
+	const BOOL smart = freerdp_settings_get_bool(settings, FreeRDP_SmartSizing);
+	BOOL use = (dyn && enable) || smart;
+
+	for (uint32_t x = 0; x < windowCount; x++)
+	{
+		sdl_window_t* window = &windows[x];
+		if (!sdl_push_user_event(SDL_USEREVENT_WINDOW_RESIZEABLE, window->window, use))
+			return FALSE;
+	}
+	resizeable = use;
+
+	return TRUE;
 }
