@@ -748,6 +748,9 @@ rdpSettings* freerdp_settings_new(DWORD flags)
 			goto out_fail;
 	}
 
+	if (!freerdp_settings_set_bool(settings, FreeRDP_SupportDynamicTimeZone, TRUE))
+		goto out_fail;
+
 	if (!freerdp_settings_set_bool(settings, FreeRDP_TcpKeepAlive, TRUE) ||
 	    !freerdp_settings_set_uint32(settings, FreeRDP_TcpKeepAliveRetries, 3) ||
 	    !freerdp_settings_set_uint32(settings, FreeRDP_TcpKeepAliveDelay, 5) ||
@@ -799,10 +802,10 @@ rdpSettings* freerdp_settings_new(DWORD flags)
 	const BOOL enable = freerdp_settings_get_bool(settings, FreeRDP_ServerMode);
 
 	{
-		const FreeRDP_Settings_Keys_Bool keys[] = {
-			FreeRDP_SupportDynamicTimeZone, FreeRDP_SupportGraphicsPipeline,
-			FreeRDP_SupportStatusInfoPdu, FreeRDP_SupportErrorInfoPdu, FreeRDP_SupportAsymetricKeys
-		};
+		const FreeRDP_Settings_Keys_Bool keys[] = { FreeRDP_SupportGraphicsPipeline,
+			                                        FreeRDP_SupportStatusInfoPdu,
+			                                        FreeRDP_SupportErrorInfoPdu,
+			                                        FreeRDP_SupportAsymetricKeys };
 
 		for (size_t x = 0; x < ARRAYSIZE(keys); x++)
 		{
@@ -810,6 +813,7 @@ rdpSettings* freerdp_settings_new(DWORD flags)
 				goto out_fail;
 		}
 	}
+
 	if (!freerdp_settings_set_bool(settings, FreeRDP_SupportSkipChannelJoin, TRUE))
 		goto out_fail;
 
