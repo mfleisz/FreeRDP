@@ -576,14 +576,6 @@ static UINT rail_virtual_channel_event_connected(railPlugin* rail, WINPR_ATTR_UN
 
 	WINPR_ASSERT(rail);
 
-	if (context)
-	{
-		IFCALLRET(context->OnOpen, status, context, &rail->sendHandshake);
-
-		if (status != CHANNEL_RC_OK)
-			WLog_ERR(TAG, "context->OnOpen failed with %s [%08" PRIX32 "]",
-			         WTSErrorToString(status), status);
-	}
 	rail->MsgsHandle = channel_client_create_handler(rail->rdpcontext, rail, rail_order_recv,
 	                                                 RAIL_SVC_CHANNEL_NAME);
 	if (!rail->MsgsHandle)
@@ -692,8 +684,6 @@ FREERDP_ENTRY_POINT(BOOL VCAPITYPE VirtualChannelEntryEx(PCHANNEL_ENTRY_POINTS_E
 		return FALSE;
 	}
 
-	/* Default to automatically replying to server handshakes */
-	rail->sendHandshake = TRUE;
 	rail->channelDef.options = CHANNEL_OPTION_INITIALIZED | CHANNEL_OPTION_ENCRYPT_RDP |
 	                           CHANNEL_OPTION_COMPRESS_RDP | CHANNEL_OPTION_SHOW_PROTOCOL;
 	(void)sprintf_s(rail->channelDef.name, ARRAYSIZE(rail->channelDef.name), RAIL_SVC_CHANNEL_NAME);

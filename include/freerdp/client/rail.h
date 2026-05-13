@@ -95,6 +95,7 @@ extern "C"
 	                                            const RAIL_COMPARTMENT_INFO_ORDER* compartmentInfo);
 	typedef UINT (*pcRailClientTextScale)(RailClientContext* context, UINT32 TextScale);
 	typedef UINT (*pcRailClientCaretBlinkRate)(RailClientContext* context, UINT32 CaretBlinkRate);
+	typedef UINT (*pcRailServerPostHandshake)(RailClientContext* context);
 
 	struct s_rail_client_context
 	{
@@ -129,9 +130,10 @@ extern "C"
 		WINPR_ATTR_NODISCARD pcRailClientSnapArrange ClientSnapArrange;
 		WINPR_ATTR_NODISCARD pcRailServerGetAppidResponseExtended ServerGetAppidResponseExtended;
 		WINPR_ATTR_NODISCARD pcRailClientCompartmentInfo ClientCompartmentInfo;
-		WINPR_ATTR_NODISCARD pcRailOnOpen OnOpen;
+		WINPR_DEPRECATED_VAR("Deprecated because unused", WINPR_ATTR_NODISCARD pcRailOnOpen OnOpen);
 		WINPR_ATTR_NODISCARD pcRailClientTextScale ClientTextScale;
 		WINPR_ATTR_NODISCARD pcRailClientCaretBlinkRate ClientCaretBlinkRate;
+		WINPR_ATTR_NODISCARD pcRailServerPostHandshake ServerPostHandshake;
 	};
 
 	WINPR_ATTR_NODISCARD
